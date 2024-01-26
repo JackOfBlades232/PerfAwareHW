@@ -30,3 +30,11 @@
 *.exe
 *.out
 *.app
+
+# Debug stuff
+.ilk
+.pdb
+
+#other
+nasm
+.vs/
