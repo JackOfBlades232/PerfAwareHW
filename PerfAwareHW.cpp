@@ -11,19 +11,19 @@ const char *reg_code_to_name(uint8_t code, bool is_wide)
     case 0x0:
         return is_wide ? "ax" : "al";
     case 0x1:
-        return is_wide ? "bx" : "bl";
-    case 0x2:
         return is_wide ? "cx" : "cl";
-    case 0x3:
+    case 0x2:
         return is_wide ? "dx" : "dl";
+    case 0x3:
+        return is_wide ? "bx" : "bl";
     case 0x4:
         return is_wide ? "sp" : "ah";
     case 0x5:
-        return is_wide ? "bp" : "bh";
+        return is_wide ? "bp" : "ch";
     case 0x6:
-        return is_wide ? "si" : "ch";
+        return is_wide ? "si" : "dh";
     case 0x7:
-        return is_wide ? "di" : "dh";
+        return is_wide ? "di" : "bh";
     default:
         return 0;
     }
@@ -41,6 +41,9 @@ int main(int argc, char **argv)
     uint16_t instr = 0;
     size_t bytes_read = 0;
     while ((bytes_read = fread(&instr, sizeof(instr), 1, f)) == 1) {
+        // Reverse byte order since fread messes it up
+        instr = (instr >> 8) | ((instr & 0xFF) << 8);
+
         uint8_t first_byte = instr >> 8;
         uint8_t second_byte = instr & 0xFF;
         switch (first_byte & 0xFC) {
@@ -48,7 +51,7 @@ int main(int argc, char **argv)
         {
             bool is_dst = first_byte & 0x02;
             bool is_wide = first_byte & 0x01;
-            uint8_t mod = second_byte & 0xFC;
+            uint8_t mod = second_byte & 0xC0;
             if (mod == mov_reg_to_reg_mod) {
                 uint8_t reg = (second_byte ^ mod) >> 3;
                 uint8_t rm_reg = second_byte & 0x7;
