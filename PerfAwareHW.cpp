@@ -1,6 +1,9 @@
-﻿#include <cstdio>
+﻿#define _CRT_SECURE_NO_WARNINGS
+#include <cstdio>
 #include <cstdint>
 #include <cassert>
+
+static bool machine_is_big_endian;
 
 const char *reg_code_to_name(uint8_t code, bool is_wide)
 {
@@ -55,17 +58,29 @@ inline uint16_t u16_swap_bytes(uint16_t n)
     return (n >> 8) | ((n & 0xFF) << 8);
 }
 
-// _stream : FILE *; _out: uint8_t * or uint16_t *; _break_label: label at the end of loop
-// Reverse byte order since fread reads second bit as low (@TODO: endianness?)
-#define FETCH_OR_BREAKOUT_WREORDER(_stream, _out, _break_label) \
-    do { \
-        if (fread(_out, sizeof(*_out), 1, _stream) != 1) goto _break_label; \
-        if (sizeof(*_out) > 1) \
-            *_out = u16_swap_bytes(*_out); \
-    } while (0)
+template <class T>
+bool fetch_mem(FILE *f, T *out)
+{
+    return fread(out, sizeof(*out), 1, f) == 1;
+}
 
-#define FETCH_OR_BREAKOUT_NOREORDER(_stream, _out, _break_label) \
-    do { if (fread(_out, sizeof(*_out), 1, _stream) != 1) goto _break_label; } while (0)
+template <class T>
+bool fetch_integer_with_endian_swap(FILE *f, T *out)
+{
+    static_assert(sizeof(*out) <= 2, "Endian swap fetch only for 8 and 16 bit integers");
+
+    if (fread(out, sizeof(*out), 1, f) != 1)
+        return false;
+    if (sizeof(*out) > 1 && !machine_is_big_endian)
+        *out = u16_swap_bytes(*out);
+    return true;
+}
+
+#define TRY_ELSE_GOTO(_try, _label) \
+    do {                            \
+        if (!(_try))                \
+            goto _label;            \
+    } while (0)
 
 // @NOTE: presume that the expr fits in the buf 
 // (if it doesn't, it is still safe, but does not indicate failure)
@@ -74,7 +89,7 @@ bool get_mem_addr_str(char *buf, size_t bufsize, uint8_t rm_reg, uint8_t mod, FI
     // @NOTE: spec case: direct addr
     if (mod == 0x0 /* 00 */ && rm_reg == 0x6 /* 110 */) {
         uint16_t adr;
-        FETCH_OR_BREAKOUT_NOREORDER(istream, &adr, fail);
+        TRY_ELSE_GOTO(fetch_mem(istream, &adr), fail);
         snprintf(buf, bufsize, "%hu", adr);
         return true;
     }
@@ -89,7 +104,7 @@ bool get_mem_addr_str(char *buf, size_t bufsize, uint8_t rm_reg, uint8_t mod, FI
         case 0x1: /* 01 */
             {
                 int8_t disp;
-                FETCH_OR_BREAKOUT_NOREORDER(istream, &disp, fail);
+                TRY_ELSE_GOTO(fetch_mem(istream, &disp), fail);
                 if (disp > 0)
                     snprintf(buf, bufsize, "%s + %hhd", lea_code_to_expr(rm_reg), disp);
                 else if (disp < 0)
@@ -102,7 +117,7 @@ bool get_mem_addr_str(char *buf, size_t bufsize, uint8_t rm_reg, uint8_t mod, FI
         case 0x2: /* 11 */
             {
                 int16_t disp;
-                FETCH_OR_BREAKOUT_NOREORDER(istream, &disp, fail);
+                TRY_ELSE_GOTO(fetch_mem(istream, &disp), fail);
                 if (disp > 0)
                     snprintf(buf, bufsize, "%s + %hd", lea_code_to_expr(rm_reg), disp);
                 else if (disp < 0)
@@ -118,11 +133,24 @@ fail:
     return false;
 }
 
+void check_and_init_endianness()
+{
+    union {
+        uint16_t word;
+        uint8_t bytes[2];
+    } x;
+    x.word = 0x0102;
+
+    machine_is_big_endian = x.bytes[0] == (x.word >> 8);
+}
+
 int main(int argc, char **argv)
 {
+    check_and_init_endianness();
+
     assert(argc >= 2);
-    FILE *f;
-    assert(f = fopen(argv[1], "rb"));
+    FILE *f = fopen(argv[1], "rb");
+    assert(f);
 
     printf(";; %s 16-bit disassembly ;;\n", argv[1]);
     printf("bits 16\n");
@@ -131,7 +159,7 @@ int main(int argc, char **argv)
     // @TODO: there are on-byte instructions. Fetch only one byte on iteration init
     for (;;) {
         uint16_t instr = 0;
-        FETCH_OR_BREAKOUT_WREORDER(f, &instr, loop_breakout);
+        TRY_ELSE_GOTO(fetch_integer_with_endian_swap(f, &instr), loop_breakout);
 
         uint8_t first_byte = instr >> 8;
         uint8_t second_byte = instr & 0xFF;
@@ -165,8 +193,7 @@ int main(int argc, char **argv)
                         reg_code_to_name(src_reg, is_wide));
             } else { // r/m to/from reg
                 char buf[64]; // for expression
-                if (!get_mem_addr_str(buf, sizeof(buf), rm_reg, mod, f))
-                    goto loop_breakout;
+                TRY_ELSE_GOTO(get_mem_addr_str(buf, sizeof(buf), rm_reg, mod, f), loop_breakout);
 
                 if (is_dst)
                     printf("mov %s, [%s]\n", reg_code_to_name(reg, is_wide), buf);
@@ -181,7 +208,7 @@ int main(int argc, char **argv)
             
             if (is_wide) {
                 uint8_t data_high = 0;
-                FETCH_OR_BREAKOUT_WREORDER(f, &data_high, loop_breakout);
+                TRY_ELSE_GOTO(fetch_integer_with_endian_swap(f, &data_high), loop_breakout);
                 printf("mov %s, %hd\n", 
                         reg_code_to_name(reg, is_wide),
                         ((uint16_t)data_high << 8) | data_low);
@@ -198,16 +225,15 @@ int main(int argc, char **argv)
             uint8_t rm_reg = second_byte & 0x7 /* 00000111 */;
 
             char buf[64]; // for expression
-            if (!get_mem_addr_str(buf, sizeof(buf), rm_reg, mod, f))
-                goto loop_breakout;
+            TRY_ELSE_GOTO(get_mem_addr_str(buf, sizeof(buf), rm_reg, mod, f), loop_breakout);
 
             // @TODO: factor out with imm to reg
             uint8_t data_low = 0;
-            FETCH_OR_BREAKOUT_WREORDER(f, &data_low, loop_breakout);
+            TRY_ELSE_GOTO(fetch_integer_with_endian_swap(f, &data_low), loop_breakout);
 
             if (is_wide) {
                 uint8_t data_high = 0;
-                FETCH_OR_BREAKOUT_WREORDER(f, &data_high, loop_breakout);
+                TRY_ELSE_GOTO(fetch_integer_with_endian_swap(f, &data_high), loop_breakout);
                 printf("mov [%s], word %hd\n", buf, 
                         ((uint16_t)data_high << 8) | data_low);
             } else
@@ -221,7 +247,7 @@ int main(int argc, char **argv)
             uint8_t addr_low = second_byte;
             if (is_wide) {
                 uint8_t addr_high;
-                FETCH_OR_BREAKOUT_WREORDER(f, &addr_high, loop_breakout);
+                TRY_ELSE_GOTO(fetch_integer_with_endian_swap(f, &addr_high), loop_breakout);
                 addr = ((uint16_t)addr_high << 8) | addr_low;
             } else
                 addr = addr_low;
