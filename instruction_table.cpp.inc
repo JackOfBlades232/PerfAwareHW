@@ -10,12 +10,13 @@ bool check_byte(uint8_t byte, byte_identifier_t id)
     return (byte & id.mask) == id.val;
 }
 
-// MOVs
-CONST byte_identifier_t mov_rm_to_from_reg_or_segment_id = {
+// MOV rm reg/rm seg reg/lea/pop rm
+CONST byte_identifier_t mov_rm_reg_lea_pop_pack_id = {
     .val  = 0b10001000,
     .mask = 0b11111000
 };
 
+// MOVs
 CONST byte_identifier_t mov_imm_to_rm_id = {
     .val  = 0b11000110,
     .mask = 0b11111110
@@ -40,7 +41,7 @@ CONST byte_identifier_t al_imm_with_rm_id = {
 };
 CONST byte_identifier_t al_imm_with_acc_id = {
     .val  = 0b00000100,
-    .mask = 0b11000100
+    .mask = 0b11000110
 };
 
 // Conditional jumps
@@ -52,6 +53,35 @@ CONST byte_identifier_t cond_j_id = {
 CONST byte_identifier_t loop_j_id = {
     .val  = 0b11100000,
     .mask = 0b11111100
+};
+
+// 0xFFFF instr pack (INC16/DEC16/CALLJMP 16 indirect inter/intra /PUSH 16)
+CONST byte_identifier_t ffff_pack_id = {
+    .val  = 0b11111111,
+    .mask = 0b11111111
+};
+
+// Register INC/DEC/PUSH/POP
+CONST byte_identifier_t reg_one_byte_pack_id = {
+    .val  = 0b01000000,
+    .mask = 0b11100000
+};
+
+// Seg reg PUSH/POP
+CONST byte_identifier_t seg_reg_push_pop_id = {
+    .val  = 0b00000110,
+    .mask = 0b11100110
+};
+
+// Rm/reg TEST/XCHG
+CONST byte_identifier_t rmreg_test_xchg_id = {
+    .val  = 0b10000100,
+    .mask = 0b11111100
+};
+// Reg/accum XCHG
+CONST byte_identifier_t reg_acc_xchg_id = {
+    .val  = 0b10010000,
+    .mask = 0b11111000
 };
 
 #undef CONST

@@ -200,6 +200,28 @@ const char *loop_jump_code_to_op_name(uint8_t code)
     }
 }
 
+const char *ffff_pack_code_to_op_name(uint8_t code)
+{
+    switch (code) {
+    case 0x0:
+        return "inc word";
+    case 0x1:
+        return "dec word";
+    case 0x2:
+        return "call";
+    case 0x3:
+        return "call far";
+    case 0x4:
+        return "jmp";
+    case 0x5:
+        return "jmp far";
+    case 0x6:
+        return "push word";
+    default:
+        return nullptr;
+    }
+}
+
 bool decode_rm_to_buf(char *buf, size_t bufsize,
                       FILE *istream,
                       uint8_t mod, uint8_t rm_reg,
@@ -466,6 +488,104 @@ bool decode_loop_jump(uint8_t first_byte, uint8_t second_byte)
     return true;
 }
 
+bool decode_ffff_instr(FILE *istream, uint8_t second_byte)
+{
+    auto [mod, id, rm_reg] = extract_mod_reg_rm(second_byte);
+
+    const char *op = ffff_pack_code_to_op_name(id);
+    TRY_ELSE_RETURN(op, false);
+
+    char buf[64];
+    TRY_ELSE_RETURN(
+        decode_rm_to_buf(buf, sizeof(buf),
+                         istream,
+                         mod, rm_reg,
+                         id == 0x2 || id == 0x4 /* in-seg call/jmp */, true),
+        false);
+
+    printf("%s %s\n", op, buf);
+    return true;
+}
+
+bool decode_one_byte_reg_instr(uint8_t byte)
+{
+    uint8_t op_id  = (byte & 0b00011000) >> 3;
+    uint8_t reg_id = byte & 0b00000111;
+    const char *reg = reg_code_to_name(reg_id, true);
+    const char *op;
+
+    switch (op_id) {
+        case 0x0:
+            op = "inc";
+            break;
+        case 0x1:
+            op = "dec";
+            break;
+        case 0x2:
+            op = "push";
+            break;
+        case 0x3:
+            op = "pop";
+            break;
+        default: return false;
+    }
+
+    printf("%s %s\n", op, reg);
+    return true;
+}
+
+bool decode_seg_reg_push_pop(uint8_t byte)
+{
+    bool is_pop     = byte & 0x1;
+    uint8_t seg_id  = (byte & 0b00011000) >> 3;
+    const char *seg = segment_code_to_name(seg_id);
+
+    printf("%s %s\n", is_pop ? "pop" : "push", seg);
+    return true;
+}
+
+bool decode_lea(FILE *istream, uint8_t first_byte, uint8_t second_byte)
+{
+    char buf[64];
+    // @TODO: check
+    // @NOTE: The instr already has d unset and w set, so this is fine
+    TRY_ELSE_RETURN(
+        decode_reg_rm_ops_to_buf(buf, sizeof(buf), istream, first_byte, second_byte, false),
+        false);
+    printf("lea %s\n", buf);
+    return true;
+}
+
+bool decode_pop_mem(FILE *istream, uint8_t first_byte, uint8_t second_byte)
+{
+    auto [mod, id, rm_reg] = extract_mod_reg_rm(second_byte);
+    TRY_ELSE_RETURN(id == 0, false);
+
+    char buf[64];
+    TRY_ELSE_RETURN(
+        decode_rm_to_buf(buf, sizeof(buf), istream, mod, rm_reg, false, true),
+        false);
+    printf("pop word %s\n", buf);
+    return true;
+}
+
+bool decode_rmreg_test_xchg(FILE *istream, uint8_t first_byte, uint8_t second_byte)
+{
+    char buf[64];
+    TRY_ELSE_RETURN(
+        decode_reg_rm_ops_to_buf(buf, sizeof(buf), istream, 
+                                 first_byte, second_byte, false),
+        false);
+    printf("%s %s\n", (first_byte & 0b10) ? "xchg" : "test", buf); 
+    return true;
+}
+
+bool decode_reg_acc_xchg(uint8_t byte)
+{
+    printf("xchg ax, %s\n", reg_code_to_name(byte & 0b111, true));
+    return true;
+}
+
 void check_and_init_endianness()
 {
     union {
@@ -504,43 +624,71 @@ int main(int argc, char **argv)
     printf("bits 16\n");
     
     uint8_t first_byte = 0;
-    while (fetch_mem(f, &first_byte)) {
-        uint8_t second_byte_opt;
+    bool carry_over = false;
+    while (carry_over || fetch_mem(f, &first_byte)) {
+        carry_over = false;
+
+        uint8_t second_byte;
         bool decode_res = false;
         
-        // @TODO: account for 1-byte instructions (hand crafted unget?)
-        MAIN_TRY_ELSE_ERROR(fetch_mem(f, &second_byte_opt), "Failed to fetch second byte, terminating...\n");
+        // @TODO: account for 1-byte instruction at the tail of the stream
+        MAIN_TRY_ELSE_ERROR(fetch_mem(f, &second_byte), "Failed to fetch second byte, terminating...\n");
 
         // MOV
-        if (check_byte(first_byte, mov_rm_to_from_reg_or_segment_id)) {
+        if (check_byte(first_byte, mov_rm_reg_lea_pop_pack_id)) {
             if ((first_byte & 0b00000100) == 0) // rm to/from reg
-                decode_res = decode_rm_to_from_reg_mov(f, first_byte, second_byte_opt, false);
-            else if ((first_byte & 0b00000101) == 0b100) // 0bXXXXX110 or 0bXXXXX100, rm to/from seg reg
-                decode_res = decode_rm_to_from_reg_mov(f, first_byte, second_byte_opt, true);
+                decode_res = decode_rm_to_from_reg_mov(f, first_byte, second_byte, false);
+            else if ((first_byte & 0x1) == 0x0) // 0bXXXXX110 or 0bXXXXX100, rm to/from seg reg
+                decode_res = decode_rm_to_from_reg_mov(f, first_byte, second_byte, true);
+            else if ((first_byte & 0b11) == 0b01)
+                decode_res = decode_lea(f, first_byte, second_byte);
+            else
+                decode_res = decode_pop_mem(f, first_byte, second_byte);
         } else if (check_byte(first_byte, mov_imm_to_rm_id))
-            decode_res = decode_imm_to_rm_mov(f, first_byte, second_byte_opt);
+            decode_res = decode_imm_to_rm_mov(f, first_byte, second_byte);
         else if (check_byte(first_byte, mov_imm_to_reg_id))
-            decode_res = decode_imm_to_reg_mov(f, first_byte, second_byte_opt);
+            decode_res = decode_imm_to_reg_mov(f, first_byte, second_byte);
         else if (check_byte(first_byte, mov_mem_to_from_acc_id))
-            decode_res = decode_acc_to_from_mem_mov(f, first_byte, second_byte_opt);
+            decode_res = decode_acc_to_from_mem_mov(f, first_byte, second_byte);
         // Arifm/logic group (ADD/OR/ADC/SBB/AND/SUB/XOR/CMP)
         else if (check_byte(first_byte, al_rm_with_reg_id))
-            decode_res = decode_rm_with_reg_arifm_logic(f, first_byte, second_byte_opt);
+            decode_res = decode_rm_with_reg_arifm_logic(f, first_byte, second_byte);
         else if (check_byte(first_byte, al_imm_with_rm_id))
-            decode_res = decode_imm_with_rm_arifm_logic(f, first_byte, second_byte_opt);
+            decode_res = decode_imm_with_rm_arifm_logic(f, first_byte, second_byte);
         else if (check_byte(first_byte, al_imm_with_acc_id))
-            decode_res = decode_imm_with_acc_arifm_logic(f, first_byte, second_byte_opt);
+            decode_res = decode_imm_with_acc_arifm_logic(f, first_byte, second_byte);
         // Cond jumps/loop jumps
         else if (check_byte(first_byte, cond_j_id))
-            decode_res = decode_cond_jump(first_byte, second_byte_opt);
+            decode_res = decode_cond_jump(first_byte, second_byte);
         else if (check_byte(first_byte, loop_j_id))
-            decode_res = decode_loop_jump(first_byte, second_byte_opt);
+            decode_res = decode_loop_jump(first_byte, second_byte);
+        // 0xFFFF instr pack (INC16/DEC16/CALLJMP 16 indirect inter/intra /PUSH 16)
+        else if (check_byte(first_byte, ffff_pack_id)) 
+            decode_res = decode_ffff_instr(f, second_byte);
+        // Register INC/DEC/PUSH/POP
+        else if (check_byte(first_byte, reg_one_byte_pack_id)) {
+            decode_res = decode_one_byte_reg_instr(first_byte);
+            carry_over = true;
+        } else if (check_byte(first_byte, seg_reg_push_pop_id)) {
+            decode_res = decode_seg_reg_push_pop(first_byte);
+            carry_over = true;
+        }
+        // Reg/rm xchg/test
+        else if (check_byte(first_byte, rmreg_test_xchg_id))
+            decode_res = decode_rmreg_test_xchg(f, first_byte, second_byte);
+        else if (check_byte(first_byte, reg_acc_xchg_id)) {
+            decode_res = decode_reg_acc_xchg(first_byte);
+            carry_over = true;
+        }
         // Not yet implemented
         else
             MAIN_ERROR("Not implemented, terminating...\n");
 
         if (!decode_res)
             MAIN_ERROR("Instr [%hhx] decoding failed, terminating...\n", first_byte);
+
+        if (carry_over)
+            first_byte = second_byte;
     }
 
 loop_breakout:
