@@ -17,40 +17,37 @@ static bool g_machine_is_big_endian;
  * Impl all the other instructions
  */
 
-// @TODO: replace goto failings with try-return where appropriate
+struct xw_t {
+    bool x;
+    bool w;
+};
 
-const instr_t *decode_instr_type(uint8_t first_byte, FILE *istream, uint8_t *out_second_byte_opt)
+struct mod_reg_rm_t {
+    uint8_t mod;
+    uint8_t reg;
+    uint8_t rm;
+};
+
+bool extract_w(uint8_t byte)
 {
-    // @SPEED: maybe it would be better to constuct some runtime table out
-    //         of the hand written one, so that i can just index into it with
-    //         byte vals (it would be 2^(8 + 3) = 2048 entries, could also be
-    //         pointers).
+    return byte & 0x00000001;
+}
 
-    bool fetched_second_byte = false;
-    for (size_t i = 0; i < ARR_SIZE(instruction_info_table); ++i) {
-        const instr_t *info = &instruction_info_table[i];
-        bool match = false;
+xw_t extract_xw(uint8_t byte)
+{
+    return {
+        (bool)(byte & 0b00000010),
+        (bool)(byte & 0b00000001)
+    };
+}
 
-        if ((first_byte & info->desc.first_byte_mask) ==
-            info->desc.first_byte_val)
-        {
-            if (info->desc.requires_second_byte) {
-                if (!fetched_second_byte) {
-                    TRY_ELSE_RETURN(fetch_mem(istream, out_second_byte_opt), nullptr);
-                    fetched_second_byte = true;
-                }
-
-                match = (*out_second_byte_opt & info->desc.second_byte_mask) ==
-                        info->desc.second_byte_val;
-            } else
-                match = true;
-        }
-
-        if (match)
-            return info;
-    }
-
-    return nullptr;
+mod_reg_rm_t extract_mod_reg_rm(uint8_t byte)
+{
+    return {
+        (uint8_t)(byte >> 6),
+        (uint8_t)((byte & 0b00111000) >> 3),
+        (uint8_t)(byte & 0b00000111)
+    };
 }
 
 const char *reg_code_to_name(uint8_t code, bool is_wide)
@@ -101,14 +98,30 @@ const char *lea_code_to_expr(uint8_t code)
     }
 }
 
-bool decode_mem_addr_to_buf(char *buf, size_t bufsize,
-                            FILE *istream,
-                            uint8_t mod, uint8_t rm_reg)
+const char *segment_code_to_name(uint8_t code)
+{
+    switch (code) {
+    case 0x0:
+        return "es";
+    case 0x1:
+        return "cs";
+    case 0x2:
+        return "ss";
+    case 0x3:
+        return "ds";
+    default:
+        return nullptr;
+    }
+}
+
+bool decode_ea_to_buf(char *buf, size_t bufsize,
+                      FILE *istream,
+                      uint8_t mod, uint8_t rm_reg)
 {
     // @NOTE: spec case: direct addr
     if (mod == 0b00 && rm_reg == 0b110) {
         uint16_t adr;
-        TRY_ELSE_RETURN(fetch_mem(istream, &adr), false);
+        TRY_ELSE_RETURN(fetch_integer_with_endian_swap(istream, &adr), false);
         snprintf(buf, bufsize, "%hu", adr);
         return true;
     }
@@ -134,7 +147,7 @@ bool decode_mem_addr_to_buf(char *buf, size_t bufsize,
         // 16bit disp (can be negative)
         case 0b10: {
             int16_t disp;
-            TRY_ELSE_RETURN(fetch_mem(istream, &disp), false);
+            TRY_ELSE_RETURN(fetch_integer_with_endian_swap(istream, &disp), false);
             if (disp > 0)
                 snprintf(buf, bufsize, "%s + %hd", lea_code_to_expr(rm_reg), disp);
             else if (disp < 0)
@@ -147,146 +160,129 @@ bool decode_mem_addr_to_buf(char *buf, size_t bufsize,
     return true;
 }
 
-bool decode_rm_to_from_reg_mov(FILE *istream, 
-                               uint8_t first_byte, uint8_t second_byte)
+bool decode_reg_rm_ops_to_buf(char *buf, size_t bufsize,
+                              FILE *istream,
+                              uint8_t first_byte, uint8_t second_byte,
+                              bool is_segment)
 {
-    bool is_dst  = first_byte & 0b00000010;
-    bool is_wide = first_byte & 0b00000001;
+    auto [is_dst, is_wide]  = extract_xw(first_byte);
+    auto [mod, reg, rm_reg] = extract_mod_reg_rm(second_byte);
 
-    uint8_t mod    = (second_byte & 0b11000000) >> 6;
-    uint8_t reg    = (second_byte & 0b00111000) >> 3;
-    uint8_t rm_reg = second_byte & 0b00000111;
+    TRY_ELSE_RETURN(!is_segment || is_wide, false); // seg regs are 16-bit
+    const char *reg_nm = is_segment ? segment_code_to_name(reg) : reg_code_to_name(reg, is_wide);
+    TRY_ELSE_RETURN(reg_nm, false);
 
     if (mod == 0b11) { // reg to reg
-        uint8_t src_reg, dst_reg;
-        if (is_dst) {
-            src_reg = rm_reg;
-            dst_reg = reg;
-        } else {
-            src_reg = reg;
-            dst_reg = rm_reg;
-        }
+        const char *rm_reg_nm = reg_code_to_name(rm_reg, is_wide);
+        TRY_ELSE_RETURN(rm_reg_nm, false);
 
-        printf("mov %s, %s\n", 
-                reg_code_to_name(dst_reg, is_wide), 
-                reg_code_to_name(src_reg, is_wide));
+        if (is_dst)
+            snprintf(buf, bufsize, "%s, %s", reg_nm, rm_reg_nm);
+        else
+            snprintf(buf, bufsize, "%s, %s", rm_reg_nm, reg_nm);
     } else { // r/m to/from reg
-        char buf[64]; // for expression
+        char buf_ea[64]; // for expression
         TRY_ELSE_RETURN(
-            decode_mem_addr_to_buf(buf, sizeof(buf), istream, mod, rm_reg),
+            decode_ea_to_buf(buf_ea, sizeof(buf_ea), istream, mod, rm_reg),
             false);
 
         if (is_dst)
-            printf("mov %s, [%s]\n", reg_code_to_name(reg, is_wide), buf);
+            snprintf(buf, bufsize, "%s, [%s]", reg_nm, buf_ea);
         else
-            printf("mov [%s], %s\n", buf, reg_code_to_name(reg, is_wide));
+            snprintf(buf, bufsize, "[%s], %s", buf_ea, reg_nm);
     }
 
+    return true;
+}
+
+bool decode_lo_hi_to_buf(char *buf, size_t bufsize, 
+                         FILE *istream, bool is_wide, bool add_word,
+                         uint8_t *lo_opt)
+{
+    if (is_wide) {
+        uint16_t data;
+        if (!lo_opt)
+            TRY_ELSE_RETURN(fetch_integer_with_endian_swap(istream, &data), false);
+        else {
+            uint8_t hi;
+            TRY_ELSE_RETURN(fetch_mem(istream, &hi), false);
+            data = (hi << 8) | *lo_opt;
+        }
+        snprintf(buf, bufsize, "%s%hd", add_word ? "word " : "", data);
+    } else {
+        uint8_t data;
+        if (!lo_opt)
+            TRY_ELSE_RETURN(fetch_mem(istream, &data), false);
+        else
+            data = *lo_opt;
+        snprintf(buf, bufsize, "%s%hhd", add_word ? "byte " : "", data);
+    }
+
+    return true;
+}
+
+bool decode_rm_to_from_reg_mov(FILE *istream, 
+                               uint8_t first_byte, uint8_t second_byte,
+                               bool is_segment)
+{
+    char buf[64];
+    TRY_ELSE_RETURN(
+        decode_reg_rm_ops_to_buf(buf, sizeof(buf), istream, first_byte, second_byte, is_segment),
+        false);
+
+    printf("mov %s\n", buf);
     return true;
 }
 
 bool decode_imm_to_rm_mov(FILE *istream, 
                           uint8_t first_byte, uint8_t second_byte)
 {
-    bool is_wide = first_byte & 0b00000001;
+    bool is_wide           = extract_w(first_byte);
+    auto [mod, id, rm_reg] = extract_mod_reg_rm(second_byte);
+    TRY_ELSE_RETURN(id == 0, false);
 
-    uint8_t mod    = (second_byte & 0b11000000) >> 6;
-    uint8_t rm_reg = second_byte & 0b00000111;
+    char buf_ea[64], buf_data[32];
+    TRY_ELSE_RETURN(
+        decode_ea_to_buf(buf_ea, sizeof(buf_ea), istream, mod, rm_reg), 
+        false);
+    TRY_ELSE_RETURN(
+        decode_lo_hi_to_buf(buf_data, sizeof(buf_data), istream, is_wide, true, nullptr), 
+        false);
 
-    assert((second_byte & 0b00111000) >> 3 == 0b000); // @TODO: ret on fail, user friendly
-
-    char buf[64]; // for expression
-    TRY_ELSE_RETURN(decode_mem_addr_to_buf(buf, sizeof(buf), istream, mod, rm_reg), false);
-
-    // @TODO: factor out generic lo-hi fetch
-    uint8_t data_low = 0;
-    TRY_ELSE_RETURN(fetch_integer_with_endian_swap(istream, &data_low), false);
-
-    if (is_wide) {
-        uint8_t data_high = 0;
-        TRY_ELSE_RETURN(fetch_integer_with_endian_swap(istream, &data_high), false);
-        printf("mov [%s], word %hd\n", buf, 
-                ((uint16_t)data_high << 8) | data_low);
-    } else
-        printf("mov [%s], byte %hhd\n", buf, data_low);
-
+    printf("mov [%s], %s\n", buf_ea, buf_data);
     return true;
 }
 
 bool decode_imm_to_reg_mov(FILE *istream, 
                            uint8_t first_byte, uint8_t second_byte)
 {
+    // @TODO: pull out on reoccurance
     bool is_wide = first_byte & 0b00001000;
     uint8_t reg  = first_byte & 0b00000111;
 
-    uint8_t data_low = second_byte;
+    char buf[32];
+    TRY_ELSE_RETURN(
+        decode_lo_hi_to_buf(buf, sizeof(buf), istream, is_wide, false, &second_byte), 
+        false);
             
-    if (is_wide) {
-        uint8_t data_high = 0;
-        TRY_ELSE_RETURN(fetch_integer_with_endian_swap(istream, &data_high), false);
-        printf("mov %s, %hd\n", 
-                reg_code_to_name(reg, is_wide),
-                ((uint16_t)data_high << 8) | data_low);
-    } else {
-        printf("mov %s, %hhd\n", 
-                reg_code_to_name(reg, is_wide),
-                data_low);
-    }
-
+    printf("mov %s, %s\n", reg_code_to_name(reg, is_wide), buf);
     return true;
 }
 
 bool decode_acc_to_from_mem_mov(FILE *istream, 
                                 uint8_t first_byte, uint8_t second_byte)
 {
-    bool is_to_mem = first_byte & 0b00000010;
-    bool is_wide   = first_byte & 0b00000001;
+    auto [is_to_mem, is_wide] = extract_xw(first_byte);
 
-    uint16_t addr = 0;
-    uint8_t addr_low = second_byte;
-    if (is_wide) {
-        uint8_t addr_high;
-        TRY_ELSE_RETURN(fetch_integer_with_endian_swap(istream, &addr_high), false);
-        addr = ((uint16_t)addr_high << 8) | addr_low;
-    } else
-        addr = addr_low;
+    char buf[32];
+    TRY_ELSE_RETURN(
+        decode_lo_hi_to_buf(buf, sizeof(buf), istream, is_wide, false, &second_byte), 
+        false);
 
     if (is_to_mem)
-        printf("mov [%hu], %s\n", addr, is_wide ? "ax" : "al");
+        printf("mov [%s], %s\n", buf, is_wide ? "ax" : "al");
     else
-        printf("mov %s, [%hu]\n", is_wide ? "ax" : "al", addr);
-
-    return true;
-}
-
-bool decode_mov(const instr_t *instr_info, FILE *istream, 
-                uint8_t first_byte, uint8_t *second_byte_opt)
-{
-    assert(instr_info);
-    assert(!instr_info->desc.requires_second_byte && !second_byte_opt);
-
-    uint8_t second_byte;
-    TRY_ELSE_RETURN(fetch_mem(istream, &second_byte), false);
-
-    // @TODO: the weird goto/return dance here is weird. Make proper.
-    switch (instr_info->var) {
-        case e_iv_rm_to_from_reg:
-            return decode_rm_to_from_reg_mov(istream, first_byte, second_byte);
-        case e_iv_imm_to_rm:
-            return decode_imm_to_rm_mov(istream, first_byte, second_byte);
-        case e_iv_imm_to_reg:
-            return decode_imm_to_reg_mov(istream, first_byte, second_byte);
-        case e_iv_mem_to_acc:
-        case e_iv_acc_to_mem:
-            return decode_acc_to_from_mem_mov(istream, first_byte, second_byte);
-
-        case e_iv_rm_to_segment:
-        case e_iv_segment_to_rm:
-            NOT_IMPL();
-    
-        default:
-            return false;
-    }
+        printf("mov %s, [%s]\n", is_wide ? "ax" : "al", buf);
 
     return true;
 }
@@ -329,24 +325,29 @@ int main(int argc, char **argv)
     printf("bits 16\n");
     
     uint8_t first_byte = 0;
-    while (fetch_integer_with_endian_swap(f, &first_byte)) {
+    while (fetch_mem(f, &first_byte)) {
         uint8_t second_byte_opt;
-        const instr_t *instr_info = decode_instr_type(first_byte, f, &second_byte_opt);
-        if (!instr_info)
-            MAIN_ERROR("Invalid instruction code in stream, terminating...\n");
+        bool decode_res = false;
+        
+        // @TODO: account for 1-byte instructions (hand crafted unget?)
+        MAIN_TRY_ELSE_ERROR(fetch_mem(f, &second_byte_opt), "Failed to fetch second byte, terminating...\n");
 
-        bool decode_res;
-        switch (instr_info->cls) {
-        case e_ic_mov:
-            decode_res = decode_mov(instr_info, f, first_byte, nullptr);
-            break;
-
-        default:
+        if (check_byte(first_byte, mov_rm_to_from_reg_or_segment_id)) {
+            if ((first_byte & 0b00000100) == 0) // rm to/from reg
+                decode_res = decode_rm_to_from_reg_mov(f, first_byte, second_byte_opt, false);
+            else if ((first_byte & 0b00000101) == 0b100) // 0bXXXXX110 or 0bXXXXX100, rm to/from seg reg
+                decode_res = decode_rm_to_from_reg_mov(f, first_byte, second_byte_opt, true);
+        } else if (check_byte(first_byte, mov_imm_to_rm_id))
+            decode_res = decode_imm_to_rm_mov(f, first_byte, second_byte_opt);
+        else if (check_byte(first_byte, mov_imm_to_reg_id))
+            decode_res = decode_imm_to_reg_mov(f, first_byte, second_byte_opt);
+        else if (check_byte(first_byte, mov_mem_to_from_acc))
+            decode_res = decode_acc_to_from_mem_mov(f, first_byte, second_byte_opt);
+        else
             MAIN_ERROR("Not implemented, terminating...\n");
-        }
 
         if (!decode_res)
-            MAIN_ERROR("Instr [%s] decoding failed, terminating...\n", instr_info->desc.text);
+            MAIN_ERROR("Instr [%hhx] decoding failed, terminating...\n", first_byte);
     }
 
 loop_breakout:

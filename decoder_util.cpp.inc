@@ -4,7 +4,7 @@ inline uint16_t u16_swap_bytes(uint16_t n)
 }
 
 template <class T>
-bool fetch_mem(FILE *f, T *out)
+inline bool fetch_mem(FILE *f, T *out)
 {
     return fread(out, sizeof(*out), 1, f) == 1;
 }
@@ -16,7 +16,7 @@ bool fetch_integer_with_endian_swap(FILE *f, T *out)
 
     if (fread(out, sizeof(*out), 1, f) != 1)
         return false;
-    if (sizeof(*out) > 1 && !g_machine_is_big_endian)
+    if (sizeof(*out) > 1 && g_machine_is_big_endian)
         *out = u16_swap_bytes(*out);
     return true;
 }
