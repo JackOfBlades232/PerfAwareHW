@@ -13,10 +13,18 @@ mov [di + 901], word 347
 mov bp, [5]
 mov bx, [3458]
 
-; Memory-to-accumulator test
+; Memory-to-accumulator
 mov ax, [2555]
 mov ax, [16]
 
-; Accumulator-to-memory test
+; Accumulator-to-memory
 mov [2554], ax
 mov [15], ax
+
+; Segment-to-rm/reg
+mov [di - 322], cs
+mov ax, es
+
+; Rm/reg-to-segment
+mov ds, [bp + di + 3]
+mov ss, bx

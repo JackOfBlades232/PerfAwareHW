@@ -167,8 +167,11 @@ bool decode_reg_rm_ops_to_buf(char *buf, size_t bufsize,
 {
     auto [is_dst, is_wide]  = extract_xw(first_byte);
     auto [mod, reg, rm_reg] = extract_mod_reg_rm(second_byte);
+    if (is_segment) {
+        TRY_ELSE_RETURN(!is_wide, false); // seg regs are 16-bit, but instr has 0 in d bit
+        is_wide = true;
+    }
 
-    TRY_ELSE_RETURN(!is_segment || is_wide, false); // seg regs are 16-bit
     const char *reg_nm = is_segment ? segment_code_to_name(reg) : reg_code_to_name(reg, is_wide);
     TRY_ELSE_RETURN(reg_nm, false);
 
