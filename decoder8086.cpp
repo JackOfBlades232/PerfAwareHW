@@ -1,5 +1,6 @@
 ﻿#define _CRT_SECURE_NO_WARNINGS
 #include <cstdio>
+#include <cstring>
 #include <cstdint>
 #include <cstddef>
 #include <cassert>
@@ -39,6 +40,11 @@ xw_t extract_xw(uint8_t byte)
         (bool)(byte & 0b00000010),
         (bool)(byte & 0b00000001)
     };
+}
+
+uint8_t extract_secondary_id(uint8_t byte)
+{
+    return (uint8_t)((byte & 0b00111000) >> 3);
 }
 
 mod_reg_rm_t extract_mod_reg_rm(uint8_t byte)
@@ -114,22 +120,111 @@ const char *segment_code_to_name(uint8_t code)
     }
 }
 
-bool decode_ea_to_buf(char *buf, size_t bufsize,
-                      FILE *istream,
-                      uint8_t mod, uint8_t rm_reg)
+const char *arifm_logic_code_to_op_name(uint8_t code)
 {
+    switch (code) {
+    case 0x0:
+        return "add";
+    case 0x1:
+        return "or";
+    case 0x2:
+        return "adc";
+    case 0x3:
+        return "sbb";
+    case 0x4:
+        return "and";
+    case 0x5:
+        return "sub";
+    case 0x6:
+        return "xor";
+    case 0x7:
+        return "cmp";
+    default:
+        return nullptr;
+    }
+}
+
+const char *cond_jump_code_to_op_name(uint8_t code)
+{
+    switch (code) {
+    case 0x0:
+        return "jo";
+    case 0x1:
+        return "jno";
+    case 0x2:
+        return "jb";
+    case 0x3:
+        return "jae";
+    case 0x4:
+        return "je";
+    case 0x5:
+        return "jne";
+    case 0x6:
+        return "jbe";
+    case 0x7:
+        return "ja";
+    case 0x8:
+        return "js";
+    case 0x9:
+        return "jns";
+    case 0xA:
+        return "jp";
+    case 0xB:
+        return "jnp";
+    case 0xC:
+        return "jl";
+    case 0xD:
+        return "jge";
+    case 0xE:
+        return "jle";
+    case 0xF:
+        return "jg";
+    default:
+        return nullptr;
+    }
+}
+
+const char *loop_jump_code_to_op_name(uint8_t code)
+{
+    switch (code) {
+    case 0x0:
+        return "loopnz";
+    case 0x1:
+        return "loopz";
+    case 0x2:
+        return "loop";
+    case 0x3:
+        return "jcxz";
+    default:
+        return nullptr;
+    }
+}
+
+bool decode_rm_to_buf(char *buf, size_t bufsize,
+                      FILE *istream,
+                      uint8_t mod, uint8_t rm_reg,
+                      bool allow_reg, bool is_wide)
+{
+    // @NOTE: spec case: reg
+    if (mod == 0b11) {
+        TRY_ELSE_RETURN(allow_reg, false);
+        strncpy(buf, reg_code_to_name(rm_reg, is_wide), bufsize);
+    }
+
     // @NOTE: spec case: direct addr
     if (mod == 0b00 && rm_reg == 0b110) {
         uint16_t adr;
         TRY_ELSE_RETURN(fetch_integer_with_endian_swap(istream, &adr), false);
-        snprintf(buf, bufsize, "%hu", adr);
+        snprintf(buf, bufsize, "[%hu]", adr);
         return true;
     }
+
+    // @TODO: check out the [reg + 0] leas in listings. They seem strange.
 
     switch (mod) {
         // no displacement
         case 0b00:
-            snprintf(buf, bufsize, "%s", lea_code_to_expr(rm_reg));
+            snprintf(buf, bufsize, "[%s]", lea_code_to_expr(rm_reg));
             break;
 
         // 8bit disp (can be negative, consider as part of 16-bit space)
@@ -137,11 +232,11 @@ bool decode_ea_to_buf(char *buf, size_t bufsize,
             int8_t disp;
             TRY_ELSE_RETURN(fetch_mem(istream, &disp), false);
             if (disp > 0)
-                snprintf(buf, bufsize, "%s + %hhd", lea_code_to_expr(rm_reg), disp);
+                snprintf(buf, bufsize, "[%s + %hhd]", lea_code_to_expr(rm_reg), disp);
             else if (disp < 0)
-                snprintf(buf, bufsize, "%s - %hhd", lea_code_to_expr(rm_reg), -disp);
+                snprintf(buf, bufsize, "[%s - %hhd]", lea_code_to_expr(rm_reg), -disp);
             else
-                snprintf(buf, bufsize, "%s", lea_code_to_expr(rm_reg));
+                snprintf(buf, bufsize, "[%s]", lea_code_to_expr(rm_reg));
         } break;
 
         // 16bit disp (can be negative)
@@ -149,11 +244,11 @@ bool decode_ea_to_buf(char *buf, size_t bufsize,
             int16_t disp;
             TRY_ELSE_RETURN(fetch_integer_with_endian_swap(istream, &disp), false);
             if (disp > 0)
-                snprintf(buf, bufsize, "%s + %hd", lea_code_to_expr(rm_reg), disp);
+                snprintf(buf, bufsize, "[%s + %hd]", lea_code_to_expr(rm_reg), disp);
             else if (disp < 0)
-                snprintf(buf, bufsize, "%s - %hd", lea_code_to_expr(rm_reg), -disp);
+                snprintf(buf, bufsize, "[%s - %hd]", lea_code_to_expr(rm_reg), -disp);
             else
-                snprintf(buf, bufsize, "%s", lea_code_to_expr(rm_reg));
+                snprintf(buf, bufsize, "[%s]", lea_code_to_expr(rm_reg));
         } break;
     }
 
@@ -175,34 +270,24 @@ bool decode_reg_rm_ops_to_buf(char *buf, size_t bufsize,
     const char *reg_nm = is_segment ? segment_code_to_name(reg) : reg_code_to_name(reg, is_wide);
     TRY_ELSE_RETURN(reg_nm, false);
 
-    if (mod == 0b11) { // reg to reg
-        const char *rm_reg_nm = reg_code_to_name(rm_reg, is_wide);
-        TRY_ELSE_RETURN(rm_reg_nm, false);
+    char buf_rm[64]; // for expression
+    TRY_ELSE_RETURN(
+        decode_rm_to_buf(buf_rm, sizeof(buf_rm), istream, mod, rm_reg, true, is_wide),
+        false);
 
-        if (is_dst)
-            snprintf(buf, bufsize, "%s, %s", reg_nm, rm_reg_nm);
-        else
-            snprintf(buf, bufsize, "%s, %s", rm_reg_nm, reg_nm);
-    } else { // r/m to/from reg
-        char buf_ea[64]; // for expression
-        TRY_ELSE_RETURN(
-            decode_ea_to_buf(buf_ea, sizeof(buf_ea), istream, mod, rm_reg),
-            false);
-
-        if (is_dst)
-            snprintf(buf, bufsize, "%s, [%s]", reg_nm, buf_ea);
-        else
-            snprintf(buf, bufsize, "[%s], %s", buf_ea, reg_nm);
-    }
+    if (is_dst)
+        snprintf(buf, bufsize, "%s, %s", reg_nm, buf_rm);
+    else
+        snprintf(buf, bufsize, "%s, %s", buf_rm, reg_nm);
 
     return true;
 }
 
 bool decode_lo_hi_to_buf(char *buf, size_t bufsize, 
-                         FILE *istream, bool is_wide, bool add_word,
-                         uint8_t *lo_opt)
+                         FILE *istream, bool is_wide, bool is_sign_extending,
+                         bool add_word, uint8_t *lo_opt)
 {
-    if (is_wide) {
+    if (is_wide && !is_sign_extending) {
         uint16_t data;
         if (!lo_opt)
             TRY_ELSE_RETURN(fetch_integer_with_endian_swap(istream, &data), false);
@@ -218,7 +303,9 @@ bool decode_lo_hi_to_buf(char *buf, size_t bufsize,
             TRY_ELSE_RETURN(fetch_mem(istream, &data), false);
         else
             data = *lo_opt;
-        snprintf(buf, bufsize, "%s%hhd", add_word ? "byte " : "", data);
+
+        const char *word = is_wide /* => is_sign_extending */ ? "word " : "byte ";
+        snprintf(buf, bufsize, "%s%hhd", add_word ? word : "", data);
     }
 
     return true;
@@ -246,13 +333,13 @@ bool decode_imm_to_rm_mov(FILE *istream,
 
     char buf_ea[64], buf_data[32];
     TRY_ELSE_RETURN(
-        decode_ea_to_buf(buf_ea, sizeof(buf_ea), istream, mod, rm_reg), 
+        decode_rm_to_buf(buf_ea, sizeof(buf_ea), istream, mod, rm_reg, false, is_wide), 
         false);
     TRY_ELSE_RETURN(
-        decode_lo_hi_to_buf(buf_data, sizeof(buf_data), istream, is_wide, true, nullptr), 
+        decode_lo_hi_to_buf(buf_data, sizeof(buf_data), istream, is_wide, false, true, nullptr), 
         false);
 
-    printf("mov [%s], %s\n", buf_ea, buf_data);
+    printf("mov %s, %s\n", buf_ea, buf_data);
     return true;
 }
 
@@ -265,7 +352,7 @@ bool decode_imm_to_reg_mov(FILE *istream,
 
     char buf[32];
     TRY_ELSE_RETURN(
-        decode_lo_hi_to_buf(buf, sizeof(buf), istream, is_wide, false, &second_byte), 
+        decode_lo_hi_to_buf(buf, sizeof(buf), istream, is_wide, false, false, &second_byte), 
         false);
             
     printf("mov %s, %s\n", reg_code_to_name(reg, is_wide), buf);
@@ -279,7 +366,7 @@ bool decode_acc_to_from_mem_mov(FILE *istream,
 
     char buf[32];
     TRY_ELSE_RETURN(
-        decode_lo_hi_to_buf(buf, sizeof(buf), istream, is_wide, false, &second_byte), 
+        decode_lo_hi_to_buf(buf, sizeof(buf), istream, is_wide, false, false, &second_byte), 
         false);
 
     if (is_to_mem)
@@ -287,6 +374,95 @@ bool decode_acc_to_from_mem_mov(FILE *istream,
     else
         printf("mov %s, [%s]\n", is_wide ? "ax" : "al", buf);
 
+    return true;
+}
+
+bool decode_rm_with_reg_arifm_logic(FILE *istream, 
+                                    uint8_t first_byte, uint8_t second_byte)
+{
+    char buf[64];
+    TRY_ELSE_RETURN(
+        decode_reg_rm_ops_to_buf(buf, sizeof(buf), istream, first_byte, second_byte, false),
+        false);
+
+    const char *op = arifm_logic_code_to_op_name(extract_secondary_id(first_byte));
+    TRY_ELSE_RETURN(op, false);
+
+    printf("%s %s\n", op, buf);
+    return true;
+}
+
+bool decode_imm_with_rm_arifm_logic(FILE *istream, 
+                                    uint8_t first_byte, uint8_t second_byte)
+{
+    auto [is_sign_extending, is_wide] = extract_xw(first_byte);
+    auto [mod, id, rm_reg]            = extract_mod_reg_rm(second_byte);
+
+    // @TODO: disallow sign ext for ops that don't do it and just have 0 there
+
+    char buf_rm[64];
+    TRY_ELSE_RETURN(
+        decode_rm_to_buf(buf_rm, sizeof(buf_rm), istream, mod, rm_reg, true, is_wide),
+        false);
+    char buf_imm[32];
+    TRY_ELSE_RETURN(
+        decode_lo_hi_to_buf(buf_imm, sizeof(buf_imm), 
+                            istream, is_wide, is_sign_extending, mod != 0b11, nullptr),
+        false);
+
+    const char *op = arifm_logic_code_to_op_name(id);
+    TRY_ELSE_RETURN(op, false);
+
+    printf("%s %s, %s\n", op, buf_rm, buf_imm);
+    return true;
+}
+
+bool decode_imm_with_acc_arifm_logic(FILE *istream, 
+                                     uint8_t first_byte, uint8_t second_byte)
+{
+    bool is_wide = extract_w(first_byte);
+
+    // @TODO: disallow sign ext for ops that don't do it and just have 0 there
+
+    char buf_imm[32];
+    TRY_ELSE_RETURN(
+        decode_lo_hi_to_buf(buf_imm, sizeof(buf_imm), istream, is_wide, false, false, &second_byte),
+        false);
+
+    const char *op = arifm_logic_code_to_op_name(extract_secondary_id(first_byte));
+    TRY_ELSE_RETURN(op, false);
+
+    printf("%s %s, %s\n", op, is_wide ? "ax" : "al", buf_imm);
+    return true;
+}
+
+void decode_short_jump_offset(char *buf, size_t bufsize, uint8_t data)
+{
+    data += 2; // jumps are relative to next instr
+    if (*(int8_t *)&data > 0)
+        snprintf(buf, bufsize, "+%hhd+0", data);
+    else if (data == 0)
+        snprintf(buf, bufsize, "+0");
+    else
+        snprintf(buf, bufsize, "%hhd+0", data);
+}
+
+void decode_short_jump(const char *op, uint8_t data)
+{
+    char buf[16];
+    decode_short_jump_offset(buf, sizeof(buf), data);
+    printf("%s $%s\n", op, buf);
+}
+
+bool decode_cond_jump(uint8_t first_byte, uint8_t second_byte)
+{
+    decode_short_jump(cond_jump_code_to_op_name(first_byte & 0b00001111), second_byte);
+    return true;
+}
+
+bool decode_loop_jump(uint8_t first_byte, uint8_t second_byte)
+{
+    decode_short_jump(loop_jump_code_to_op_name(first_byte & 0b00000011), second_byte);
     return true;
 }
 
@@ -335,6 +511,7 @@ int main(int argc, char **argv)
         // @TODO: account for 1-byte instructions (hand crafted unget?)
         MAIN_TRY_ELSE_ERROR(fetch_mem(f, &second_byte_opt), "Failed to fetch second byte, terminating...\n");
 
+        // MOV
         if (check_byte(first_byte, mov_rm_to_from_reg_or_segment_id)) {
             if ((first_byte & 0b00000100) == 0) // rm to/from reg
                 decode_res = decode_rm_to_from_reg_mov(f, first_byte, second_byte_opt, false);
@@ -344,8 +521,21 @@ int main(int argc, char **argv)
             decode_res = decode_imm_to_rm_mov(f, first_byte, second_byte_opt);
         else if (check_byte(first_byte, mov_imm_to_reg_id))
             decode_res = decode_imm_to_reg_mov(f, first_byte, second_byte_opt);
-        else if (check_byte(first_byte, mov_mem_to_from_acc))
+        else if (check_byte(first_byte, mov_mem_to_from_acc_id))
             decode_res = decode_acc_to_from_mem_mov(f, first_byte, second_byte_opt);
+        // Arifm/logic group (ADD/OR/ADC/SBB/AND/SUB/XOR/CMP)
+        else if (check_byte(first_byte, al_rm_with_reg_id))
+            decode_res = decode_rm_with_reg_arifm_logic(f, first_byte, second_byte_opt);
+        else if (check_byte(first_byte, al_imm_with_rm_id))
+            decode_res = decode_imm_with_rm_arifm_logic(f, first_byte, second_byte_opt);
+        else if (check_byte(first_byte, al_imm_with_acc_id))
+            decode_res = decode_imm_with_acc_arifm_logic(f, first_byte, second_byte_opt);
+        // Cond jumps/loop jumps
+        else if (check_byte(first_byte, cond_j_id))
+            decode_res = decode_cond_jump(first_byte, second_byte_opt);
+        else if (check_byte(first_byte, loop_j_id))
+            decode_res = decode_loop_jump(first_byte, second_byte_opt);
+        // Not yet implemented
         else
             MAIN_ERROR("Not implemented, terminating...\n");
 
