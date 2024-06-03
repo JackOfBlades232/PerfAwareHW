@@ -126,5 +126,22 @@ CONST byte_identifier_t f6_pack_id = {
     .mask = 0b11111110
 };
 
+// CBW/CWD
+CONST byte_identifier_t cbw_cwd_id = {
+    .val  = 0b10011000,
+    .mask = 0b11111110
+};
+
+// Logic pack (SHL+SAL/SHR/SAR/ROL/ROR/RCL/RCR)
+CONST byte_identifier_t bit_pack_id = {
+    .val  = 0b11010000,
+    .mask = 0b11111100
+};
+
+// TEST with accum
+CONST byte_identifier_t test_acc_id = {
+    .val  = 0b10101000,
+    .mask = 0b11111110
+};
 
 #undef CONST

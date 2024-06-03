@@ -251,6 +251,28 @@ const char *f6_pack_code_to_op_name(uint8_t code)
     }
 }
 
+const char *bit_instr_code_to_op_name(uint8_t code)
+{
+    switch (code) {
+    case 0x0:
+        return "rol";
+    case 0x1:
+        return "ror";
+    case 0x2:
+        return "rcl";
+    case 0x3:
+        return "rcr";
+    case 0x4:
+        return "shl";
+    case 0x5:
+        return "shr";
+    case 0x7:
+        return "sar";
+    default:
+        return nullptr;
+    }
+}
+
 bool decode_rm_to_buf(char *buf, size_t bufsize,
                       FILE *istream,
                       uint8_t mod, uint8_t rm_reg,
@@ -756,6 +778,41 @@ bool decode_f6_pack_instr(FILE *istream, uint8_t first_byte, uint8_t second_byte
     return true;
 }
 
+bool decode_cbw_cwd(uint8_t byte)
+{
+    printf("%s\n", extract_w(byte) ? "cwd" : "cbw");
+    return true;
+}
+
+bool decode_bit_instr(FILE *istream, uint8_t first_byte, uint8_t second_byte)
+{
+    auto [is_cl, is_wide]  = extract_xw(first_byte);
+    auto [mod, id, rm_reg] = extract_mod_reg_rm(second_byte);
+
+    const char *op = bit_instr_code_to_op_name(id);
+    char buf_rm[64];
+    TRY_ELSE_RETURN(
+        decode_rm_to_buf(buf_rm, sizeof(buf_rm), istream, mod, rm_reg, true, is_wide),
+        false);
+
+    printf("%s %s%s, %s\n", op, get_lit_prefix(mod, is_wide), buf_rm, is_cl ? "cl" : "1");
+    return true;
+}
+
+bool decode_test_acc(FILE *istream, uint8_t first_byte, uint8_t second_byte)
+{
+    bool is_wide = extract_w(first_byte);
+    const char *acc = is_wide ? "ax" : "al";
+
+    char buf[32];
+    TRY_ELSE_RETURN(
+        decode_lo_hi_to_buf(buf, sizeof(buf), istream, is_wide, false, false, &second_byte),
+        false);
+
+    printf("test %s, %s\n", acc, buf);
+    return true;
+}
+
 void check_and_init_endianness()
 {
     union {
@@ -879,6 +936,17 @@ int main(int argc, char **argv)
         // TEST imm rm/NOT/NEG/MUL/IMUL/DIV/IDIV pack
         else if (check_byte(first_byte, f6_pack_id))
             decode_res = decode_f6_pack_instr(f, first_byte, second_byte);
+        // CBW/CWD
+        else if (check_byte(first_byte, cbw_cwd_id)) {
+            decode_res = decode_cbw_cwd(first_byte);
+            carry_over = true;
+        }
+        // Logic pack (SHL+SAL/SHR/SAR/ROL/ROR/RCL/RCR)
+        else if (check_byte(first_byte, bit_pack_id))
+            decode_res = decode_bit_instr(f, first_byte, second_byte);
+        // TEST with accum
+        else if (check_byte(first_byte, test_acc_id))
+            decode_res = decode_test_acc(f, first_byte, second_byte);
         // Not yet implemented
         else
             MAIN_ERROR("Not implemented, terminating...\n");
