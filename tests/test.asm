@@ -1,2 +1,2 @@
 bits 16
-xchg ax, bx
+aam 5

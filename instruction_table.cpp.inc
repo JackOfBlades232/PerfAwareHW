@@ -55,8 +55,8 @@ CONST byte_identifier_t loop_j_id = {
     .mask = 0b11111100
 };
 
-// 0xFFFF instr pack (INC16/DEC16/CALLJMP 16 indirect inter/intra /PUSH 16)
-CONST byte_identifier_t ffff_pack_id = {
+// 0xFF instr pack (INC16/DEC16/CALLJMP 16 indirect inter/intra /PUSH 16)
+CONST byte_identifier_t ff_pack_id = {
     .val  = 0b11111111,
     .mask = 0b11111111
 };
@@ -83,5 +83,48 @@ CONST byte_identifier_t reg_acc_xchg_id = {
     .val  = 0b10010000,
     .mask = 0b11111000
 };
+
+// IN/OUT
+CONST byte_identifier_t in_out_id = {
+    .val  = 0b11100100,
+    .mask = 0b11110100
+};
+
+// AAM/AAD/XLAT
+CONST byte_identifier_t aam_aad_xlat_id = {
+    .val  = 0b11010100,
+    .mask = 0b11111100
+};
+
+// LES/LDS
+CONST byte_identifier_t les_lds_id = {
+    .val  = 0b11000100,
+    .mask = 0b11111110
+};
+
+// LAHF/SAHF/PUSHF/POPF
+CONST byte_identifier_t flags_instr_id = {
+    .val  = 0b10011100,
+    .mask = 0b11111100
+};
+
+// INC/DEC w/ 1byte reg/mem
+CONST byte_identifier_t inc_dec_byte_id = {
+    .val  = 0b11111110,
+    .mask = 0b11111111
+};
+
+// DAA/DAS/AAA/AAS + prefices ES:/CS:/SS:/DS:
+CONST byte_identifier_t aa_seg_prefix_pack_id = {
+    .val  = 0b00100110,
+    .mask = 0b11100110
+};
+
+// TEST imm rm/NOT/NEG/MUL/IMUL/DIV/IDIV pack
+CONST byte_identifier_t f6_pack_id = {
+    .val  = 0b11110110,
+    .mask = 0b11111110
+};
+
 
 #undef CONST

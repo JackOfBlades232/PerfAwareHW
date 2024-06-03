@@ -56,6 +56,13 @@ mod_reg_rm_t extract_mod_reg_rm(uint8_t byte)
     };
 }
 
+const char *get_lit_prefix(uint8_t mod, bool is_wide)
+{
+    if (mod == 0b11)
+        return "";
+    return is_wide ? "word " : "byte ";
+}
+
 const char *reg_code_to_name(uint8_t code, bool is_wide)
 {
     switch (code) {
@@ -200,7 +207,7 @@ const char *loop_jump_code_to_op_name(uint8_t code)
     }
 }
 
-const char *ffff_pack_code_to_op_name(uint8_t code)
+const char *ff_pack_code_to_op_name(uint8_t code)
 {
     switch (code) {
     case 0x0:
@@ -217,6 +224,28 @@ const char *ffff_pack_code_to_op_name(uint8_t code)
         return "jmp far";
     case 0x6:
         return "push word";
+    default:
+        return nullptr;
+    }
+}
+
+const char *f6_pack_code_to_op_name(uint8_t code)
+{
+    switch (code) {
+    case 0x0:
+        return "test";
+    case 0x2:
+        return "not";
+    case 0x3:
+        return "neg";
+    case 0x4:
+        return "mul";
+    case 0x5:
+        return "imul";
+    case 0x6:
+        return "div";
+    case 0x7:
+        return "idiv";
     default:
         return nullptr;
     }
@@ -488,11 +517,11 @@ bool decode_loop_jump(uint8_t first_byte, uint8_t second_byte)
     return true;
 }
 
-bool decode_ffff_instr(FILE *istream, uint8_t second_byte)
+bool decode_ff_instr(FILE *istream, uint8_t second_byte)
 {
     auto [mod, id, rm_reg] = extract_mod_reg_rm(second_byte);
 
-    const char *op = ffff_pack_code_to_op_name(id);
+    const char *op = ff_pack_code_to_op_name(id);
     TRY_ELSE_RETURN(op, false);
 
     char buf[64];
@@ -544,18 +573,6 @@ bool decode_seg_reg_push_pop(uint8_t byte)
     return true;
 }
 
-bool decode_lea(FILE *istream, uint8_t first_byte, uint8_t second_byte)
-{
-    char buf[64];
-    // @TODO: check
-    // @NOTE: The instr already has d unset and w set, so this is fine
-    TRY_ELSE_RETURN(
-        decode_reg_rm_ops_to_buf(buf, sizeof(buf), istream, first_byte, second_byte, false),
-        false);
-    printf("lea %s\n", buf);
-    return true;
-}
-
 bool decode_pop_mem(FILE *istream, uint8_t first_byte, uint8_t second_byte)
 {
     auto [mod, id, rm_reg] = extract_mod_reg_rm(second_byte);
@@ -583,6 +600,159 @@ bool decode_rmreg_test_xchg(FILE *istream, uint8_t first_byte, uint8_t second_by
 bool decode_reg_acc_xchg(uint8_t byte)
 {
     printf("xchg ax, %s\n", reg_code_to_name(byte & 0b111, true));
+    return true;
+}
+
+bool decode_in_out(uint8_t byte, uint8_t second_byte)
+{
+    bool is_var_port = byte & 0b00001000;
+    bool is_out      = byte & 0b00000010;
+    bool is_wide     = extract_w(byte); 
+
+    char buf_port[16] = "dx";
+    if (!is_var_port)
+        snprintf(buf_port, sizeof(buf_port), "%hhu", second_byte);
+
+    const char *reg = is_wide ? "ax" : "al";
+
+    if (is_out)
+        printf("out %s, %s\n", buf_port, reg);
+    else
+        printf("in %s, %s\n", reg, buf_port);
+
+    return true;
+}
+
+bool decode_aam_aad_xlat(uint8_t byte, uint8_t second_byte)
+{
+    uint8_t id = byte & 0b00000011;
+    char buf[16] = "";
+    if (id != 0x3 && second_byte != 0x0A)
+        snprintf(buf, sizeof(buf), " ,%hhu", second_byte); 
+    switch (id) {
+    case 0x0:
+        printf("aam%s\n", buf);
+        break;
+    case 0x1:
+        printf("aad%s\n", buf);
+        break;
+    case 0x3:
+        printf("xlat\n");
+        break;
+    default: return false;
+    }
+
+    return true;
+}
+
+bool decode_ea_op(FILE *istream, uint8_t first_byte, uint8_t second_byte, const char *op)
+{
+    char buf[64];
+    // @NOTE: manually set d and w for convenience
+    first_byte |= 0b00000011;
+    TRY_ELSE_RETURN(
+        decode_reg_rm_ops_to_buf(buf, sizeof(buf), istream, first_byte, second_byte, false),
+        false);
+    printf("%s %s\n", op, buf);
+    return true;
+}
+
+bool decode_lea(FILE *istream, uint8_t first_byte, uint8_t second_byte)
+{
+    return decode_ea_op(istream, first_byte, second_byte, "lea");
+}
+
+bool decode_les_lds(FILE *istream, uint8_t first_byte, uint8_t second_byte)
+{
+    return decode_ea_op(istream, first_byte, second_byte, (first_byte & 0b00000001) ? "lds" : "les");
+}
+
+bool decode_flags_instr(uint8_t first_byte)
+{
+    switch (first_byte & 0b00000011) {
+    case 0x0:
+        printf("pushf\n");
+        break;
+    case 0x1:
+        printf("popf\n");
+        break;
+    case 0x2:
+        printf("sahf\n");
+        break;
+    case 0x3:
+        printf("lahf\n");
+        break;
+    }
+
+    return true;
+}
+
+// @TODO: pull out byte/word thingy
+bool decode_inc_dec_byte(FILE *istream, uint8_t first_byte, uint8_t second_byte)
+{
+    auto [mod, id, rm_reg] = extract_mod_reg_rm(second_byte);
+    TRY_ELSE_RETURN(id == 0 || id == 1, false);
+    const char *op = id == 1 ? "dec" : "inc";
+
+    char buf[64];
+    TRY_ELSE_RETURN(
+        decode_rm_to_buf(buf, sizeof(buf), istream, mod, rm_reg, true, false),
+        false);
+
+    bool is_reg = mod == 0b11;
+    printf("%s %s%s\n", op, is_reg ? "" : "byte ", buf);
+    return true;
+}
+
+bool decode_aa_seg_prefix_instr(uint8_t first_byte)
+{
+    bool is_segment_prefix = !extract_w(first_byte);
+    uint8_t id = (first_byte & 0b00011000) >> 3;
+    const char *name;
+    switch (id) {
+    case 0x0:
+        name = is_segment_prefix ? "es" : "daa";
+        break;
+    case 0x1:
+        name = is_segment_prefix ? "cs" : "das";
+        break;
+    case 0x2:
+        name = is_segment_prefix ? "ss" : "aaa";
+        break;
+    case 0x3:
+        name = is_segment_prefix ? "ds" : "aas";
+        break;
+    }
+
+    if (is_segment_prefix) {
+        // @TODO: process seg prefix
+    } else
+        printf("%s\n", name);
+
+    return true;
+}
+
+bool decode_f6_pack_instr(FILE *istream, uint8_t first_byte, uint8_t second_byte)
+{
+    bool is_wide           = extract_w(first_byte);
+    auto [mod, id, rm_reg] = extract_mod_reg_rm(second_byte);
+
+    const char *op = f6_pack_code_to_op_name(id);
+    char buf_rm[64];
+    TRY_ELSE_RETURN(
+        decode_rm_to_buf(buf_rm, sizeof(buf_rm), istream, mod, rm_reg, true, is_wide),
+        false);
+
+    if (id == 0) { // test
+        char buf_imm[64];
+        TRY_ELSE_RETURN(
+            decode_lo_hi_to_buf(buf_imm, sizeof(buf_imm), istream, is_wide, false, true, nullptr),
+            false);
+
+        printf("test %s, %s\n", buf_rm, buf_imm);
+    } else
+        printf("%s %s%s\n", op, get_lit_prefix(mod, is_wide), buf_rm);
+
     return true;
 }
 
@@ -662,9 +832,9 @@ int main(int argc, char **argv)
             decode_res = decode_cond_jump(first_byte, second_byte);
         else if (check_byte(first_byte, loop_j_id))
             decode_res = decode_loop_jump(first_byte, second_byte);
-        // 0xFFFF instr pack (INC16/DEC16/CALLJMP 16 indirect inter/intra /PUSH 16)
-        else if (check_byte(first_byte, ffff_pack_id)) 
-            decode_res = decode_ffff_instr(f, second_byte);
+        // 0xFF instr pack (INC16/DEC16/CALLJMP 16 indirect inter/intra /PUSH 16)
+        else if (check_byte(first_byte, ff_pack_id)) 
+            decode_res = decode_ff_instr(f, second_byte);
         // Register INC/DEC/PUSH/POP
         else if (check_byte(first_byte, reg_one_byte_pack_id)) {
             decode_res = decode_one_byte_reg_instr(first_byte);
@@ -680,6 +850,35 @@ int main(int argc, char **argv)
             decode_res = decode_reg_acc_xchg(first_byte);
             carry_over = true;
         }
+        // in/out
+        else if (check_byte(first_byte, in_out_id)) {
+            decode_res = decode_in_out(first_byte, second_byte);
+            carry_over = first_byte & 0b00001000; // if variable port
+        }
+        // aam/aad/xlat
+        else if (check_byte(first_byte, aam_aad_xlat_id)) {
+            decode_res = decode_aam_aad_xlat(first_byte, second_byte);
+            carry_over = (first_byte & 0b11) == 0b11; // only xlat
+        }
+        // les/lds
+        else if (check_byte(first_byte, les_lds_id))
+            decode_res = decode_les_lds(f, first_byte, second_byte);
+        // Flags instructions (LAHF, SAHF, PUSHF, POPF)
+        else if (check_byte(first_byte, flags_instr_id)) {
+            decode_res = decode_flags_instr(first_byte);
+            carry_over = true;
+        }
+        // 8-byte INC/DEC
+        else if (check_byte(first_byte, inc_dec_byte_id))
+            decode_res = decode_inc_dec_byte(f, first_byte, second_byte);
+        // DAA/DAS/AAA/AAS + prefices ES:/CS:/SS:/DS:
+        else if (check_byte(first_byte, aa_seg_prefix_pack_id)) {
+            decode_res = decode_aa_seg_prefix_instr(first_byte);
+            carry_over = true;
+        }
+        // TEST imm rm/NOT/NEG/MUL/IMUL/DIV/IDIV pack
+        else if (check_byte(first_byte, f6_pack_id))
+            decode_res = decode_f6_pack_instr(f, first_byte, second_byte);
         // Not yet implemented
         else
             MAIN_ERROR("Not implemented, terminating...\n");
