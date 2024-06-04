@@ -144,4 +144,21 @@ CONST byte_identifier_t test_acc_id = {
     .mask = 0b11111110
 };
 
+// REP
+CONST byte_identifier_t rep_id = {
+    .val  = 0b11110010,
+    .mask = 0b11111110
+};
+
+// MOVS/CMPS
+CONST byte_identifier_t movs_cmps_id = {
+    .val  = 0b10100100,
+    .mask = 0b11111100
+};
+// STOS/LODS/SCASk
+CONST byte_identifier_t stos_lods_scas_id = {
+    .val  = 0b10101000, // also need to remove 10101000 and 10101001, they are test
+    .mask = 0b11111000
+};
+
 #undef CONST

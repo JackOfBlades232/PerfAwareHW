@@ -1,2 +1,4 @@
 bits 16
-aam 5
+rep stosb
+repz stosb
+repnz stosb

@@ -273,6 +273,24 @@ const char *bit_instr_code_to_op_name(uint8_t code)
     }
 }
 
+const char *string_instr_code_to_op_name(uint8_t code)
+{
+    switch (code) {
+    case 0x2:
+        return "movs";
+    case 0x3:
+        return "cmps";
+    case 0x5:
+        return "stos";
+    case 0x6:
+        return "lods";
+    case 0x7:
+        return "scas";
+    default:
+        return nullptr;
+    }
+}
+
 bool decode_rm_to_buf(char *buf, size_t bufsize,
                       FILE *istream,
                       uint8_t mod, uint8_t rm_reg,
@@ -813,6 +831,18 @@ bool decode_test_acc(FILE *istream, uint8_t first_byte, uint8_t second_byte)
     return true;
 }
 
+bool decode_string_instr(uint8_t byte, const char *prefix = nullptr)
+{
+    TRY_ELSE_RETURN(byte >> 4 == 0b1010, false);
+    char addition = extract_w(byte) ? 'w' : 'b';
+    uint8_t id = (byte >> 1) & 0b111;
+    const char *op = string_instr_code_to_op_name(id);
+    TRY_ELSE_RETURN(op, false);
+    
+    printf("%s%s%s%c\n", prefix ? prefix : "", prefix ? " " : "", op, addition);
+    return true;
+}
+
 void check_and_init_endianness()
 {
     union {
@@ -947,6 +977,15 @@ int main(int argc, char **argv)
         // TEST with accum
         else if (check_byte(first_byte, test_acc_id))
             decode_res = decode_test_acc(f, first_byte, second_byte);
+        // REP
+        else if (check_byte(first_byte, rep_id))
+            decode_res = decode_string_instr(second_byte, extract_w(first_byte) ? "rep" : "repnz");
+        else if (check_byte(first_byte, movs_cmps_id) ||
+                 (check_byte(first_byte, stos_lods_scas_id) && (first_byte & 0b110) != 0b000))
+        {
+            decode_res = decode_string_instr(first_byte);
+            carry_over = true;
+        }
         // Not yet implemented
         else
             MAIN_ERROR("Not implemented, terminating...\n");
