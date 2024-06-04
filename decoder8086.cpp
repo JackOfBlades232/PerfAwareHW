@@ -7,14 +7,13 @@
 
 static bool g_machine_is_big_endian;
 
+static constexpr uint8_t c_invalid_seg_override = 0xFF;
+static uint8_t g_seg_override                   = c_invalid_seg_override;
+
 #include "instruction_table.cpp.inc"
 #include "decoder_util.cpp.inc"
 
 /* @TODO:
- * Tighten up table and code (pull apart to diff files also, .cpp.inc will be ok)
- * Implement add/sub/cmp with it
- * Implement jumps with it (relative offsets)
- * Check the table again
  * Impl all the other instructions
  */
 
@@ -302,20 +301,24 @@ bool decode_rm_to_buf(char *buf, size_t bufsize,
         strncpy(buf, reg_code_to_name(rm_reg, is_wide), bufsize);
     }
 
+    char buf_seg[4] = "";
+    if (g_seg_override != c_invalid_seg_override) {
+        snprintf(buf_seg, sizeof(buf_seg), "%s:", segment_code_to_name(g_seg_override));
+        g_seg_override = c_invalid_seg_override;
+    }
+
     // @NOTE: spec case: direct addr
     if (mod == 0b00 && rm_reg == 0b110) {
         uint16_t adr;
         TRY_ELSE_RETURN(fetch_integer_with_endian_swap(istream, &adr), false);
-        snprintf(buf, bufsize, "[%hu]", adr);
+        snprintf(buf, bufsize, "%s[%hu]", buf_seg, adr);
         return true;
     }
-
-    // @TODO: check out the [reg + 0] leas in listings. They seem strange.
 
     switch (mod) {
         // no displacement
         case 0b00:
-            snprintf(buf, bufsize, "[%s]", lea_code_to_expr(rm_reg));
+            snprintf(buf, bufsize, "%s[%s]", buf_seg, lea_code_to_expr(rm_reg));
             break;
 
         // 8bit disp (can be negative, consider as part of 16-bit space)
@@ -323,11 +326,11 @@ bool decode_rm_to_buf(char *buf, size_t bufsize,
             int8_t disp;
             TRY_ELSE_RETURN(fetch_mem(istream, &disp), false);
             if (disp > 0)
-                snprintf(buf, bufsize, "[%s + %hhd]", lea_code_to_expr(rm_reg), disp);
+                snprintf(buf, bufsize, "%s[%s + %hhd]", buf_seg, lea_code_to_expr(rm_reg), disp);
             else if (disp < 0)
-                snprintf(buf, bufsize, "[%s - %hhd]", lea_code_to_expr(rm_reg), -disp);
+                snprintf(buf, bufsize, "%s[%s - %hhd]", buf_seg, lea_code_to_expr(rm_reg), -disp);
             else
-                snprintf(buf, bufsize, "[%s]", lea_code_to_expr(rm_reg));
+                snprintf(buf, bufsize, "%s[%s]", buf_seg, lea_code_to_expr(rm_reg));
         } break;
 
         // 16bit disp (can be negative)
@@ -335,11 +338,11 @@ bool decode_rm_to_buf(char *buf, size_t bufsize,
             int16_t disp;
             TRY_ELSE_RETURN(fetch_integer_with_endian_swap(istream, &disp), false);
             if (disp > 0)
-                snprintf(buf, bufsize, "[%s + %hd]", lea_code_to_expr(rm_reg), disp);
+                snprintf(buf, bufsize, "%s[%s + %hd]", buf_seg, lea_code_to_expr(rm_reg), disp);
             else if (disp < 0)
-                snprintf(buf, bufsize, "[%s - %hd]", lea_code_to_expr(rm_reg), -disp);
+                snprintf(buf, bufsize, "%s[%s - %hd]", buf_seg, lea_code_to_expr(rm_reg), -disp);
             else
-                snprintf(buf, bufsize, "[%s]", lea_code_to_expr(rm_reg));
+                snprintf(buf, bufsize, "%s[%s]", buf_seg, lea_code_to_expr(rm_reg));
         } break;
     }
 
@@ -764,9 +767,9 @@ bool decode_aa_seg_prefix_instr(uint8_t first_byte)
         break;
     }
 
-    if (is_segment_prefix) {
-        // @TODO: process seg prefix
-    } else
+    if (is_segment_prefix)
+        g_seg_override = id;
+    else
         printf("%s\n", name);
 
     return true;
@@ -843,6 +846,99 @@ bool decode_string_instr(uint8_t byte, const char *prefix = nullptr)
     return true;
 }
 
+bool decode_ret_instr(FILE *istream, uint8_t first_byte, uint8_t second_byte)
+{
+    bool has_disp  = !extract_w(first_byte);
+    const char *op = (first_byte & 0b1000) ? "retf" : "ret";
+    // @TODO: check if ret for intersegment has different mnemonic
+    if (!has_disp)
+        printf("%s\n", op);
+    else {
+        char buf[32];
+        TRY_ELSE_RETURN(
+            decode_lo_hi_to_buf(buf, sizeof(buf), istream, true, false, false, &second_byte), 
+            false);
+
+        printf("%s %s\n", op, buf);
+    }
+
+    return true;
+}
+
+bool decode_interrupt_instr(uint8_t first_byte, uint8_t second_byte)
+{
+    uint8_t type = first_byte & 0b11;
+    switch (type) {
+    case 0x0:
+        printf("int3\n");
+        break;
+    case 0x1:
+        printf("int %hhu\n", second_byte);
+        break;
+    case 0x2:
+        printf("into\n");
+        break;
+    case 0x3:
+        printf("iret\n");
+        break;
+    }
+
+    return true;
+}
+
+bool decode_process_ctrl_instr(uint8_t byte)
+{
+    uint8_t type = byte & 0b111;
+    switch (type) {
+    case 0x0:
+        printf("clc\n");
+        break;
+    case 0x1:
+        printf("stc\n");
+        break;
+    case 0x2:
+        printf("cli\n");
+        break;
+    case 0x3:
+        printf("sti\n");
+        break;
+    case 0x4:
+        printf("cld\n");
+        break;
+    case 0x5:
+        printf("std\n");
+        break;
+    default: return false;
+    }
+
+    return true;
+}
+
+bool decode_call_jmp_direct(FILE *istream, uint8_t first_byte, uint8_t second_byte)
+{
+    uint8_t type = first_byte == 0b10011010 ? 0xFF : (first_byte & 0b11);
+    const char *op = (type == 0x0 || type == 0xFF) ? "call" : "jmp";
+
+    char buf_where[32];
+    TRY_ELSE_RETURN(
+        decode_lo_hi_to_buf(buf_where, sizeof(buf_where), istream,
+                            type != 0b11, false, false, &second_byte),
+        false);
+
+    if (type == 0b10 || type == 0xFF) {
+        char buf_pref[32];
+        TRY_ELSE_RETURN(
+            decode_lo_hi_to_buf(buf_pref, sizeof(buf_pref), istream,
+                                true, false, false, nullptr),
+            false);
+
+        printf("%s %s:%s\n", op, buf_pref, buf_where);
+    } else
+        printf("%s %s\n", op, buf_where);
+
+    return true;
+}
+
 void check_and_init_endianness()
 {
     union {
@@ -888,8 +984,9 @@ int main(int argc, char **argv)
         uint8_t second_byte;
         bool decode_res = false;
         
-        // @TODO: account for 1-byte instruction at the tail of the stream
-        MAIN_TRY_ELSE_ERROR(fetch_mem(f, &second_byte), "Failed to fetch second byte, terminating...\n");
+        // @TODO: save instruction info instead of printing, so that errors are
+        //        dealt with properly, and for possible simulation
+        bool fetched_second_byte = fetch_mem(f, &second_byte);
 
         // MOV
         if (check_byte(first_byte, mov_rm_reg_lea_pop_pack_id)) {
@@ -986,9 +1083,53 @@ int main(int argc, char **argv)
             decode_res = decode_string_instr(first_byte);
             carry_over = true;
         }
+        // RET
+        else if (check_byte(first_byte, ret_id)) {
+            decode_res = decode_ret_instr(f, first_byte, second_byte);
+            carry_over = first_byte & 0b1;
+        }
+        // INT/IRET/INTO
+        else if (check_byte(first_byte, interrupt_id)) {
+            decode_res = decode_interrupt_instr(first_byte, second_byte);
+            carry_over = (first_byte & 0b11) != 0b01; // not int with param
+        }
+        // CLC/STC/CLI/STI/CLD/STD
+        else if (check_byte(first_byte, process_ctrl_pack_id) &&
+                 (first_byte & 0b110) != 0b110)
+        {
+            decode_res = decode_process_ctrl_instr(first_byte);
+            carry_over = true;
+        }
+        // HLT/CMC
+        else if (check_byte(first_byte, hlt_cmc_id)) {
+            printf("%s\n", extract_w(first_byte) ? "cmc" : "hlt");
+            decode_res = carry_over = true;
+        }
+        // WAIT, LOCK (@TODO: validation for lock like for rep?)
+        else if (first_byte == 0b10011011) {
+            printf("wait\n");
+            decode_res = carry_over = true;
+        } else if (first_byte == 0b11110000) {
+            printf("lock ");
+            decode_res = carry_over = true;
+        }
+        // CALL/JMP direct (w/out call to far label, factor it in manually
+        else if (check_byte(first_byte, call_jmp_direct_id) ||
+                 first_byte == 0b10011010)
+        {
+            decode_res = decode_call_jmp_direct(f, first_byte, second_byte);
+        }
         // Not yet implemented
         else
-            MAIN_ERROR("Not implemented, terminating...\n");
+            MAIN_ERROR("Invalid instruction byte [%hhx], terminating...\n", first_byte);
+
+        if (!fetched_second_byte) {
+            if (!carry_over) {
+                MAIN_ERROR("Instr [%hhx] requires second byte, but encountered EOF, terminating...\n",
+                           first_byte);
+            } else
+                break;
+        }
 
         if (!decode_res)
             MAIN_ERROR("Instr [%hhx] decoding failed, terminating...\n", first_byte);

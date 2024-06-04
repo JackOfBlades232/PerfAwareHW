@@ -155,10 +155,39 @@ CONST byte_identifier_t movs_cmps_id = {
     .val  = 0b10100100,
     .mask = 0b11111100
 };
-// STOS/LODS/SCASk
+// STOS/LODS/SCAS
 CONST byte_identifier_t stos_lods_scas_id = {
     .val  = 0b10101000, // also need to remove 10101000 and 10101001, they are test
     .mask = 0b11111000
+};
+
+// RET
+CONST byte_identifier_t ret_id = {
+    .val  = 0b11000010,
+    .mask = 0b11110110
+};
+
+// INT/IRET/INTO
+CONST byte_identifier_t interrupt_id = {
+    .val  = 0b11001100,
+    .mask = 0b11111100
+};
+
+// CLC/STC/CLI/STI/CLD/STD
+CONST byte_identifier_t process_ctrl_pack_id = {
+    .val  = 0b11111000, // also need to remove 11111110 and 11111111, they are inc/dec
+    .mask = 0b11111000
+};
+// HLT/CMC
+CONST byte_identifier_t hlt_cmc_id = {
+    .val  = 0b11110100,
+    .mask = 0b11111110
+};
+
+// CALL/JMP direct (w/out call to far label, factor it in manually
+CONST byte_identifier_t call_jmp_direct_id = {
+    .val  = 0b11101000,
+    .mask = 0b11111100
 };
 
 #undef CONST
