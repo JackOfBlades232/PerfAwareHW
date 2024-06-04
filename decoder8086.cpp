@@ -379,7 +379,7 @@ bool decode_reg_rm_ops_to_buf(char *buf, size_t bufsize,
 
 bool decode_lo_hi_to_buf(char *buf, size_t bufsize, 
                          FILE *istream, bool is_wide, bool is_sign_extending,
-                         bool add_word, uint8_t *lo_opt)
+                         bool add_word, uint8_t *lo_opt, bool unary_plus = false)
 {
     if (is_wide && !is_sign_extending) {
         uint16_t data;
@@ -390,7 +390,10 @@ bool decode_lo_hi_to_buf(char *buf, size_t bufsize,
             TRY_ELSE_RETURN(fetch_mem(istream, &hi), false);
             data = (hi << 8) | *lo_opt;
         }
-        snprintf(buf, bufsize, "%s%hd", add_word ? "word " : "", data);
+        snprintf(buf, bufsize, "%s%s%hd",
+                 data >= 0 && unary_plus ? "+" : "",
+                 add_word ? "word " : "",
+                 data);
     } else {
         uint8_t data;
         if (!lo_opt)
@@ -399,7 +402,10 @@ bool decode_lo_hi_to_buf(char *buf, size_t bufsize,
             data = *lo_opt;
 
         const char *word = is_wide /* => is_sign_extending */ ? "word " : "byte ";
-        snprintf(buf, bufsize, "%s%hhd", add_word ? word : "", data);
+        snprintf(buf, bufsize, "%s%s%hd",
+                 data >= 0 && unary_plus ? "+" : "",
+                 add_word ? word : "",
+                 data);
     }
 
     return true;
@@ -922,7 +928,7 @@ bool decode_call_jmp_direct(FILE *istream, uint8_t first_byte, uint8_t second_by
     char buf_where[32];
     TRY_ELSE_RETURN(
         decode_lo_hi_to_buf(buf_where, sizeof(buf_where), istream,
-                            type != 0b11, false, false, &second_byte),
+                            type != 0b11, false, false, &second_byte, true),
         false);
 
     if (type == 0b10 || type == 0xFF) {
@@ -934,7 +940,7 @@ bool decode_call_jmp_direct(FILE *istream, uint8_t first_byte, uint8_t second_by
 
         printf("%s %s:%s\n", op, buf_pref, buf_where);
     } else
-        printf("%s %s\n", op, buf_where);
+        printf("%s $%s+3\n", op, buf_where);
 
     return true;
 }
