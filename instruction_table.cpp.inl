@@ -32,11 +32,11 @@
   #define INSTALT INST
 #endif
 
-INST   (mov, {B(100010), D, W, MOD, REG, RM, DISP})
-INSTALT(mov, {B(1100011), W, MOD, B(000), RM, DISP, DATA, DATA_IF_W})
-INSTALT(mov, {B(1011), W, REG, DATA, DATA_IF_W})
+INST   (mov, {B(100010), D, W, MOD, REG, RM})
+INSTALT(mov, {B(1100011), W, MOD, B(000), RM, DATA, DATA_IF_W, IMP_D(0)})
+INSTALT(mov, {B(1011), W, REG, DATA, DATA_IF_W, IMP_D(1)})
 INSTALT(mov, {B(101000), D, W, ADDR, IMP_REG(0)}) // @TODO: is it not inverted by chance?
-INSTALT(mov, {B(100011), D, B(0), MOD, B(0), SR, RM, DISP})
+INSTALT(mov, {B(100011), D, B(0), MOD, B(0), SR, RM, DISP, IMP_W(1)})
 
 #undef B
 #undef W

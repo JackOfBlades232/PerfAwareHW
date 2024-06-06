@@ -74,28 +74,6 @@ u8 *alloc_pot(u32 p, size_t elem_size)
     return (u8 *)malloc((1 << p) * elem_size);
 }
 
-enum reg_t {
-    e_reg_a = 0,
-    e_reg_b,
-    e_reg_c,
-    e_reg_d,
-
-    e_reg_sp,
-    e_reg_bp,
-    e_reg_si,
-    e_reg_di,
-
-    e_reg_es,
-    e_reg_cs,
-    e_reg_ss,
-    e_reg_ds,
-
-    e_reg_ip,
-    e_reg_flags,
-
-    e_reg_max
-};
-
 enum instr_bits_t {
     e_bits_end = 0, // denotes end of bit field list
 
@@ -130,6 +108,8 @@ enum op_t {
 #define INSTALT(...)
 
 #include "instruction_table.cpp.inl"
+
+    e_op_max
 };
 
 struct instr_bit_field_t {
@@ -159,7 +139,7 @@ instruction_table_t build_instruction_table(const instruction_encoding_t *enc_li
     instruction_table_t table = {};
     for (const instruction_encoding_t *encp = enc_list; encp != enc_list + enc_cnt; ++encp) {
         int shift = 0;
-        for (const instr_bit_field_t *f = encp->fields; f != encp->fields + 16; ++f) {
+        for (const instr_bit_field_t *f = encp->fields; f != encp->fields + ARR_CNT(encp->fields); ++f) {
             if (f->type == e_bits_literal) // @TODO: check, this does promote to u32, doesnt it?
                 table.mask |= n_bit_mask(f->bit_count) << shift;
             shift += f->bit_count;
@@ -182,7 +162,7 @@ instruction_table_t build_instruction_table(const instruction_encoding_t *enc_li
     for (const instruction_encoding_t *encp = enc_list; encp != enc_list + enc_cnt; ++encp) {
         u16 lit_mask = 0, lit_vals = 0;
         int shift = 0;
-        for (const instr_bit_field_t *f = encp->fields; f != encp->fields + 16; ++f) {
+        for (const instr_bit_field_t *f = encp->fields; f != encp->fields + ARR_CNT(encp->fields); ++f) {
             if (f->type == e_bits_literal) { // @TODO: check, this does promote to u32, doesnt it?
                 lit_mask |= n_bit_mask(f->bit_count) << shift;
                 lit_vals |= (reverse_bits_in_bytes(f->val, 2) >> (8 - f->bit_count)) << shift;
@@ -224,16 +204,8 @@ instruction_table_t build_instruction_table(const instruction_encoding_t *enc_li
             }
 
             table.table[id] = encp;
-            //printf("%x: %lld\n", id, encp - enc_list);
         }
     }
-
-    /*
-    for (int i = 0; i < 2048; ++i) {
-        if (table.table[i])
-            printf("%x: %lld\n", i, table.table[i] - enc_list);
-    }
-    */
 
     return table;
 }
@@ -244,9 +216,72 @@ struct memory_access_t {
     u32 size;
 };
 
+enum reg_t {
+    e_reg_a = 0,
+    e_reg_b,
+    e_reg_c,
+    e_reg_d,
+
+    e_reg_sp,
+    e_reg_bp,
+    e_reg_si,
+    e_reg_di,
+
+    e_reg_es,
+    e_reg_cs,
+    e_reg_ss,
+    e_reg_ds,
+
+    e_reg_ip,
+    e_reg_flags,
+
+    e_reg_max
+};
+
+enum ea_base_t {
+    e_ea_base_bx_si,
+    e_ea_base_bx_di,
+    e_ea_base_bp_si,
+    e_ea_base_bp_di,
+
+    e_ea_base_si,
+    e_ea_base_di,
+    e_ea_base_bp,
+    e_ea_base_bx,
+
+    e_ea_base_direct,
+
+    e_ea_base_max
+};
+
+struct reg_access_t {
+    reg_t reg;
+    u32 offset;
+    u32 size;
+};
+
+enum operand_type_t {
+    e_operand_none = 0,
+
+    e_operand_reg,
+    e_operand_mem,
+    e_operand_imm
+};
+
+struct operand_t {
+    operand_type_t type;
+    union {
+        reg_access_t reg;
+        struct { ea_base_t base; u32 disp; } mem;
+        u32 imm;
+    } data;
+};
+
 struct instruction_t {
     op_t op;
-
+    bool is_wide;
+    operand_t operands[2] = {};
+    int operand_cnt;
     u32 size;
 };
 
@@ -269,10 +304,79 @@ u32 load_file_to_memory(memory_access_t dest, const char *fn)
     return bytes_read;
 }
 
+u16 parse_data_value(memory_access_t *at, bool has_data, bool is_wide)
+{
+    if (!has_data)
+        return 0;
+
+    u16 lo = (u16)(at->mem[at->base++]);
+    if (is_wide) {
+        u16 hi = (u16)(at->mem[at->base++]);
+        return (hi << 8) | lo;
+    } else
+        return lo;
+}
+
+operand_t get_reg_operand(u8 reg, bool is_wide)
+{
+    const reg_access_t reg_table[] =
+    {
+        {e_reg_a, 0, 1}, {e_reg_a,  0, 2}, 
+        {e_reg_c, 0, 1}, {e_reg_c,  0, 2}, 
+        {e_reg_d, 0, 1}, {e_reg_d,  0, 2}, 
+        {e_reg_b, 0, 1}, {e_reg_b,  0, 2}, 
+        {e_reg_a, 1, 1}, {e_reg_sp, 0, 2}, 
+        {e_reg_c, 1, 1}, {e_reg_bp, 0, 2}, 
+        {e_reg_d, 1, 1}, {e_reg_si, 0, 2}, 
+        {e_reg_b, 1, 1}, {e_reg_di, 0, 2}
+    };
+
+    return {e_operand_reg, reg_table[((reg & 0x7) << 1) + (is_wide ? 1 : 0)]};
+}
+
+operand_t get_segreg_operand(u8 sr)
+{
+    const reg_access_t sr_table[] =
+    {
+        // @TODO: check order
+        {e_reg_es, 0, 2},
+        {e_reg_cs, 0, 2}, 
+        {e_reg_ss, 0, 2},
+        {e_reg_ds, 0, 2}, 
+    };
+
+    return {e_operand_reg, sr_table[sr & 0x3]};
+}
+
+operand_t get_rm_operand(u8 mod, u8 rm, bool is_wide, u16 disp)
+{
+    if (mod == 0b11)
+        return get_reg_operand(rm, is_wide);
+
+    if (mod == 0b00 && rm == 0b110)
+        return {e_operand_mem, {.mem = {e_ea_base_direct, disp}}};
+
+    const ea_base_t ea_base_table[] =
+    {
+        e_ea_base_bx_si,
+        e_ea_base_bx_di,
+        e_ea_base_bp_si,
+        e_ea_base_bp_di,
+        e_ea_base_si,
+        e_ea_base_di,
+        e_ea_base_bp,
+        e_ea_base_bx
+    };
+
+    return {e_operand_mem, {.mem = {ea_base_table[rm & 0x7], disp}}};
+}
+
 instruction_t decode_next_instruction(memory_access_t at,
                                       instruction_table_t *table,
                                       decoder_context_t *ctx)
 {
+    memory_access_t init_at = at;
+
     u8 first_byte  = at.mem[at.base];
     u8 second_byte = at.mem[at.base+1];
     const instruction_encoding_t *enc =
@@ -286,31 +390,24 @@ instruction_t decode_next_instruction(memory_access_t at,
     instruction_t instr = {};
     instr.op = enc->op;
 
-    printf("op %d", instr.op);
-
     bool has[e_bits_max]  = {};
     u8 fields[e_bits_max] = {};
 
     u8 byte = first_byte;
     int bits_consumed = 0;
     for (const instr_bit_field_t *field = enc->fields; 
-         field != enc->fields + 16 && field->type != e_bits_end;
+         field != enc->fields + ARR_CNT(enc->fields) && field->type != e_bits_end;
          ++field)
     {
         has[field->type] = true;
 
-        if (field->bit_count == 0) {
+        if (field->bit_count == 0)
             fields[field->type] = field->val;
-
-            printf(", %d:%x", field->type, fields[field->type]);
-        } else {
-            if (field->type != e_bits_literal) {
+        else {
+            if (field->type != e_bits_literal)
                 fields[field->type] = byte >> (8 - field->bit_count);
-
-                printf(", %d:%x", field->type, fields[field->type]);
-            } else {
+            else
                 assert(field->val == byte >> (8 - field->bit_count));
-            }
             byte <<= field->bit_count;
 
             bits_consumed += field->bit_count;
@@ -320,7 +417,6 @@ instruction_t decode_next_instruction(memory_access_t at,
                 byte = at.mem[++at.base];
                 --at.size;
 
-                ++instr.size;
                 bits_consumed = 0;
             }
         }
@@ -328,7 +424,43 @@ instruction_t decode_next_instruction(memory_access_t at,
 
     assert(bits_consumed == 0);
 
-    printf("\n");
+    u8 mod = fields[e_bits_mod];
+    u8 reg = fields[e_bits_reg];
+    u8 rm  = fields[e_bits_rm];
+    u8 w   = fields[e_bits_w];
+    u8 s   = fields[e_bits_s];
+    u8 d   = fields[e_bits_d];
+
+    bool has_direct_address = (mod == 0b00 && rm == 0b110);
+    has[e_bits_disp] = (has[e_bits_disp] || mod == 0b01 || mod == 0b10 || has_direct_address);
+
+    bool disp_is_w = (mod == 0b10 || has_direct_address || fields[e_bits_disp_always_w]);
+    bool data_is_w = (w && !s && fields[e_bits_data_w_if_w]);
+
+    u16 disp = parse_data_value(&at, has[e_bits_disp], disp_is_w); 
+    u16 data = parse_data_value(&at, has[e_bits_data], data_is_w); 
+
+    operand_t *reg_op = &instr.operands[d ? 0 : 1];
+    operand_t *rm_op  = &instr.operands[d ? 1 : 0];
+
+    if (has[e_bits_reg])
+        *reg_op = get_reg_operand(fields[e_bits_reg], w);
+    if (has[e_bits_sr])
+        *reg_op = get_segreg_operand(fields[e_bits_sr]);
+
+    if (has[e_bits_rm])
+        *rm_op = get_rm_operand(mod, rm, w, disp);
+
+    operand_t* last_op = &instr.operands[instr.operands[1].type ? 2 : (instr.operands[0].type ? 1 : 0)];
+
+    if (last_op - instr.operands < 2) {
+        if (has[e_bits_data])
+            *(last_op++) = {e_operand_imm, {.imm = data}};
+    }
+
+    instr.operand_cnt = last_op - instr.operands;
+    instr.is_wide     = w;
+    instr.size        = at.base - init_at.base;
 
     return instr;
 }
@@ -339,6 +471,47 @@ void update_ctx(instruction_t instr, decoder_context_t *ctx)
 
 void print_intstruction(instruction_t instr)
 {
+    const char *op_mnemonics[e_op_max] =
+    {
+        "<invalid>",
+
+#define INST(_op, ...) #_op,
+#define INSTALT(...)
+
+#include "instruction_table.cpp.inl"
+    };
+
+    printf("%s", op_mnemonics[instr.op]);
+
+    if (instr.operand_cnt != 0) {
+        printf(" ");
+
+        for (int i = 0; i < instr.operand_cnt; ++i) {
+            if (i == 1)
+                printf(", ");
+
+            operand_t *operand = &instr.operands[i];
+            switch (operand->type) {
+            case e_operand_none: break;
+            case e_operand_reg: // @TEST
+                printf("reg(%d, %d, %d)",
+                       operand->data.reg.reg,
+                       operand->data.reg.offset,
+                       operand->data.reg.size);
+                break;
+            case e_operand_mem: // @TEST
+                printf("[%d%+hd]",
+                       operand->data.mem.base,
+                       operand->data.mem.disp);
+                break;
+            case e_operand_imm:
+                printf("%hd", operand->data.imm);
+                break;
+            }
+        }
+    }
+
+    printf("\n");
 }
 
 template <void (*t_insrunction_processor)(instruction_t)>
