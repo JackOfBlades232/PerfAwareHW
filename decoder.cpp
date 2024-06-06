@@ -16,7 +16,7 @@ typedef int32_t  i32;
 /* @TODO:
  * Create structs for instructions & state
  * Port table format from casey's repo
- * Build jump table
+ * Build jump table -- CHECK
  * Write decoder
  * Make separate printing
  */
@@ -51,6 +51,20 @@ u32 reverse_bits_in_bytes(u32 val, int byte_range)
         u32 src_mask = 1 << ((i/8 + 1)*8 - i%8 - 1);
         res |= (val & src_mask) ? mask : 0;
     }
+    return res;
+}
+
+u32 press_down_masked_bits(u32 val, u32 mask)
+{
+    u32 res = 0;
+    u32 read_mask = 1, write_mask = 1;
+    for (int i = 0; i < 16; ++i, read_mask <<= 1) {
+        if (mask & read_mask) {
+            res |= (read_mask & val) ? write_mask : 0;
+            write_mask <<= 1;
+        }
+    }
+
     return res;
 }
 
@@ -110,6 +124,8 @@ enum instr_bits_t {
 };
 
 enum op_t {
+    e_op_invalid = 0,
+
 #define INST(_op, ...) e_op_##_op,
 #define INSTALT(...)
 
@@ -257,7 +273,64 @@ instruction_t decode_next_instruction(memory_access_t at,
                                       instruction_table_t *table,
                                       decoder_context_t *ctx)
 {
-    return instruction_t{};
+    u8 first_byte  = at.mem[at.base];
+    u8 second_byte = at.mem[at.base+1];
+    const instruction_encoding_t *enc =
+        table->table[press_down_masked_bits(first_byte | (second_byte << 8), table->mask)];
+
+    if (!enc) {
+        LOGERR("Encountered unknown instruction, might be not implemented\n");
+        return instruction_t{};
+    }
+
+    instruction_t instr = {};
+    instr.op = enc->op;
+
+    printf("op %d", instr.op);
+
+    bool has[e_bits_max]  = {};
+    u8 fields[e_bits_max] = {};
+
+    u8 byte = first_byte;
+    int bits_consumed = 0;
+    for (const instr_bit_field_t *field = enc->fields; 
+         field != enc->fields + 16 && field->type != e_bits_end;
+         ++field)
+    {
+        has[field->type] = true;
+
+        if (field->bit_count == 0) {
+            fields[field->type] = field->val;
+
+            printf(", %d:%x", field->type, fields[field->type]);
+        } else {
+            if (field->type != e_bits_literal) {
+                fields[field->type] = byte >> (8 - field->bit_count);
+
+                printf(", %d:%x", field->type, fields[field->type]);
+            } else {
+                assert(field->val == byte >> (8 - field->bit_count));
+            }
+            byte <<= field->bit_count;
+
+            bits_consumed += field->bit_count;
+            
+            assert(bits_consumed <= 8);
+            if (bits_consumed == 8) {
+                byte = at.mem[++at.base];
+                --at.size;
+
+                ++instr.size;
+                bits_consumed = 0;
+            }
+        }
+    }
+
+    assert(bits_consumed == 0);
+
+    printf("\n");
+
+    return instr;
 }
 
 void update_ctx(instruction_t instr, decoder_context_t *ctx)
@@ -269,20 +342,24 @@ void print_intstruction(instruction_t instr)
 }
 
 template <void (*t_insrunction_processor)(instruction_t)>
-bool decode_and_process_instructions(memory_access_t code_mem, u32 code_bytes)
+bool decode_and_process_instructions(memory_access_t at, u32 bytes)
 {
     instruction_table_t table = build_instruction_table(instruction_encoding_list,
                                                         ARR_CNT(instruction_encoding_list));
     decoder_context_t ctx = {};
 
-    while (code_bytes)
+    while (bytes)
     {
-        instruction_t instr = decode_next_instruction(code_mem, &table, &ctx);
+        instruction_t instr = decode_next_instruction(at, &table, &ctx);
+        if (instr.op == e_op_invalid) {
+            LOGERR("Failed to decode instruction");
+            return false;
+        }
 
-        if (code_bytes >= instr.size) {
-            code_bytes    -= instr.size;
-            code_mem.base += instr.size;
-            code_mem.size -= instr.size;
+        if (bytes >= instr.size) {
+            bytes   -= instr.size;
+            at.base += instr.size;
+            at.size -= instr.size;
         } else {
             LOGERR("Trying to decode outside the instructions mem, the instruction is invalid");
             return false;
