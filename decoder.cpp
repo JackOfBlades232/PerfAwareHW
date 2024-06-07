@@ -25,6 +25,14 @@ typedef int32_t  i32;
 
 #define LOGERR(_fmt, ...) fprintf(stderr, "[ERR] " _fmt "\n", ##__VA_ARGS__)
 
+template <class T>
+void swap(T *a, T *b)
+{
+    T tmp = *a;
+    *a = *b;
+    *b = tmp;
+}
+
 inline u32 n_bit_mask(int nbits)
 {
     return (1 << nbits) - 1;
@@ -298,7 +306,7 @@ struct operand_t {
     union {
         reg_access_t reg;
         ea_mem_access_t mem;
-        i16 imm;
+        u16 imm;
         cs_ip_pair_t cs_ip;
     } data;
 };
@@ -336,7 +344,9 @@ u32 load_file_to_memory(memory_access_t dest, const char *fn)
 }
 
 // @TODO: fix signed/unsigned business based on sign field. Also, for printing.
-i16 parse_data_value(memory_access_t *at, bool has_data, bool is_wide)
+u16 parse_data_value(memory_access_t *at,
+                     bool has_data, bool is_wide,
+                     bool is_sign_extended = true)
 {
     if (!has_data)
         return 0;
@@ -345,8 +355,10 @@ i16 parse_data_value(memory_access_t *at, bool has_data, bool is_wide)
     if (is_wide) {
         u8 hi = at->mem[at->base++];
         return (hi << 8) | lo;
-    } else
+    } else if (is_sign_extended)
         return (i8)lo;
+    else
+        return lo;
 }
 
 operand_t get_reg_operand(u8 reg, bool is_wide)
@@ -403,7 +415,7 @@ operand_t get_rm_operand(u8 mod, u8 rm, bool is_wide, i16 disp)
     return {e_operand_mem, {.mem = {ea_base_table[rm & 0x7], disp}}};
 }
 
-operand_t get_imm_operand(i16 val)
+operand_t get_imm_operand(u16 val)
 {
     return {e_operand_imm, {.imm = val}};
 }
@@ -479,8 +491,8 @@ instruction_t decode_next_instruction(memory_access_t at,
     bool disp_is_w = (mod == 0b10 || has_direct_address || fields[e_bits_disp_always_w]);
     bool data_is_w = (w && !s && fields[e_bits_data_w_if_w]);
 
-    i16 disp = parse_data_value(&at, has[e_bits_disp], disp_is_w); 
-    i16 data = parse_data_value(&at, has[e_bits_data], data_is_w); 
+    u16 disp = parse_data_value(&at, has[e_bits_disp], disp_is_w); 
+    u16 data = parse_data_value(&at, has[e_bits_data], data_is_w, s); 
 
     operand_t *reg_op = &instr.operands[d ? 0 : 1];
     operand_t *rm_op  = &instr.operands[d ? 1 : 0];
@@ -532,16 +544,18 @@ instruction_t decode_next_instruction(memory_access_t at,
 
 void update_ctx(instruction_t instr, decoder_context_t *ctx)
 {
-    ctx->last_pref = 0;
-
-    if (instr.op == e_op_lock)
-        ctx->last_pref |= e_iflags_lock;
-    else if (instr.op == e_op_rep)
-        ctx->last_pref |= e_iflags_rep | (instr.flags & e_iflags_z);
+    if (instr.op == e_op_lock || instr.op == e_op_rep) {
+        ctx->last_pref &= ~(e_iflags_lock | e_iflags_rep | e_iflags_z);
+        if (instr.op == e_op_lock)
+            ctx->last_pref |= e_iflags_lock;
+        else if (instr.op == e_op_rep)
+            ctx->last_pref |= e_iflags_rep | (instr.flags & e_iflags_z);
+    }
     else if (instr.op == e_op_segment) {
         ctx->last_pref |= e_iflags_seg_override;
         ctx->segment_override = instr.operands[0].data.reg.reg;
-    }
+    } else
+      ctx->last_pref = 0;
 }
 
 void print_reg(reg_access_t reg)
@@ -592,7 +606,7 @@ void print_mem(ea_mem_access_t mem, bool override_seg, reg_t sr)
         printf("%s[%s%+hd]", seg_override, ea_base_names[mem.base], mem.disp);
 }
 
-void print_imm(i16 imm, bool is_rel_disp, u32 instr_size)
+void print_imm(u16 imm, bool is_rel_disp, u32 instr_size)
 {
     if (is_rel_disp)
         printf("$%+hd+%d", imm, instr_size);
@@ -635,6 +649,14 @@ void print_intstruction(instruction_t instr)
         instr.op == e_op_stos)
     {
         printf("%c", (instr.flags & e_iflags_w) ? 'w' : 'b');
+    }
+
+    // For locked xchg, nasm wants reg to be second
+    if (instr.op == e_op_xchg &&
+        (instr.flags & e_iflags_lock) &&
+        instr.operands[1].type != e_operand_reg)
+    {
+        swap(&instr.operands[0], &instr.operands[1]);
     }
 
     // @TODO: clean up
