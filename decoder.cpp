@@ -68,12 +68,6 @@ u32 press_down_masked_bits(u32 val, u32 mask)
     return res;
 }
 
-u8 *alloc_pot(u32 p, size_t elem_size)
-{
-    assert(p <= 32);
-    return (u8 *)malloc((1 << p) * elem_size);
-}
-
 enum instr_bits_t {
     e_bits_end = 0, // denotes end of bit field list
 
@@ -139,7 +133,10 @@ instruction_table_t build_instruction_table(const instruction_encoding_t *enc_li
     instruction_table_t table = {};
     for (const instruction_encoding_t *encp = enc_list; encp != enc_list + enc_cnt; ++encp) {
         int shift = 0;
-        for (const instr_bit_field_t *f = encp->fields; f != encp->fields + ARR_CNT(encp->fields); ++f) {
+        for (const instr_bit_field_t *f = encp->fields;
+             f != encp->fields + ARR_CNT(encp->fields) && f->type != e_bits_end;
+             ++f)
+        {
             if (f->type == e_bits_literal) // @TODO: check, this does promote to u32, doesnt it?
                 table.mask |= n_bit_mask(f->bit_count) << shift;
             shift += f->bit_count;
@@ -155,14 +152,17 @@ instruction_table_t build_instruction_table(const instruction_encoding_t *enc_li
 
     table.size  = POT(address_bits);
     table.table = 
-        (const instruction_encoding_t **)alloc_pot(address_bits, sizeof(instruction_encoding_t *));
+        (const instruction_encoding_t **)malloc(table.size * sizeof(instruction_encoding_t *));
     memset(table.table, 0, table.size * sizeof(instruction_encoding_t *));
 
     // @TODO: maybe I can merge the two loops?
     for (const instruction_encoding_t *encp = enc_list; encp != enc_list + enc_cnt; ++encp) {
         u16 lit_mask = 0, lit_vals = 0;
         int shift = 0;
-        for (const instr_bit_field_t *f = encp->fields; f != encp->fields + ARR_CNT(encp->fields); ++f) {
+        for (const instr_bit_field_t *f = encp->fields;
+             f != encp->fields + ARR_CNT(encp->fields) && f->type != e_bits_end;
+             ++f)
+        {
             if (f->type == e_bits_literal) { // @TODO: check, this does promote to u32, doesnt it?
                 lit_mask |= n_bit_mask(f->bit_count) << shift;
                 lit_vals |= (reverse_bits_in_bytes(f->val, 2) >> (8 - f->bit_count)) << shift;
@@ -184,7 +184,7 @@ instruction_table_t build_instruction_table(const instruction_encoding_t *enc_li
             if (table.mask & read_mask) {
                 if (lit_mask & read_mask) {
                     id_mask |= write_mask;
-                    id_val  |= write_mask & lit_vals;
+                    id_val  |= (read_mask & lit_vals) ? write_mask : 0;
                 } else
                     ++free_bit_cnt;
                 write_mask <<= 1;
@@ -204,6 +204,8 @@ instruction_table_t build_instruction_table(const instruction_encoding_t *enc_li
             }
 
             table.table[id] = encp;
+
+            //printf("%x: %d\n", id, encp->op);
         }
     }
 
@@ -237,7 +239,7 @@ enum reg_t {
 
     e_reg_max
 };
-
+  
 enum ea_base_t {
     e_ea_base_bx_si = 0,
     e_ea_base_bx_di,
@@ -309,6 +311,7 @@ u32 load_file_to_memory(memory_access_t dest, const char *fn)
     return bytes_read;
 }
 
+// @TODO: fix signed/unsigned business based on sign field. Also, for printing.
 i16 parse_data_value(memory_access_t *at, bool has_data, bool is_wide)
 {
     if (!has_data)
@@ -374,6 +377,11 @@ operand_t get_rm_operand(u8 mod, u8 rm, bool is_wide, i16 disp)
     };
 
     return {e_operand_mem, {.mem = {ea_base_table[rm & 0x7], disp}}};
+}
+
+operand_t get_imm_operand(i16 val)
+{
+    return {e_operand_imm, {.imm = val}};
 }
 
 instruction_t decode_next_instruction(memory_access_t at,
@@ -454,13 +462,23 @@ instruction_t decode_next_instruction(memory_access_t at,
         *reg_op = get_segreg_operand(fields[e_bits_sr]);
 
     if (has[e_bits_rm])
-        *rm_op = get_rm_operand(mod, rm, w, disp);
+        *rm_op = get_rm_operand(mod, rm, w || fields[e_bits_rm_always_w], disp);
 
-    operand_t* last_op = &instr.operands[instr.operands[1].type ? 2 : (instr.operands[0].type ? 1 : 0)];
+    // @TODO: refactor this
+    operand_t *last_op = &instr.operands[instr.operands[1].type ? 2 : (instr.operands[0].type ? 1 : 0)];
+    operand_t *free_op = !instr.operands[0].type ? &instr.operands[0] :
+                         !instr.operands[1].type ? &instr.operands[1] :
+                         nullptr;
 
-    if (last_op - instr.operands < 2) {
+    if (free_op) {
+        // @TODO: errors on more than one free_op?
         if (has[e_bits_data])
-            *(last_op++) = {e_operand_imm, {.imm = (i16)data}};
+            *free_op = get_imm_operand(data);
+        if (has[e_bits_v])
+            *free_op = fields[e_bits_v] ? get_reg_operand(0x1, false) : get_imm_operand(1);
+
+        if (++free_op > last_op)
+            last_op = free_op;
     }
 
     instr.operand_cnt = last_op - instr.operands;
@@ -610,6 +628,8 @@ int main(int argc, char **argv)
     u32 code_bytes = load_file_to_memory(main_memory, argv[1]);
 
     // @TEST
+    printf(";; %s disassembly ;;\n", argv[1]);
+    printf("bits 16\n");
     bool res = decode_and_process_instructions<print_intstruction>(main_memory, code_bytes);
     return res ? 0 : 1;
 }
