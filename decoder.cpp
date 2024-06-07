@@ -239,7 +239,7 @@ enum reg_t {
 };
 
 enum ea_base_t {
-    e_ea_base_bx_si,
+    e_ea_base_bx_si = 0,
     e_ea_base_bx_di,
     e_ea_base_bp_si,
     e_ea_base_bp_di,
@@ -260,6 +260,11 @@ struct reg_access_t {
     u32 size;
 };
 
+struct mem_t {
+    ea_base_t base;
+    i16 disp; 
+};
+
 enum operand_type_t {
     e_operand_none = 0,
 
@@ -272,8 +277,8 @@ struct operand_t {
     operand_type_t type;
     union {
         reg_access_t reg;
-        struct { ea_base_t base; u32 disp; } mem;
-        u32 imm;
+        mem_t mem;
+        i16 imm;
     } data;
 };
 
@@ -304,17 +309,17 @@ u32 load_file_to_memory(memory_access_t dest, const char *fn)
     return bytes_read;
 }
 
-u16 parse_data_value(memory_access_t *at, bool has_data, bool is_wide)
+i16 parse_data_value(memory_access_t *at, bool has_data, bool is_wide)
 {
     if (!has_data)
         return 0;
 
-    u16 lo = (u16)(at->mem[at->base++]);
+    u8 lo = at->mem[at->base++];
     if (is_wide) {
-        u16 hi = (u16)(at->mem[at->base++]);
+        u8 hi = at->mem[at->base++];
         return (hi << 8) | lo;
     } else
-        return lo;
+        return (i8)lo;
 }
 
 operand_t get_reg_operand(u8 reg, bool is_wide)
@@ -348,7 +353,7 @@ operand_t get_segreg_operand(u8 sr)
     return {e_operand_reg, sr_table[sr & 0x3]};
 }
 
-operand_t get_rm_operand(u8 mod, u8 rm, bool is_wide, u16 disp)
+operand_t get_rm_operand(u8 mod, u8 rm, bool is_wide, i16 disp)
 {
     if (mod == 0b11)
         return get_reg_operand(rm, is_wide);
@@ -437,8 +442,8 @@ instruction_t decode_next_instruction(memory_access_t at,
     bool disp_is_w = (mod == 0b10 || has_direct_address || fields[e_bits_disp_always_w]);
     bool data_is_w = (w && !s && fields[e_bits_data_w_if_w]);
 
-    u16 disp = parse_data_value(&at, has[e_bits_disp], disp_is_w); 
-    u16 data = parse_data_value(&at, has[e_bits_data], data_is_w); 
+    i16 disp = parse_data_value(&at, has[e_bits_disp], disp_is_w); 
+    i16 data = parse_data_value(&at, has[e_bits_data], data_is_w); 
 
     operand_t *reg_op = &instr.operands[d ? 0 : 1];
     operand_t *rm_op  = &instr.operands[d ? 1 : 0];
@@ -455,7 +460,7 @@ instruction_t decode_next_instruction(memory_access_t at,
 
     if (last_op - instr.operands < 2) {
         if (has[e_bits_data])
-            *(last_op++) = {e_operand_imm, {.imm = data}};
+            *(last_op++) = {e_operand_imm, {.imm = (i16)data}};
     }
 
     instr.operand_cnt = last_op - instr.operands;
@@ -467,6 +472,51 @@ instruction_t decode_next_instruction(memory_access_t at,
 
 void update_ctx(instruction_t instr, decoder_context_t *ctx)
 {
+}
+
+void print_reg(reg_access_t reg)
+{
+    const char *reg_names[] =
+    {
+        "al", "ah", "ax",
+        "bl", "bh", "bx",
+        "cl", "ch", "cx",
+        "dl", "dh", "dx",
+
+        nullptr, nullptr, "sp",
+        nullptr, nullptr, "bp",
+        nullptr, nullptr, "si",
+        nullptr, nullptr, "di",
+
+        nullptr, nullptr, "es",
+        nullptr, nullptr, "cs",
+        nullptr, nullptr, "ss",
+        nullptr, nullptr, "ds",
+    };
+
+    assert(reg.reg < e_reg_ip);
+
+    // @NOTE: relying on there being three combinations: 01 02 11
+    // @FEAT: will not do for 32bit
+    int offset = reg.size == 2 ? 2 : (reg.offset == 1 ? 1 : 0);
+    printf("%s", reg_names[reg.reg*3 + offset]);
+}
+
+void print_mem(mem_t mem)
+{
+    const char *ea_base_names[e_ea_base_max] =
+    {
+        "bx+si", "bx+di", "bp+si", "bp+di",
+        "si", "di", "bp", "bx",
+    };
+
+    assert(mem.base < e_ea_base_max);
+    if (mem.base == e_ea_base_direct)
+        printf("[%hu]", mem.disp);
+    else if (mem.disp == 0)
+        printf("[%s]", ea_base_names[mem.base]);
+    else
+        printf("[%s%+hd]", ea_base_names[mem.base], mem.disp);
 }
 
 void print_intstruction(instruction_t instr)
@@ -493,16 +543,16 @@ void print_intstruction(instruction_t instr)
             operand_t *operand = &instr.operands[i];
             switch (operand->type) {
             case e_operand_none: break;
-            case e_operand_reg: // @TEST
-                printf("reg(%d, %d, %d)",
-                       operand->data.reg.reg,
-                       operand->data.reg.offset,
-                       operand->data.reg.size);
+            case e_operand_reg:
+                print_reg(operand->data.reg);
                 break;
-            case e_operand_mem: // @TEST
-                printf("[%d%+hd]",
-                       operand->data.mem.base,
-                       operand->data.mem.disp);
+            case e_operand_mem:
+                // @NOTE: picked up from Casey's code. This produces not-so-neat
+                //        prints for something like op [ea], reg, adding a redundant
+                //        word/byte, but saves having to store more state in instructions
+                if (instr.operands[0].type != e_operand_reg)
+                    printf(instr.is_wide ? "word " : "byte ");
+                print_mem(operand->data.mem);
                 break;
             case e_operand_imm:
                 printf("%hd", operand->data.imm);
@@ -521,8 +571,7 @@ bool decode_and_process_instructions(memory_access_t at, u32 bytes)
                                                         ARR_CNT(instruction_encoding_list));
     decoder_context_t ctx = {};
 
-    while (bytes)
-    {
+    while (bytes) {
         instruction_t instr = decode_next_instruction(at, &table, &ctx);
         if (instr.op == e_op_invalid) {
             LOGERR("Failed to decode instruction");
