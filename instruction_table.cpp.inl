@@ -141,6 +141,70 @@ INST   (xor, {B(001100), D, W, MOD, REG, RM})
 INSTALT(xor, {B(1000000), W, MOD, B(110), RM, DATA, DATA_IF_W, IMP_D(0)})
 INSTALT(xor, {B(0011010), W, DATA, DATA_IF_W, IMP_REG(0), IMP_D(1)})
 
+INST   (rep,     {B(1111001), Z})
+INST   (lock,    {B(11110000)})
+INST   (segment, {B(001), SR, B(110), IMP_D(1)})
+
+INST   (movs, {B(1010010), W})
+INST   (cmps, {B(1010011), W})
+INST   (scas, {B(1010111), W})
+INST   (lods, {B(1010110), W})
+INST   (stos, {B(1010101), W})
+
+// @TODO: check direct calls and jumps
+INST   (call, {B(11101000), ADDR, FLAGS(e_bits_jmp_rel_disp)})
+INSTALT(call, {B(11111111), MOD, B(010), RM, IMP_D(0), IMP_W(1)})
+INSTALT(call, {B(10011010), ADDR, DATA, DATA_IF_W, IMP_W(1)})
+INSTALT(call, {B(11111111), MOD, B(011), RM, IMP_D(0), IMP_W(1), FLAGS(e_bits_far)})
+
+INST   (jmp, {B(11101001), ADDR, FLAGS(e_bits_jmp_rel_disp)})
+INSTALT(jmp, {B(11101011), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INSTALT(jmp, {B(11111111), MOD, B(100), RM, IMP_D(0), IMP_W(1)})
+INSTALT(jmp, {B(11101010), ADDR, DATA, DATA_IF_W, IMP_W(1)})
+INSTALT(jmp, {B(11111111), MOD, B(101), RM, IMP_D(0), IMP_W(1), FLAGS(e_bits_far)})
+
+INST   (ret,  {B(11000011)})
+INSTALT(ret,  {B(11000010), DATA, DATA_IF_W, IMP_W(1)})
+INST   (retf, {B(11001011), FLAGS(e_bits_far)})
+INSTALT(retf, {B(11001010), DATA, DATA_IF_W, IMP_W(1), FLAGS(e_bits_far)})
+
+INST   (je,  {B(01110100), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (jl,  {B(01111100), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (jle, {B(01111110), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (jb,  {B(01110010), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (jbe, {B(01110110), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (jp,  {B(01111010), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (jo,  {B(01110000), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (js,  {B(01111000), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (jne, {B(01110101), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (jge, {B(01111101), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (jg,  {B(01111111), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (jae, {B(01110011), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (ja,  {B(01110111), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (jnp, {B(01111011), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (jno, {B(01110001), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (jns, {B(01111001), DISP, FLAGS(e_bits_jmp_rel_disp)})
+
+INST   (loop,   {B(11100010), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (loopz,  {B(11100001), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (loopnz, {B(11100000), DISP, FLAGS(e_bits_jmp_rel_disp)})
+INST   (jcxz,   {B(11100011), DISP, FLAGS(e_bits_jmp_rel_disp)})
+
+INST   (int,  {B(11001101), DATA})
+INST   (int3, {B(11001100)})
+INST   (into, {B(11001110)})
+INST   (iret, {B(11001111)})
+
+INST   (clc,  {B(11111000)})
+INST   (cmc,  {B(11110101)})
+INST   (stc,  {B(11111001)})
+INST   (cld,  {B(11111100)})
+INST   (std,  {B(11111101)})
+INST   (cli,  {B(11111010)})
+INST   (sti,  {B(11111011)})
+INST   (hlt,  {B(11110100)})
+INST   (wait, {B(10011011)})
+
 #undef B
 #undef W
 #undef D

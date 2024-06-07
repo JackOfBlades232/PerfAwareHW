@@ -14,11 +14,7 @@ typedef int16_t  i16;
 typedef int32_t  i32;
 
 /* @TODO:
- * Create structs for instructions & state
- * Port table format from casey's repo
- * Build jump table -- CHECK
- * Write decoder
- * Make separate printing
+ * Finish decoder-printer
  */
 
 // @HUH: as for a simulation, I maybe should abstract memory acesses with looping and stuff
@@ -256,15 +252,36 @@ enum ea_base_t {
     e_ea_base_max
 };
 
+enum instr_flags_t : u32 {
+    e_iflags_none = 0,
+
+    e_iflags_w    = 1 << 0,
+    //e_iflags_s  = 1 << 1,
+    e_iflags_z    = 1 << 2,
+    e_iflags_lock = 1 << 3,
+    e_iflags_rep  = 1 << 4,
+
+    e_iflags_seg_override = 1 << 5,
+
+    e_iflags_imm_is_rel_disp = 1 << 6,
+
+    e_iflags_far = 1 << 7
+};
+
 struct reg_access_t {
     reg_t reg;
     u32 offset;
     u32 size;
 };
 
-struct mem_t {
+struct ea_mem_access_t {
     ea_base_t base;
     i16 disp; 
+};
+
+struct cs_ip_pair_t {
+    u16 cs;
+    u16 ip;
 };
 
 enum operand_type_t {
@@ -272,28 +289,35 @@ enum operand_type_t {
 
     e_operand_reg,
     e_operand_mem,
-    e_operand_imm
+    e_operand_imm,
+    e_operand_cs_ip
 };
 
 struct operand_t {
     operand_type_t type;
     union {
         reg_access_t reg;
-        mem_t mem;
+        ea_mem_access_t mem;
         i16 imm;
+        cs_ip_pair_t cs_ip;
     } data;
 };
 
 struct instruction_t {
     op_t op;
-    bool is_wide;
+    u32 flags;
+
     operand_t operands[2] = {};
     int operand_cnt;
+
     u32 size;
+
+    reg_t segment_override;
 };
 
 struct decoder_context_t {
-
+    u32 last_pref;
+    reg_t segment_override;
 };
 
 // @TODO: now I just load to the beginning of the memory, it would be better to change that
@@ -384,9 +408,14 @@ operand_t get_imm_operand(i16 val)
     return {e_operand_imm, {.imm = val}};
 }
 
+operand_t get_cs_ip_operand(u16 disp, u16 data)
+{
+    return {e_operand_cs_ip, {.cs_ip = {data, disp}}};
+}
+
 instruction_t decode_next_instruction(memory_access_t at,
                                       instruction_table_t *table,
-                                      decoder_context_t *ctx)
+                                      const decoder_context_t *ctx)
 {
     memory_access_t init_at = at;
 
@@ -471,18 +500,31 @@ instruction_t decode_next_instruction(memory_access_t at,
                          nullptr;
 
     if (free_op) {
-        // @TODO: errors on more than one free_op?
-        if (has[e_bits_data])
-            *free_op = get_imm_operand(data);
-        if (has[e_bits_v])
-            *free_op = fields[e_bits_v] ? get_reg_operand(0x1, false) : get_imm_operand(1);
+        // @TODO: errors on more than one free_op
+        if (has[e_bits_disp] && has[e_bits_data] && !has[e_bits_mod])
+            *(free_op++) = get_cs_ip_operand(disp, data);
+        else if (has[e_bits_data])
+            *(free_op++) = get_imm_operand(data);
+        else if (has[e_bits_v])
+            *(free_op++) = fields[e_bits_v] ? get_reg_operand(0x1, false) : get_imm_operand(1);
+        else if (fields[e_bits_jmp_rel_disp])
+            *(free_op++) = get_imm_operand(disp);
 
-        if (++free_op > last_op)
+        if (free_op > last_op)
             last_op = free_op;
     }
 
+    if (w)
+        instr.flags |= e_iflags_w;
+    if (fields[e_bits_z])
+        instr.flags |= e_iflags_z;
+    instr.flags |= fields[e_bits_jmp_rel_disp] ? e_iflags_imm_is_rel_disp : 0;
+    instr.flags |= fields[e_bits_far] ? e_iflags_far : 0;
+
+    instr.flags |= ctx->last_pref;
+    instr.segment_override = ctx->segment_override;
+
     instr.operand_cnt = last_op - instr.operands;
-    instr.is_wide     = w;
     instr.size        = at.base - init_at.base;
 
     return instr;
@@ -490,6 +532,16 @@ instruction_t decode_next_instruction(memory_access_t at,
 
 void update_ctx(instruction_t instr, decoder_context_t *ctx)
 {
+    ctx->last_pref = 0;
+
+    if (instr.op == e_op_lock)
+        ctx->last_pref |= e_iflags_lock;
+    else if (instr.op == e_op_rep)
+        ctx->last_pref |= e_iflags_rep | (instr.flags & e_iflags_z);
+    else if (instr.op == e_op_segment) {
+        ctx->last_pref |= e_iflags_seg_override;
+        ctx->segment_override = instr.operands[0].data.reg.reg;
+    }
 }
 
 void print_reg(reg_access_t reg)
@@ -520,7 +572,7 @@ void print_reg(reg_access_t reg)
     printf("%s", reg_names[reg.reg*3 + offset]);
 }
 
-void print_mem(mem_t mem)
+void print_mem(ea_mem_access_t mem, bool override_seg, reg_t sr)
 {
     const char *ea_base_names[e_ea_base_max] =
     {
@@ -528,13 +580,29 @@ void print_mem(mem_t mem)
         "si", "di", "bp", "bx",
     };
 
+    const char *sr_names[] = { "es:", "cs:", "ss:", "ds:" };
+
     assert(mem.base < e_ea_base_max);
+    const char *seg_override = override_seg ? sr_names[sr % 0x4] : "";
     if (mem.base == e_ea_base_direct)
-        printf("[%hu]", mem.disp);
+        printf("%s[%hu]", seg_override, mem.disp);
     else if (mem.disp == 0)
-        printf("[%s]", ea_base_names[mem.base]);
+        printf("%s[%s]", seg_override, ea_base_names[mem.base]);
     else
-        printf("[%s%+hd]", ea_base_names[mem.base], mem.disp);
+        printf("%s[%s%+hd]", seg_override, ea_base_names[mem.base], mem.disp);
+}
+
+void print_imm(i16 imm, bool is_rel_disp, u32 instr_size)
+{
+    if (is_rel_disp)
+        printf("$%+hd+%d", imm, instr_size);
+    else
+        printf("%hd", imm);
+}
+
+void print_cs_ip(cs_ip_pair_t cs_ip)
+{
+    printf("%hu:%hu", cs_ip.cs, cs_ip.ip);
 }
 
 void print_intstruction(instruction_t instr)
@@ -549,8 +617,27 @@ void print_intstruction(instruction_t instr)
 #include "instruction_table.cpp.inl"
     };
 
+    // We print prefix as part of instruction
+    if (instr.op == e_op_lock || instr.op == e_op_rep || instr.op == e_op_segment)
+        return;
+
+    if (instr.flags & e_iflags_lock)
+        printf("lock ");
+    if (instr.flags & e_iflags_rep)
+        printf("rep%s ", (instr.flags & e_iflags_z) ? "" : "nz");
+
     printf("%s", op_mnemonics[instr.op]);
 
+    if (instr.op == e_op_movs ||
+        instr.op == e_op_cmps ||
+        instr.op == e_op_scas ||
+        instr.op == e_op_lods ||
+        instr.op == e_op_stos)
+    {
+        printf("%c", (instr.flags & e_iflags_w) ? 'w' : 'b');
+    }
+
+    // @TODO: clean up
     if (instr.operand_cnt != 0) {
         printf(" ");
 
@@ -561,19 +648,25 @@ void print_intstruction(instruction_t instr)
             operand_t *operand = &instr.operands[i];
             switch (operand->type) {
             case e_operand_none: break;
+
             case e_operand_reg:
                 print_reg(operand->data.reg);
                 break;
             case e_operand_mem:
+                if (instr.flags & e_iflags_far)
+                    printf("far ");
                 // @NOTE: picked up from Casey's code. This produces not-so-neat
                 //        prints for something like op [ea], reg, adding a redundant
                 //        word/byte, but saves having to store more state in instructions
-                if (instr.operands[0].type != e_operand_reg)
-                    printf(instr.is_wide ? "word " : "byte ");
-                print_mem(operand->data.mem);
+                else if (instr.operands[0].type != e_operand_reg)
+                    printf((instr.flags & e_iflags_w) ? "word " : "byte ");
+                print_mem(operand->data.mem, instr.flags & e_iflags_seg_override, instr.segment_override);
                 break;
             case e_operand_imm:
-                printf("%hd", operand->data.imm);
+                print_imm(operand->data.imm, instr.flags & e_iflags_imm_is_rel_disp, instr.size);
+                break;
+            case e_operand_cs_ip:
+                print_cs_ip(operand->data.cs_ip);
                 break;
             }
         }
