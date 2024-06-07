@@ -1,5 +1,6 @@
 #pragma once
 #include "defs.hpp"
+#include <cstdio>
 
 #define POT(_p) (1 << (_p))
 

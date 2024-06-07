@@ -20,7 +20,7 @@ instruction_table_t build_instruction_table()
              f != encp->fields + ARR_CNT(encp->fields) && f->type != e_bits_end;
              ++f)
         {
-            if (f->type == e_bits_literal) // @TODO: check, this does promote to u32, doesnt it?
+            if (f->type == e_bits_literal)
                 table.mask |= n_bit_mask(f->bit_count) << shift;
             shift += f->bit_count;
         }
@@ -90,8 +90,6 @@ instruction_table_t build_instruction_table()
             }
 
             table.table[id] = encp;
-
-            //printf("%x: %d\n", id, encp->op);
         }
     }
 

@@ -151,7 +151,6 @@ INST   (scas, {B(1010111), W})
 INST   (lods, {B(1010110), W})
 INST   (stos, {B(1010101), W})
 
-// @TODO: check direct calls and jumps
 INST   (call, {B(11101000), ADDR, FLAGS(e_bits_jmp_rel_disp)})
 INSTALT(call, {B(11111111), MOD, B(010), RM, IMP_D(0), IMP_W(1)})
 INSTALT(call, {B(10011010), ADDR, DATA, DATA_IF_W, IMP_W(1)})

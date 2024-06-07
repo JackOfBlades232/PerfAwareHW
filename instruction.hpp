@@ -112,3 +112,9 @@ struct instruction_t {
 
     reg_t segment_override;
 };
+
+operand_t get_reg_operand(u8 reg, bool is_wide);
+operand_t get_segreg_operand(u8 sr);
+operand_t get_rm_operand(u8 mod, u8 rm, bool is_wide, i16 disp);
+operand_t get_imm_operand(u16 val);
+operand_t get_cs_ip_operand(u16 disp, u16 data);
