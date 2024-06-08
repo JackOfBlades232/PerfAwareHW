@@ -1,6 +1,7 @@
 #pragma once
 #include "defs.hpp"
 #include <cstdio>
+#include <cstring>
 
 #define POT(_p) (1 << (_p))
 
@@ -53,4 +54,9 @@ inline u32 press_down_masked_bits(u32 val, u32 mask)
     }
 
     return res;
+}
+
+inline bool streq(const char *s1, const char *s2)
+{
+    return strcmp(s1, s2) == 0;
 }
