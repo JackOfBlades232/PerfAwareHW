@@ -1,6 +1,7 @@
 ﻿#include "instruction.hpp"
 #include "util.hpp"
 #include "decoder.hpp"
+#include "memory.hpp"
 
 u16 parse_data_value(memory_access_t *at,
                      bool has_data, bool is_wide,
@@ -9,9 +10,11 @@ u16 parse_data_value(memory_access_t *at,
     if (!has_data)
         return 0;
 
-    u8 lo = at->mem[at->base++];
+    u8 lo = get_byte_at(*at, 0);
+    ++(at->base), --(at->size);
     if (is_wide) {
-        u8 hi = at->mem[at->base++];
+        u8 hi = get_byte_at(*at, 0);
+        ++(at->base), --(at->size);
         return (hi << 8) | lo;
     } else if (is_sign_extended)
         return (i8)lo;
@@ -25,8 +28,8 @@ instruction_t decode_next_instruction(memory_access_t at,
 {
     memory_access_t init_at = at;
 
-    u8 first_byte  = at.mem[at.base];
-    u8 second_byte = at.mem[at.base+1];
+    u8 first_byte  = get_byte_at(at, 0);
+    u8 second_byte = get_byte_at(at, 1);
     const instruction_encoding_t *enc =
         table->table[press_down_masked_bits(first_byte | (second_byte << 8), table->mask)];
 
@@ -62,8 +65,9 @@ instruction_t decode_next_instruction(memory_access_t at,
             
             assert(bits_consumed <= 8);
             if (bits_consumed == 8) {
-                byte = at.mem[++at.base];
+                ++at.base;
                 --at.size;
+                byte = get_byte_at(at, 0);
 
                 bits_consumed = 0;
             }

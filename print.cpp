@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <cstdarg>
 
-static FILE *out_f = stdout;
+static FILE *g_outf = stdout;
 
 namespace output
 {
@@ -13,7 +13,7 @@ void print(const char *fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
-    vfprintf(out_f, fmt, args);
+    vfprintf(g_outf, fmt, args);
     va_end(args);
 }
 
@@ -159,7 +159,7 @@ void print_intstruction(instruction_t instr)
 void set_out_file(FILE *f)
 {
     assert(f);
-    out_f = f;
+    g_outf = f;
 }
 
 }

@@ -45,12 +45,10 @@ bool decode_and_process_instructions(memory_access_t at, u32 bytes)
     return true;
 }
 
-static u8 g_memory[POT(20)];
-
 int main(int argc, char **argv)
 {
     prog_action_t action;
-    memory_access_t main_memory = {g_memory, 0, ARR_CNT(g_memory)};
+    memory_access_t main_memory = get_main_memory_access();
 
     const char *fn;
     if (argc < 3) {
