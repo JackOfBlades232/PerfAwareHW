@@ -1,14 +1,17 @@
 ﻿#include "defs.hpp"
+#include "simulator.hpp"
 #include "util.hpp"
 #include "instruction.hpp"
 #include "encoding.hpp"
 #include "decoder.hpp"
 #include "memory.hpp"
 #include "print.hpp"
+#include "disassembler.hpp"
+#include "simulator.hpp"
 #include <cstdio>
 
 /* @TODO:
- * Clean up for sim
+ * R-r and imm-r movs
  */
 
 enum prog_action_t {
@@ -50,7 +53,7 @@ int main(int argc, char **argv)
     prog_action_t action;
     memory_access_t main_memory = get_main_memory_access();
 
-    const char *fn;
+    const char *fn = nullptr;
     if (argc < 3) {
         LOGERR("Invalid args, correct format: prog [disasm|sim] [file name] [args]");
         return 1;
@@ -81,6 +84,14 @@ int main(int argc, char **argv)
             }
 
             output::set_out_file(out_f);
+        } else if (streq(argv[i], "-trace")) {
+            // @TODO: different tracing settings
+            if (action != e_act_simulate) {
+                LOGERR("Tracing [-trace] only valid for simulation");
+                return 1;
+            }
+
+            set_simulation_trace_level(e_trace_data_mutation | e_trace_disassembly);
         }
     }
 
@@ -94,10 +105,11 @@ int main(int argc, char **argv)
     if (action == e_act_disassemble) {
         output::print(";; %s disassembly ;;\n", fn);
         output::print("bits 16\n");
-        res = decode_and_process_instructions<output::print_intstruction>(main_memory, code_bytes);
+        res = decode_and_process_instructions<output_instrunction_disassembly>(main_memory, code_bytes);
     } else {
-        LOGERR("Simulation is not implemented yet");
-        res = false;
+        output::print("--- %s execution ---\n", fn);
+        res = decode_and_process_instructions<simulate_instruction_execution>(main_memory, code_bytes);
+        output_simulation_results();
     }
 
     return res ? 0 : 1;

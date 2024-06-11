@@ -262,15 +262,25 @@ xor bx, [bp]
 xor cx, [4384]
 xor byte [bp-39], 239
 xor word [bx+si-4332], 10328
+
 rep movsb
+
 rep cmpsb
+
 rep scasb
+
 rep lodsb
+
 rep movsw
+
 rep cmpsw
+
 rep scasw
+
 rep lodsw
+
 rep stosb
+
 rep stosw
 call word [39201]
 call word [bp-100]
@@ -316,18 +326,32 @@ cli
 sti
 hlt
 wait
+
 lock not byte [bp+9905]
+
 lock xchg byte [100], al
+
 mov al, cs:[bx+si]
+
 mov bx, ds:[bp+di]
+
 mov dx, es:[bp]
+
 mov ah, ss:[bx+si+4]
+
 and byte ss:[bp+si+10], ch
+
 or word ds:[bx+di+1000], dx
+
 xor bx, es:[bp]
+
 cmp cx, es:[4384]
+
 test byte cs:[bp-39], 239
+
 sbb word cs:[bx+si-4332], 10328
+
+
 lock not byte cs:[bp+9905]
 call 123:456
 jmp 789:34

@@ -3,9 +3,9 @@
 #include "decoder.hpp"
 #include "memory.hpp"
 
-u16 parse_data_value(memory_access_t *at,
-                     bool has_data, bool is_wide,
-                     bool is_sign_extended = true)
+static u16 parse_data_value(memory_access_t *at,
+                            bool has_data, bool is_wide,
+                            bool is_sign_extended = true)
 {
     if (!has_data)
         return 0;
@@ -131,6 +131,8 @@ instruction_t decode_next_instruction(memory_access_t at,
 
     if (w)
         instr.flags |= e_iflags_w;
+    if (s)
+        instr.flags |= e_iflags_s;
     if (fields[e_bits_z])
         instr.flags |= e_iflags_z;
     instr.flags |= fields[e_bits_jmp_rel_disp] ? e_iflags_imm_is_rel_disp : 0;

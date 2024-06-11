@@ -35,9 +35,12 @@ void print_reg(reg_access_t reg)
         nullptr, nullptr, "cs",
         nullptr, nullptr, "ss",
         nullptr, nullptr, "ds",
+
+        nullptr, nullptr, "ip",
+        nullptr, nullptr, "flags",
     };
 
-    assert(reg.reg < e_reg_ip);
+    assert(reg.reg < e_reg_max);
 
     // @NOTE: relying on there being three combinations: 01 02 11
     // @FEAT: will not do for 32bit
@@ -45,7 +48,7 @@ void print_reg(reg_access_t reg)
     print("%s", reg_names[reg.reg*3 + offset]);
 }
 
-void print_mem(ea_mem_access_t mem, bool override_seg, reg_t sr)
+static void print_mem(ea_mem_access_t mem, bool override_seg, reg_t sr)
 {
     const char *ea_base_names[e_ea_base_max] =
     {
@@ -65,7 +68,7 @@ void print_mem(ea_mem_access_t mem, bool override_seg, reg_t sr)
         print("%s[%s%+hd]", seg_override, ea_base_names[mem.base], mem.disp);
 }
 
-void print_imm(u16 imm, bool is_rel_disp, u32 instr_size)
+static void print_imm(u16 imm, bool is_rel_disp, u32 instr_size)
 {
     if (is_rel_disp)
         print("$%+hd+%d", imm, instr_size);
@@ -73,7 +76,7 @@ void print_imm(u16 imm, bool is_rel_disp, u32 instr_size)
         print("%hd", imm);
 }
 
-void print_cs_ip(cs_ip_pair_t cs_ip)
+static void print_cs_ip(cs_ip_pair_t cs_ip)
 {
     print("%hu:%hu", cs_ip.cs, cs_ip.ip);
 }
@@ -152,8 +155,6 @@ void print_intstruction(instruction_t instr)
             }
         }
     }
-
-    print("\n");
 }
 
 void set_out_file(FILE *f)

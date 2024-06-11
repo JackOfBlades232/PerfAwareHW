@@ -54,7 +54,7 @@ enum instr_flags_t : u32 {
     e_iflags_none = 0,
 
     e_iflags_w    = 1 << 0,
-    //e_iflags_s  = 1 << 1,
+    e_iflags_s    = 1 << 1,
     e_iflags_z    = 1 << 2,
     e_iflags_lock = 1 << 3,
     e_iflags_rep  = 1 << 4,
