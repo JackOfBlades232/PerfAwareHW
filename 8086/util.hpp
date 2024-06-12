@@ -56,6 +56,13 @@ inline u32 press_down_masked_bits(u32 val, u32 mask)
     return res;
 }
 
+template <class TEnum>
+inline u32 to_flag(TEnum e)
+{
+    assert((int)e < 32);
+    return 1 << (int)e;
+}
+
 inline bool streq(const char *s1, const char *s2)
 {
     return strcmp(s1, s2) == 0;

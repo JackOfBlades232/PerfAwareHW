@@ -14,6 +14,7 @@ static u32 g_tracing_flags = 0;
 // @TODO: concise machine state
 
 static u16 g_registers_state[e_reg_max];
+static u32 g_registers_used = 0;
 
 void set_simulation_trace_level(u32 flags)
 {
@@ -43,14 +44,11 @@ static void write_reg(reg_access_t access, u16 val)
            (access.reg <= e_reg_d && access.size == 1 && access.offset <= 1));
     assert(access.size == 2 || val < (1 << 8));
 
-    // @TODO: more elegant/general side-effect tracing. No ideas for design now
-    if (g_tracing_flags & e_trace_data_mutation) {
-        output::print(" ; ");
-        output::print_word_reg(access.reg);
-        output::print(":0x%hx->0x%hx\n", read_reg(access), val);
-    }
+    g_registers_used |= to_flag(access.reg);
 
     u16 *reg_ptr = &g_registers_state[access.reg];
+    u16 prev_reg_content = *reg_ptr;
+
     if (access.size == 2) // => offset = 0
         *reg_ptr = val;
     else if (access.offset == 0) { // => size == 1
@@ -59,6 +57,13 @@ static void write_reg(reg_access_t access, u16 val)
     } else { // => offset == 1
         *reg_ptr &= 0x00FF;
         *reg_ptr |= val << 8;
+    }
+
+    // @TODO: more elegant/general side-effect tracing. No ideas for design now
+    if (g_tracing_flags & e_trace_data_mutation) {
+        output::print(" ; ");
+        output::print_word_reg(access.reg);
+        output::print(":0x%hx->0x%hx\n", prev_reg_content, *reg_ptr);
     }
 }
 
@@ -112,8 +117,12 @@ void output_simulation_results()
     if (g_tracing_flags != 0)
         output::print("\n");
     output::print("Registers state:\n");
-    for (int reg = e_reg_a; reg < e_reg_max; ++reg) {
-        output::print_word_reg((reg_t)reg);
-        output::print(": 0x%hx\n", read_reg({(reg_t)reg, 0, 2}));
+    for (int reg = e_reg_a; reg < e_reg_ip; ++reg) {
+        if (g_registers_used & to_flag(reg)) {
+            u16 val = read_reg(get_word_reg_access((reg_t)reg));
+            output::print("      ");
+            output::print_word_reg((reg_t)reg);
+            output::print(": 0x%04hx (%hd)\n", val, val);
+        }
     }
 }

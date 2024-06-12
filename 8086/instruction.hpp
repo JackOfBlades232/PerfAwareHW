@@ -118,3 +118,5 @@ operand_t get_segreg_operand(u8 sr);
 operand_t get_rm_operand(u8 mod, u8 rm, bool is_wide, i16 disp);
 operand_t get_imm_operand(u16 val);
 operand_t get_cs_ip_operand(u16 disp, u16 data);
+
+inline reg_access_t get_word_reg_access(reg_t reg) { return {reg, 0, 2}; }

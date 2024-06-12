@@ -1,4 +1,4 @@
---- test\listing_0044_register_movs execution ---
+--- listing_0044_register_movs execution ---
 mov ax, 1 ; ax:0x0->0x1 
 mov bx, 2 ; bx:0x0->0x2 
 mov cx, 3 ; cx:0x0->0x3 
@@ -12,7 +12,7 @@ mov cx, bp ; cx:0x3->0x2
 mov bx, si ; bx:0x2->0x3 
 mov ax, di ; ax:0x1->0x4 
 
-Final registers:
+Registers state:
       ax: 0x0004 (4)
       bx: 0x0003 (3)
       cx: 0x0002 (2)

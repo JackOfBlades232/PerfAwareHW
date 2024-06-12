@@ -1,4 +1,4 @@
---- test\listing_0043_immediate_movs execution ---
+--- listing_0043_immediate_movs execution ---
 mov ax, 1 ; ax:0x0->0x1 
 mov bx, 2 ; bx:0x0->0x2 
 mov cx, 3 ; cx:0x0->0x3 
@@ -8,7 +8,7 @@ mov bp, 6 ; bp:0x0->0x6
 mov si, 7 ; si:0x0->0x7 
 mov di, 8 ; di:0x0->0x8 
 
-Final registers:
+Registers state:
       ax: 0x0001 (1)
       bx: 0x0002 (2)
       cx: 0x0003 (3)

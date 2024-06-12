@@ -157,6 +157,12 @@ void print_intstruction(instruction_t instr)
     }
 }
 
+bool instruction_is_printable(instruction_t instr)
+{
+    return instr.op < e_op_max && instr.op != e_op_lock &&
+           instr.op != e_op_rep && instr.op != e_op_segment;
+}
+
 void set_out_file(FILE *f)
 {
     assert(f);

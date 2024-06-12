@@ -1,3 +1,3 @@
 @echo off
-..\build\main.exe disasm listing_0042_completionist_decode -o test_disasm.asm && nasm.exe test_disasm.asm && fc test_disasm listing_0042_completionist_decode
+..\build\main.exe disasm %1 -o test_disasm.asm && nasm.exe test_disasm.asm && fc test_disasm %1
 @echo on
