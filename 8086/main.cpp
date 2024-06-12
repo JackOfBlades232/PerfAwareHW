@@ -11,7 +11,7 @@
 #include <cstdio>
 
 /* @TODO:
- * R-r and imm-r movs
+ * Add/cmp/jmp & challenges (+ watch vid)
  */
 
 enum prog_action_t {

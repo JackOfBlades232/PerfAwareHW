@@ -7,8 +7,27 @@
 // @TODO: think again if asserts are appropriate here.
 //        Where are we dealing with caller mistakes, and where with bad input?
 
+union reg_memory_t {
+    u16 w;
+    u8 b[2];
+};
+
+enum proc_flag_t {
+    e_pflag_z = 0,
+    e_pflag_s,
+    e_pflag_p,
+
+    e_pflag_max
+};
+
+enum arifm_op_t {
+    e_arifm_add,
+    e_arifm_sub
+};
+
 struct machine_t {
-    u16 registers[e_reg_max];
+    reg_memory_t registers[e_reg_ip]; // without ip & flags
+    bool flags[e_pflag_max]; 
 };
 
 struct tracing_state_t {
@@ -24,18 +43,25 @@ void set_simulation_trace_level(u32 flags)
     g_tracing.flags = flags;
 }
 
+static void output_flags_content()
+{
+    const char *flags_names[e_pflag_max] = { "Z", "S", "P" };
+    for (int f = 0; f < e_pflag_max; ++f) {
+        if (g_machine.flags[f])
+            output::print("%s", flags_names[f]);
+    }
+}
+
 static u16 read_reg(reg_access_t access)
 {
     assert((access.offset == 0 && access.size == 2) ||
            (access.reg <= e_reg_d && access.size == 1 && access.offset <= 1));
 
-    u16 reg_val = g_machine.registers[access.reg];
+    reg_memory_t *reg_mem = &g_machine.registers[access.reg];
     if (access.size == 2) // => offset = 0
-        return reg_val;
-    else if (access.offset == 0) // => size == 1
-        return reg_val & 0xFF;
-    else // => offset == 1
-        return reg_val >> 8;
+        return reg_mem->w;
+    else
+        return reg_mem->b[access.offset];
 }
 
 static void write_reg(reg_access_t access, u16 val)
@@ -46,24 +72,19 @@ static void write_reg(reg_access_t access, u16 val)
 
     g_tracing.registers_used |= to_flag(access.reg);
 
-    u16 *reg_ptr = &g_machine.registers[access.reg];
-    u16 prev_reg_content = *reg_ptr;
+    reg_memory_t *reg_mem = &g_machine.registers[access.reg];
+    u16 prev_reg_content = reg_mem->w;
 
     if (access.size == 2) // => offset = 0
-        *reg_ptr = val;
-    else if (access.offset == 0) { // => size == 1
-        *reg_ptr &= 0xFF00;
-        *reg_ptr |= val;
-    } else { // => offset == 1
-        *reg_ptr &= 0x00FF;
-        *reg_ptr |= val << 8;
-    }
+        reg_mem->w = val;
+    else
+        reg_mem->b[access.offset] = (u8)val;
 
     // @TODO: more elegant/general side-effect tracing. No ideas for design now
     if (g_tracing.flags & e_trace_data_mutation) {
-        output::print(" ; ");
+        output::print(" ");
         output::print_word_reg(access.reg);
-        output::print(":0x%hx->0x%hx\n", prev_reg_content, *reg_ptr);
+        output::print(":0x%hx->0x%hx", prev_reg_content, reg_mem->w);
     }
 }
 
@@ -106,10 +127,30 @@ static void write_operand(operand_t op, u16 val)
     }
 }
 
+static void update_flags(arifm_op_t op, u16 a, u16 b, u16 res, bool is_wide)
+{
+    if (g_tracing.flags & e_trace_data_mutation) {
+        output::print(" flags:");
+        output_flags_content();
+    }
+
+    g_machine.flags[e_pflag_z] = res == 0;
+    g_machine.flags[e_pflag_s] = res & (1 << (is_wide ? 15 : 7));
+    // @TODO: manual sais parity == even bits, Casey sais even bits in low 8. Which is it?
+    g_machine.flags[e_pflag_p] = count_ones(res, is_wide ? 16 : 8) % 2 == 0;
+
+    if (g_tracing.flags & e_trace_data_mutation) {
+        output::print("->");
+        output_flags_content();
+    }
+}
+
 void simulate_instruction_execution(instruction_t instr)
 {
     if (g_tracing.flags & e_trace_disassembly)
         output::print_intstruction(instr);
+    if (g_tracing.flags & e_trace_data_mutation)
+        output::print(" ;");
 
     // @TODO: correct instruction format validation
     switch (instr.op) {
@@ -117,10 +158,35 @@ void simulate_instruction_execution(instruction_t instr)
             write_operand(instr.operands[0], read_operand(instr.operands[1]));
             break;
 
+        case e_op_add: {
+            u16 dst = read_operand(instr.operands[0]);
+            u16 src = read_operand(instr.operands[1]);
+            u16 res = dst + src;
+            write_operand(instr.operands[0], res);
+            update_flags(e_arifm_add, dst, src, res, instr.flags & e_iflags_w);
+        } break;
+
+        case e_op_sub: {
+            u16 dst = read_operand(instr.operands[0]);
+            u16 src = read_operand(instr.operands[1]);
+            u16 res = dst - src;
+            write_operand(instr.operands[0], res);
+            update_flags(e_arifm_sub, dst, src, res, instr.flags & e_iflags_w);
+        } break;
+
+        case e_op_cmp: {
+            u16 dst = read_operand(instr.operands[0]);
+            u16 src = read_operand(instr.operands[1]);
+            update_flags(e_arifm_sub, dst, src, dst - src, instr.flags & e_iflags_w);
+        } break;
+
         default:
             LOGERR("Instruction execution not implemented");
             assert(0);
     }
+
+    if (g_tracing.flags & (e_trace_disassembly | e_trace_data_mutation))
+        output::print("\n");
 }
 
 void output_simulation_results()
@@ -133,7 +199,10 @@ void output_simulation_results()
             u16 val = read_reg(get_word_reg_access((reg_t)reg));
             output::print("      ");
             output::print_word_reg((reg_t)reg);
-            output::print(": 0x%04hx (%hd)\n", val, val);
+            output::print(": 0x%04hx (%hu)\n", val, val);
         }
     }
+    output::print("   flags: ");
+    output_flags_content();
+    output::print("\n");
 }
