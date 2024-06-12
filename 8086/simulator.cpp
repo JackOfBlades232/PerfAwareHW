@@ -13,9 +13,12 @@ union reg_memory_t {
 };
 
 enum proc_flag_t {
-    e_pflag_z = 0,
-    e_pflag_s,
+    e_pflag_c = 0,
     e_pflag_p,
+    e_pflag_a,
+    e_pflag_z,
+    e_pflag_s,
+    e_pflag_o,
 
     e_pflag_max
 };
@@ -38,6 +41,18 @@ struct tracing_state_t {
 static machine_t g_machine = {};
 static tracing_state_t g_tracing = {};
 
+static u32 do_arifm_op(u32 a, u32 b, arifm_op_t op)
+{
+    switch (op) {
+        case e_arifm_add:
+            return a+b;
+        case e_arifm_sub:
+            return a-b;
+    }
+
+    return 0;
+}
+
 void set_simulation_trace_level(u32 flags)
 {
     g_tracing.flags = flags;
@@ -45,7 +60,7 @@ void set_simulation_trace_level(u32 flags)
 
 static void output_flags_content()
 {
-    const char *flags_names[e_pflag_max] = { "Z", "S", "P" };
+    const char *flags_names[e_pflag_max] = { "C", "P", "A", "Z", "S", "O" };
     for (int f = 0; f < e_pflag_max; ++f) {
         if (g_machine.flags[f])
             output::print("%s", flags_names[f]);
@@ -127,17 +142,37 @@ static void write_operand(operand_t op, u16 val)
     }
 }
 
-static void update_flags(arifm_op_t op, u16 a, u16 b, u16 res, bool is_wide)
+static void update_flags(arifm_op_t op, u32 a, u32 b, u32 res, bool is_wide)
 {
     if (g_tracing.flags & e_trace_data_mutation) {
         output::print(" flags:");
         output_flags_content();
     }
 
-    g_machine.flags[e_pflag_z] = res == 0;
-    g_machine.flags[e_pflag_s] = res & (1 << (is_wide ? 15 : 7));
+    auto is_neg = [](u32 n, bool is_wide) {
+        return n & (1 << (is_wide ? 15 : 7));
+    };
+
+    g_machine.flags[e_pflag_z] = (res & (is_wide ? 0xFFFF : 0xFF)) == 0;
+    g_machine.flags[e_pflag_s] = is_neg(res, is_wide);
+
     // @TODO: manual sais parity == even bits, Casey sais even bits in low 8. Which is it?
-    g_machine.flags[e_pflag_p] = count_ones(res, is_wide ? 16 : 8) % 2 == 0;
+    //g_machine.flags[e_pflag_p] = count_ones(res, is_wide ? 16 : 8) % 2 == 0;
+    g_machine.flags[e_pflag_p] = count_ones(res, 8) % 2 == 0;
+
+    // @TODO: I am getting conflicted evidence about c/o/a flags. Investigate, 
+    //        May be better to run actual asm on linux. (or find a way on win64?)
+    g_machine.flags[e_pflag_c] = res >= (1 << (is_wide ? 16 : 8));
+
+    bool as = is_neg(a, is_wide), bs = is_neg(b, is_wide);
+    g_machine.flags[e_pflag_o] =
+        as != g_machine.flags[e_pflag_s] && 
+        (
+            (op == e_arifm_add && as == bs) ||
+            (op == e_arifm_sub && as != bs)
+        );
+
+    g_machine.flags[e_pflag_a] = do_arifm_op(a & 0xF, b & 0xF, op) & 0x10;
 
     if (g_tracing.flags & e_trace_data_mutation) {
         output::print("->");
@@ -159,24 +194,24 @@ void simulate_instruction_execution(instruction_t instr)
             break;
 
         case e_op_add: {
-            u16 dst = read_operand(instr.operands[0]);
-            u16 src = read_operand(instr.operands[1]);
-            u16 res = dst + src;
+            u32 dst = read_operand(instr.operands[0]);
+            u32 src = read_operand(instr.operands[1]);
+            u32 res = dst + src;
             write_operand(instr.operands[0], res);
             update_flags(e_arifm_add, dst, src, res, instr.flags & e_iflags_w);
         } break;
 
         case e_op_sub: {
-            u16 dst = read_operand(instr.operands[0]);
-            u16 src = read_operand(instr.operands[1]);
-            u16 res = dst - src;
+            u32 dst = read_operand(instr.operands[0]);
+            u32 src = read_operand(instr.operands[1]);
+            u32 res = dst - src;
             write_operand(instr.operands[0], res);
             update_flags(e_arifm_sub, dst, src, res, instr.flags & e_iflags_w);
         } break;
 
         case e_op_cmp: {
-            u16 dst = read_operand(instr.operands[0]);
-            u16 src = read_operand(instr.operands[1]);
+            u32 dst = read_operand(instr.operands[0]);
+            u32 src = read_operand(instr.operands[1]);
             update_flags(e_arifm_sub, dst, src, dst - src, instr.flags & e_iflags_w);
         } break;
 
