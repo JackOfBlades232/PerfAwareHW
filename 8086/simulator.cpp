@@ -28,14 +28,16 @@ enum arifm_op_t {
     e_arifm_sub
 };
 
+// @TODO: I still think the main ip should be in machine!
+//        Maybe invert and make the machine visible everywhere?
 struct machine_t {
-    reg_memory_t registers[e_reg_ip]; // without ip & flags
+    reg_memory_t registers[e_reg_flags]; // without flags
     bool flags[e_pflag_max]; 
 };
 
 struct tracing_state_t {
     u32 flags = 0;
-    u32 registers_used = 0;
+    u32 registers_used = to_flag(e_reg_ip);
 };
 
 static machine_t g_machine = {};
@@ -180,12 +182,19 @@ static void update_flags(arifm_op_t op, u32 a, u32 b, u32 res, bool is_wide)
     }
 }
 
-void simulate_instruction_execution(instruction_t instr)
+void simulate_instruction_execution(instruction_t instr, u32 *ip)
 {
     if (g_tracing.flags & e_trace_disassembly)
         output::print_intstruction(instr);
     if (g_tracing.flags & e_trace_data_mutation)
         output::print(" ;");
+
+    // @TODO: sort out ip-s bitness
+    // @IDEA: do we even need readback on every instr? Maybe just return ip?
+    g_machine.registers[e_reg_ip].w = *ip;
+
+    u32 prev_ip = g_machine.registers[e_reg_ip].w;
+    g_machine.registers[e_reg_ip].w += instr.size;
 
     // @TODO: correct instruction format validation
     switch (instr.op) {
@@ -220,8 +229,12 @@ void simulate_instruction_execution(instruction_t instr)
             assert(0);
     }
 
+    if (g_tracing.flags & e_trace_data_mutation)
+        output::print(" ip:0x%hx->0x%hx", prev_ip, g_machine.registers[e_reg_ip].w);
     if (g_tracing.flags & (e_trace_disassembly | e_trace_data_mutation))
         output::print("\n");
+
+    *ip = g_machine.registers[e_reg_ip].w;
 }
 
 void output_simulation_results()
@@ -229,7 +242,7 @@ void output_simulation_results()
     if (g_tracing.flags != 0)
         output::print("\n");
     output::print("Registers state:\n");
-    for (int reg = e_reg_a; reg < e_reg_ip; ++reg) {
+    for (int reg = e_reg_a; reg < e_reg_flags; ++reg) {
         if (g_tracing.registers_used & to_flag(reg)) {
             u16 val = read_reg(get_word_reg_access((reg_t)reg));
             output::print("      ");

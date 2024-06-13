@@ -8,6 +8,7 @@
 #include "print.hpp"
 #include "disassembler.hpp"
 #include "simulator.hpp"
+#include <cassert>
 #include <cstdio>
 
 /* @TODO:
@@ -19,30 +20,28 @@ enum prog_action_t {
     e_act_disassemble,
 };
 
-template <void (*t_insrunction_processor)(instruction_t)>
+template <void (*t_insrunction_processor)(instruction_t, u32 *)>
 bool decode_and_process_instructions(memory_access_t at, u32 bytes)
 {
     instruction_table_t table = build_instruction_table();
     decoder_context_t ctx = {};
 
-    while (bytes) {
-        instruction_t instr = decode_next_instruction(at, &table, &ctx);
+    u32 ip = 0;
+
+    while (bytes - ip) {
+        instruction_t instr = decode_next_instruction(at, ip, &table, &ctx);
         if (instr.op == e_op_invalid) {
             LOGERR("Failed to decode instruction");
             return false;
         }
 
-        if (bytes >= instr.size) {
-            bytes   -= instr.size;
-            at.base += instr.size;
-            at.size -= instr.size;
-        } else {
+        if (ip + instr.size > bytes) {
             LOGERR("Trying to decode outside the instructions mem, the instruction is invalid");
             return false;
         }
 
         update_decoder_ctx(instr, &ctx);
-        t_insrunction_processor(instr);
+        t_insrunction_processor(instr, &ip);
     }
 
     return true;

@@ -3,18 +3,18 @@
 #include "decoder.hpp"
 #include "memory.hpp"
 
-static u16 parse_data_value(memory_access_t *at,
+static u16 parse_data_value(memory_access_t at, u32 *offset,
                             bool has_data, bool is_wide,
                             bool is_sign_extended = true)
 {
     if (!has_data)
         return 0;
 
-    u8 lo = get_byte_at(*at, 0);
-    ++(at->base), --(at->size);
+    u8 lo = get_byte_at(at, *offset);
+    ++(*offset);
     if (is_wide) {
-        u8 hi = get_byte_at(*at, 0);
-        ++(at->base), --(at->size);
+        u8 hi = get_byte_at(at, *offset);
+        ++(*offset);
         return (hi << 8) | lo;
     } else if (is_sign_extended)
         return (i8)lo;
@@ -22,14 +22,14 @@ static u16 parse_data_value(memory_access_t *at,
         return lo;
 }
 
-instruction_t decode_next_instruction(memory_access_t at,
+instruction_t decode_next_instruction(memory_access_t at, u32 offset,
                                       instruction_table_t *table,
                                       const decoder_context_t *ctx)
 {
-    memory_access_t init_at = at;
+    u32 init_offset = offset;
 
-    u8 first_byte  = get_byte_at(at, 0);
-    u8 second_byte = get_byte_at(at, 1);
+    u8 first_byte  = get_byte_at(at, offset);
+    u8 second_byte = get_byte_at(at, offset + 1);
     const instruction_encoding_t *enc =
         table->table[press_down_masked_bits(first_byte | (second_byte << 8), table->mask)];
 
@@ -65,10 +65,7 @@ instruction_t decode_next_instruction(memory_access_t at,
             
             assert(bits_consumed <= 8);
             if (bits_consumed == 8) {
-                ++at.base;
-                --at.size;
-                byte = get_byte_at(at, 0);
-
+                byte = get_byte_at(at, ++offset);
                 bits_consumed = 0;
             }
         }
@@ -89,8 +86,8 @@ instruction_t decode_next_instruction(memory_access_t at,
     bool disp_is_w = (mod == 0b10 || has_direct_address || fields[e_bits_disp_always_w]);
     bool data_is_w = (w && !s && fields[e_bits_data_w_if_w]);
 
-    u16 disp = parse_data_value(&at, has[e_bits_disp], disp_is_w); 
-    u16 data = parse_data_value(&at, has[e_bits_data], data_is_w, s); 
+    u16 disp = parse_data_value(at, &offset, has[e_bits_disp], disp_is_w); 
+    u16 data = parse_data_value(at, &offset, has[e_bits_data], data_is_w, s); 
 
     operand_t *reg_op = &instr.operands[d ? 0 : 1];
     operand_t *rm_op  = &instr.operands[d ? 1 : 0];
@@ -142,7 +139,7 @@ instruction_t decode_next_instruction(memory_access_t at,
     instr.segment_override = ctx->segment_override;
 
     instr.operand_cnt = last_op - instr.operands;
-    instr.size        = at.base - init_at.base;
+    instr.size        = offset - init_offset;
 
     return instr;
 }

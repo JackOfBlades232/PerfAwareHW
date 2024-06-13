@@ -8,7 +8,7 @@ struct decoder_context_t {
     reg_t segment_override;
 };
 
-instruction_t decode_next_instruction(memory_access_t at,
+instruction_t decode_next_instruction(memory_access_t at, u32 offset,
                                       instruction_table_t *table,
                                       const decoder_context_t *ctx);
 
