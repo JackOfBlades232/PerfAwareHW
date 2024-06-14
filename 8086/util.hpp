@@ -63,6 +63,14 @@ inline u32 to_flag(TEnum e)
     return 1 << (int)e;
 }
 
+inline void set_flag_value(u32 *where, u32 flag, bool val)
+{
+    if (val)
+        *where |= flag;
+    else
+        *where &= ~flag;
+}
+
 inline bool streq(const char *s1, const char *s2)
 {
     return strcmp(s1, s2) == 0;
