@@ -12,8 +12,7 @@
 #include <cstdio>
 
 /* @TODO:
- * Mem operands
- * Memory segmentation
+ * Sim Real programs (vid & hw)
  */
 
 enum prog_action_t {
@@ -108,6 +107,7 @@ int main(int argc, char **argv)
         output::print("bits 16\n");
         res = decode_and_process_instructions<output_instrunction_disassembly>(main_memory, code_bytes);
     } else {
+        init_default_segment_reg_values();
         output::print("--- %s execution ---\n", fn);
         res = decode_and_process_instructions<simulate_instruction_execution>(main_memory, code_bytes);
         output_simulation_results();

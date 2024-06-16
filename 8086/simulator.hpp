@@ -8,5 +8,7 @@ enum simulation_trace_bits_t : u32 {
 };
 void set_simulation_trace_level(u32 flags);
 
+void init_default_segment_reg_values();
+
 u32 simulate_instruction_execution(instruction_t instr);
 void output_simulation_results();

@@ -10,10 +10,10 @@ static u16 parse_data_value(memory_access_t at, u32 *offset,
     if (!has_data)
         return 0;
 
-    u8 lo = get_byte_at(at, *offset);
+    u8 lo = read_byte_at(at, *offset);
     ++(*offset);
     if (is_wide) {
-        u8 hi = get_byte_at(at, *offset);
+        u8 hi = read_byte_at(at, *offset);
         ++(*offset);
         return (hi << 8) | lo;
     } else if (is_sign_extended)
@@ -28,8 +28,8 @@ instruction_t decode_next_instruction(memory_access_t at, u32 offset,
 {
     u32 init_offset = offset;
 
-    u8 first_byte  = get_byte_at(at, offset);
-    u8 second_byte = get_byte_at(at, offset + 1);
+    u8 first_byte  = read_byte_at(at, offset);
+    u8 second_byte = read_byte_at(at, offset + 1);
     const instruction_encoding_t *enc =
         table->table[press_down_masked_bits(first_byte | (second_byte << 8), table->mask)];
 
@@ -65,7 +65,7 @@ instruction_t decode_next_instruction(memory_access_t at, u32 offset,
             
             assert(bits_consumed <= 8);
             if (bits_consumed == 8) {
-                byte = get_byte_at(at, ++offset);
+                byte = read_byte_at(at, ++offset);
                 bits_consumed = 0;
             }
         }

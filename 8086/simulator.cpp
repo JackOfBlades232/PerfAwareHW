@@ -1,4 +1,5 @@
 #include "simulator.hpp"
+#include "memory.hpp"
 #include "print.hpp"
 #include "util.hpp"
 #include "instruction.hpp"
@@ -6,6 +7,8 @@
 
 // @TODO: think again if asserts are appropriate here.
 //        Where are we dealing with caller mistakes, and where with bad input?
+
+static constexpr u32 c_seg_size = POT(16);
 
 enum proc_flag_t {
     e_pflag_c = 1 << 0,
@@ -22,8 +25,6 @@ enum arifm_op_t {
     e_arifm_sub
 };
 
-// @TODO: I still think the main ip should be in machine!
-//        Maybe invert and make the machine visible everywhere?
 struct machine_t {
     u16 registers[e_reg_max];
 };
@@ -39,6 +40,15 @@ static tracing_state_t g_tracing = {};
 void set_simulation_trace_level(u32 flags)
 {
     g_tracing.flags = flags;
+}
+
+void init_default_segment_reg_values()
+{
+    // @NOTE: in this impl cs should remain 0, as the code is loaded to 0 addr
+    g_machine.registers[e_reg_cs] = 0;
+    g_machine.registers[e_reg_ss] = c_seg_size >> 4;
+    g_machine.registers[e_reg_ds] = 2 * (c_seg_size >> 4);
+    g_machine.registers[e_reg_es] = 3 * (c_seg_size >> 4);
 }
 
 static u32 do_arifm_op(u32 a, u32 b, arifm_op_t op)
@@ -111,31 +121,76 @@ static void write_reg(reg_access_t access, u16 val)
     }
 }
 
-// @WIP
 static u16 calculate_ea(ea_mem_access_t access)
 {
+    constexpr reg_t c_null_reg = e_reg_max;
     const reg_t ops[e_ea_base_max][2] =
     {
-        {e_reg_b,  e_reg_si},
-        {e_reg_b,  e_reg_di},
-        {e_reg_bp, e_reg_si},
-        {e_reg_bp, e_reg_di},
-        {e_reg_si, e_reg_max},
-        {e_reg_di, e_reg_max},
-        {e_reg_bp, e_reg_max},
-        {e_reg_b, e_reg_max},
-        {e_reg_max, e_reg_max},
+        {e_reg_b,    e_reg_si},
+        {e_reg_b,    e_reg_di},
+        {e_reg_bp,   e_reg_si},
+        {e_reg_bp,   e_reg_di},
+        {e_reg_si,   c_null_reg},
+        {e_reg_di,   c_null_reg},
+        {e_reg_bp,   c_null_reg},
+        {e_reg_b,    c_null_reg},
+        {c_null_reg, c_null_reg},
     };
 
     reg_t r1 = ops[access.base][0];
     reg_t r2 = ops[access.base][1];
-    u16 op1 = r1 == e_reg_max ? 0 : read_reg(get_word_reg_access(r1));
-    u16 op2 = r2 == e_reg_max ? 0 : read_reg(get_word_reg_access(r2));
-    return op1 + op1 + access.disp;
+    u16 op1 = r1 == c_null_reg ? 0 : read_reg(get_word_reg_access(r1));
+    u16 op2 = r2 == c_null_reg ? 0 : read_reg(get_word_reg_access(r2));
+    return op1 + op2 + access.disp;
+}
+
+// @TODO: double check manual for segment tricks
+static memory_access_t get_segment_access(ea_mem_access_t access, const instruction_t *instr)
+{
+    memory_access_t seg = get_main_memory_access();
+    seg.size = c_seg_size;
+
+    if (instr->flags & e_iflags_seg_override)
+        seg.base = g_machine.registers[instr->segment_override];
+
+    if (access.base == e_ea_base_bp && access.disp == 0)
+        seg.base = g_machine.registers[e_reg_ss];
+    else
+        seg.base = g_machine.registers[e_reg_ds];
+
+    seg.base <<= 4;
+
+    return seg;
+}
+
+static u16 read_mem(ea_mem_access_t access, const instruction_t *instr)
+{
+    memory_access_t seg_mem = get_segment_access(access, instr);
+    u16 offset = calculate_ea(access);
+
+    if (instr->flags & e_iflags_w)
+        return read_byte_at(seg_mem, offset) | (read_byte_at(seg_mem, offset+1) << 8);
+    else
+        return read_byte_at(seg_mem, offset);
+}
+
+static void write_mem(ea_mem_access_t access, u16 val, const instruction_t *instr)
+{
+    memory_access_t seg_mem = get_segment_access(access, instr);
+    u16 offset = calculate_ea(access);
+
+    if (instr->flags & e_iflags_w) {
+        // The simulated 8086 is little endian
+        write_byte_to(seg_mem, offset, val & 0xFF);
+        write_byte_to(seg_mem, offset+1, val >> 8);
+    } else
+        write_byte_to(seg_mem, offset, val);
+
+    // @TODO: trace
 }
 
 // @TODO: spec setting for reading EA in mem (in lea)
-static u16 read_operand(operand_t op)
+static u16 read_operand(operand_t op, const instruction_t *instr = nullptr)
 {
     switch (op.type) {
         case e_operand_reg:
@@ -145,6 +200,8 @@ static u16 read_operand(operand_t op)
             return op.data.imm;
 
         case e_operand_mem:
+            return read_mem(op.data.mem, instr);
+
         case e_operand_cs_ip:
             LOGERR("Operand read not implemented for these types");
         case e_operand_none:
@@ -154,18 +211,21 @@ static u16 read_operand(operand_t op)
     return 0;
 }
 
-static void write_operand(operand_t op, u16 val)
+static void write_operand(operand_t op, u16 val, const instruction_t *instr = nullptr)
 {
     switch (op.type) {
         case e_operand_reg:
             write_reg(op.data.reg, val);
             break;
 
+        case e_operand_mem:
+            write_mem(op.data.mem, val, instr);
+            break;
+
         case e_operand_imm:
             LOGERR("Can't write to immediate operand");
             assert(0);
 
-        case e_operand_mem:
         case e_operand_cs_ip:
             LOGERR("Operand read not implemented for these types");
         case e_operand_none:
@@ -238,30 +298,33 @@ u32 simulate_instruction_execution(instruction_t instr)
     g_machine.registers[e_reg_ip] += instr.size;
 
     // @TODO: correct instruction format validation
+
+    // @TODO: set global instruction each iter to a context so as not to pass it around?
     switch (instr.op) {
-        case e_op_mov:
-            write_operand(instr.operands[0], read_operand(instr.operands[1]));
-            break;
+        case e_op_mov: {
+            u32 src = read_operand(instr.operands[1], &instr);
+            write_operand(instr.operands[0], src, &instr);
+        } break;
 
         case e_op_add: {
-            u32 dst = read_operand(instr.operands[0]);
-            u32 src = read_operand(instr.operands[1]);
+            u32 dst = read_operand(instr.operands[0], &instr);
+            u32 src = read_operand(instr.operands[1], &instr);
             u32 res = dst + src;
-            write_operand(instr.operands[0], res);
+            write_operand(instr.operands[0], res, &instr);
             update_flags(e_arifm_add, dst, src, res, instr.flags & e_iflags_w);
         } break;
 
         case e_op_sub: {
-            u32 dst = read_operand(instr.operands[0]);
-            u32 src = read_operand(instr.operands[1]);
+            u32 dst = read_operand(instr.operands[0], &instr);
+            u32 src = read_operand(instr.operands[1], &instr);
             u32 res = dst - src;
-            write_operand(instr.operands[0], res);
+            write_operand(instr.operands[0], res, &instr);
             update_flags(e_arifm_sub, dst, src, res, instr.flags & e_iflags_w);
         } break;
 
         case e_op_cmp: {
-            u32 dst = read_operand(instr.operands[0]);
-            u32 src = read_operand(instr.operands[1]);
+            u32 dst = read_operand(instr.operands[0], &instr);
+            u32 src = read_operand(instr.operands[1], &instr);
             update_flags(e_arifm_sub, dst, src, dst - src, instr.flags & e_iflags_w);
         } break;
 
@@ -337,7 +400,8 @@ u32 simulate_instruction_execution(instruction_t instr)
     if (g_tracing.flags & (e_trace_disassembly | e_trace_data_mutation))
         output::print("\n");
 
-    return g_machine.registers[e_reg_ip];
+    // @TODO: pull this out with mem accesses?
+    return (g_machine.registers[e_reg_cs] << 4) | g_machine.registers[e_reg_ip];
 }
 
 void output_simulation_results()
