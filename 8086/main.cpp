@@ -21,12 +21,13 @@ enum prog_action_t {
     e_act_disassemble,
 };
 
-template <void (*t_insrunction_processor)(instruction_t, u32 *)>
+template <u32 (*t_insrunction_processor)(instruction_t)>
 bool decode_and_process_instructions(memory_access_t at, u32 bytes)
 {
     instruction_table_t table = build_instruction_table();
     decoder_context_t ctx = {};
 
+    // @TODO: enforce internal ip initialization as 0?
     u32 ip = 0;
 
     while (bytes - ip) {
@@ -42,7 +43,7 @@ bool decode_and_process_instructions(memory_access_t at, u32 bytes)
         }
 
         update_decoder_ctx(instr, &ctx);
-        t_insrunction_processor(instr, &ip);
+        ip = t_insrunction_processor(instr);
     }
 
     return true;

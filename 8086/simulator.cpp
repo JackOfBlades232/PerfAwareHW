@@ -1,5 +1,4 @@
 #include "simulator.hpp"
-#include "memory.hpp"
 #include "print.hpp"
 #include "util.hpp"
 #include "instruction.hpp"
@@ -228,15 +227,12 @@ void cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
         g_machine.registers[e_reg_ip] += disp;
 }
 
-void simulate_instruction_execution(instruction_t instr, u32 *ip)
+u32 simulate_instruction_execution(instruction_t instr)
 {
     if (g_tracing.flags & e_trace_disassembly)
         output::print_intstruction(instr);
     if (g_tracing.flags & e_trace_data_mutation)
         output::print(" ;");
-
-    // @IDEA: do we even need readback on every instr? Maybe just return ip?
-    g_machine.registers[e_reg_ip] = *ip;
 
     u32 prev_ip = g_machine.registers[e_reg_ip];
     g_machine.registers[e_reg_ip] += instr.size;
@@ -341,7 +337,7 @@ void simulate_instruction_execution(instruction_t instr, u32 *ip)
     if (g_tracing.flags & (e_trace_disassembly | e_trace_data_mutation))
         output::print("\n");
 
-    *ip = g_machine.registers[e_reg_ip];
+    return g_machine.registers[e_reg_ip];
 }
 
 void output_simulation_results()

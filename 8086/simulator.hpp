@@ -8,5 +8,5 @@ enum simulation_trace_bits_t : u32 {
 };
 void set_simulation_trace_level(u32 flags);
 
-void simulate_instruction_execution(instruction_t instr, u32 *ip);
+u32 simulate_instruction_execution(instruction_t instr);
 void output_simulation_results();
