@@ -12,14 +12,14 @@ union reg_memory_t {
     u8 b[2];
 };
 
-// @TODO: proper places like in 8086 coz i can
 enum proc_flag_t {
     e_pflag_c = 1 << 0,
-    e_pflag_p = 1 << 1,
-    e_pflag_a = 1 << 2,
-    e_pflag_z = 1 << 3,
-    e_pflag_s = 1 << 4,
-    e_pflag_o = 1 << 5,
+    e_pflag_p = 1 << 2,
+    e_pflag_a = 1 << 4,
+    e_pflag_z = 1 << 6,
+    e_pflag_s = 1 << 7,
+
+    e_pflag_o = 1 << 11,
 };
 
 enum arifm_op_t {
@@ -41,6 +41,16 @@ struct tracing_state_t {
 static machine_t g_machine = {};
 static tracing_state_t g_tracing = {};
 
+void set_simulation_trace_level(u32 flags)
+{
+    g_tracing.flags = flags;
+}
+
+static u16 *reg_w(reg_t reg)
+{
+    return &g_machine.registers[reg].w;
+}
+
 static u32 do_arifm_op(u32 a, u32 b, arifm_op_t op)
 {
     switch (op) {
@@ -53,9 +63,17 @@ static u32 do_arifm_op(u32 a, u32 b, arifm_op_t op)
     return 0;
 }
 
-void set_simulation_trace_level(u32 flags)
+static void set_flag(u16 flag, bool val)
 {
-    g_tracing.flags = flags;
+    if (val)
+        *reg_w(e_reg_flags) |= flag;
+    else
+        *reg_w(e_reg_flags) &= ~flag;
+}
+
+static bool get_flag(u16 flag)
+{
+    return *reg_w(e_reg_flags) & flag;
 }
 
 static void output_flags_content()
@@ -63,7 +81,7 @@ static void output_flags_content()
     proc_flag_t flags[] = { e_pflag_c, e_pflag_p, e_pflag_a, e_pflag_z, e_pflag_s, e_pflag_o };
     const char *flags_names[ARR_CNT(flags)] = { "C", "P", "A", "Z", "S", "O" };
     for (int f = 0; f < ARR_CNT(flags); ++f) {
-        if (g_machine.registers[e_reg_flags].w & flags[f])
+        if (*reg_w(e_reg_flags) & flags[f])
             output::print("%s", flags_names[f]);
     }
 }
@@ -143,7 +161,6 @@ static void write_operand(operand_t op, u16 val)
     }
 }
 
-// @TODO: wieldy functions for querying regs/flags
 static void update_flags(arifm_op_t op, u32 a, u32 b, u32 res, bool is_wide)
 {
     if (g_tracing.flags & e_trace_data_mutation) {
@@ -155,30 +172,26 @@ static void update_flags(arifm_op_t op, u32 a, u32 b, u32 res, bool is_wide)
         return n & (1 << (is_wide ? 15 : 7));
     };
 
-    u32 flags = g_machine.registers[e_reg_flags].w;
-
-    set_flag_value(&flags, e_pflag_z, (res & (is_wide ? 0xFFFF : 0xFF)) == 0);
-    set_flag_value(&flags, e_pflag_s, is_neg(res, is_wide));
+    set_flag(e_pflag_z, (res & (is_wide ? 0xFFFF : 0xFF)) == 0);
+    set_flag(e_pflag_s, is_neg(res, is_wide));
 
     // @TODO: manual sais parity == even bits, Casey sais even bits in low 8. Which is it?
     //g_machine.flags[e_pflag_p] = count_ones(res, is_wide ? 16 : 8) % 2 == 0;
-    set_flag_value(&flags, e_pflag_p, count_ones(res, 8) % 2 == 0);
+    set_flag(e_pflag_p, count_ones(res, 8) % 2 == 0);
 
     // @TODO: I am getting conflicted evidence about c/o/a flags. Investigate, 
     //        May be better to run actual asm on linux. (or find a way on win64?)
-    set_flag_value(&flags, e_pflag_c, res >= (1 << (is_wide ? 16 : 8)));
+    set_flag(e_pflag_c, res >= (1 << (is_wide ? 16 : 8)));
 
     bool as = is_neg(a, is_wide), bs = is_neg(b, is_wide);
-    set_flag_value(&flags, e_pflag_o, 
+    set_flag(e_pflag_o, 
         as != (bool)(g_machine.registers[e_reg_flags].w & e_pflag_s) && 
         (
             (op == e_arifm_add && as == bs) ||
             (op == e_arifm_sub && as != bs)
         ));
 
-    set_flag_value(&flags, e_pflag_a, do_arifm_op(a & 0xF, b & 0xF, op) & 0x10);
-
-    g_machine.registers[e_reg_flags].w = flags;
+    set_flag(e_pflag_a, do_arifm_op(a & 0xF, b & 0xF, op) & 0x10);
 
     if (g_tracing.flags & e_trace_data_mutation) {
         output::print("->");
@@ -186,49 +199,20 @@ static void update_flags(arifm_op_t op, u32 a, u32 b, u32 res, bool is_wide)
     }
 }
 
-// @TODO: refactor these functions, they are sus
-
-enum cond_type_t { e_cond_and, e_cond_or };
-bool check_flags(u16 flags_mask, u16 flags_vals,
-                 cond_type_t cond_type)
+void cond_jump(u16 disp, bool cond)
 {
-    // @NOTE: For or, we mask off the bits for the flags, then xor in the val, getting 1-s
-    // outside mask and 0-s on mismatched flags. Now, if all the flags are
-    // mismatched, we have exactly negation of mask, so we check that it is
-    // not the case
-    return
-        (
-            (
-                cond_type == e_cond_and &&
-                (g_machine.registers[e_reg_flags].w & flags_mask) == flags_vals
-            ) ||
-            (
-                cond_type == e_cond_or &&
-                ((g_machine.registers[e_reg_flags].w & flags_mask) ^ flags_vals) != ~flags_mask
-            )
-       );
+    if (cond)
+        *reg_w(e_reg_ip) += disp;
 }
 
-void cond_jump(u16 disp, u16 flags_mask, u16 flags_vals,
-               cond_type_t cond_type = e_cond_and)
-{
-    if (check_flags(flags_mask, flags_vals, cond_type))
-        g_machine.registers[e_reg_ip].w += disp;
-}
-
-// @TODO: refactor, the interface is painful
-void jump_on_cx_zero(u16 disp,
-                     bool dec = false, bool use_z = false, bool z_set = false)
+void cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
 {
     reg_access_t cx = get_word_reg_access(e_reg_c);
-    if (dec)
-        write_reg(cx, read_reg(cx) - 1);
+    if (delta_cx)
+        write_reg(cx, read_reg(cx) + delta_cx);
 
-    if (read_reg(cx) == 0 || 
-        (use_z && (bool)(g_machine.registers[e_reg_flags].w & e_pflag_z) != z_set))
-    {
-        g_machine.registers[e_reg_ip].w += disp;
-    }
+    if (read_reg(cx) != 0 && cond)
+        *reg_w(e_reg_ip) += disp;
 }
 
 void simulate_instruction_execution(instruction_t instr, u32 *ip)
@@ -238,12 +222,11 @@ void simulate_instruction_execution(instruction_t instr, u32 *ip)
     if (g_tracing.flags & e_trace_data_mutation)
         output::print(" ;");
 
-    // @TODO: sort out ip-s bitness
     // @IDEA: do we even need readback on every instr? Maybe just return ip?
-    g_machine.registers[e_reg_ip].w = *ip;
+    *reg_w(e_reg_ip) = *ip;
 
-    u32 prev_ip = g_machine.registers[e_reg_ip].w;
-    g_machine.registers[e_reg_ip].w += instr.size;
+    u32 prev_ip = *reg_w(e_reg_ip);
+    *reg_w(e_reg_ip) += instr.size;
 
     // @TODO: correct instruction format validation
     switch (instr.op) {
@@ -274,85 +257,65 @@ void simulate_instruction_execution(instruction_t instr, u32 *ip)
         } break;
 
         case e_op_je:
-            cond_jump(read_operand(instr.operands[0]), e_pflag_z, e_pflag_z);
+            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_z));
             break;
         case e_op_jl:
-            cond_jump(read_operand(instr.operands[0]),
-                      e_pflag_s | e_pflag_z,
-                      e_pflag_s);
+            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_s) && !get_flag(e_pflag_z));
             break;
         case e_op_jle:
-            cond_jump(read_operand(instr.operands[0]),
-                      e_pflag_s | e_pflag_z,
-                      e_pflag_s | e_pflag_z,
-                      e_cond_or);
+            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_s) || get_flag(e_pflag_z));
             break;
         case e_op_jb:
-            cond_jump(read_operand(instr.operands[0]),
-                      e_pflag_c | e_pflag_z,
-                      e_pflag_c);
+            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_c) && !get_flag(e_pflag_z));
             break;
         case e_op_jbe:
-            cond_jump(read_operand(instr.operands[0]),
-                      e_pflag_c | e_pflag_z,
-                      e_pflag_c | e_pflag_z,
-                      e_cond_or);
+            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_c) || get_flag(e_pflag_z));
             break;
         case e_op_jp:
-            cond_jump(read_operand(instr.operands[0]), e_pflag_p, e_pflag_p);
+            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_p));
             break;
         case e_op_jo:
-            cond_jump(read_operand(instr.operands[0]), e_pflag_o, e_pflag_o);
+            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_o));
             break;
         case e_op_js:
-            cond_jump(read_operand(instr.operands[0]), e_pflag_s, e_pflag_s);
+            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_s));
             break;
         case e_op_jne:
-            cond_jump(read_operand(instr.operands[0]), e_pflag_z, 0);
+            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_z));
             break;
         case e_op_jge:
-            cond_jump(read_operand(instr.operands[0]),
-                      e_pflag_s | e_pflag_z,
-                      e_pflag_z,
-                      e_cond_or);
+            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_s) || get_flag(e_pflag_z));
             break;
         case e_op_jg:
-            cond_jump(read_operand(instr.operands[0]),
-                      e_pflag_s | e_pflag_z,
-                      0);
+            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_s) && !get_flag(e_pflag_z));
             break;
         case e_op_jae:
-            cond_jump(read_operand(instr.operands[0]),
-                      e_pflag_c | e_pflag_z,
-                      e_pflag_z,
-                      e_cond_or);
+            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_c) || get_flag(e_pflag_z));
             break;
         case e_op_ja:
-            cond_jump(read_operand(instr.operands[0]),
-                      e_pflag_c | e_pflag_z,
-                      0);
+            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_c) && !get_flag(e_pflag_z));
             break;
         case e_op_jnp:
-            cond_jump(read_operand(instr.operands[0]), e_pflag_p, 0);
+            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_p));
             break;
         case e_op_jno:
-            cond_jump(read_operand(instr.operands[0]), e_pflag_o, 0);
+            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_o));
             break;
         case e_op_jns:
-            cond_jump(read_operand(instr.operands[0]), e_pflag_s, 0);
+            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_s));
             break;
 
         case e_op_loop:
-            jump_on_cx_zero(read_operand(instr.operands[0]), true);
+            cx_loop_jump(read_operand(instr.operands[0]), -1);
             break;
         case e_op_loopz:
-            jump_on_cx_zero(read_operand(instr.operands[0]), true, true, true);
+            cx_loop_jump(read_operand(instr.operands[0]), -1, get_flag(e_pflag_z));
             break;
         case e_op_loopnz:
-            jump_on_cx_zero(read_operand(instr.operands[0]), true, true, false);
+            cx_loop_jump(read_operand(instr.operands[0]), -1, !get_flag(e_pflag_z));
             break;
         case e_op_jcxz:
-            jump_on_cx_zero(read_operand(instr.operands[0]));
+            cx_loop_jump(read_operand(instr.operands[0]), 0);
             break;
 
         default:
@@ -365,7 +328,7 @@ void simulate_instruction_execution(instruction_t instr, u32 *ip)
     if (g_tracing.flags & (e_trace_disassembly | e_trace_data_mutation))
         output::print("\n");
 
-    *ip = g_machine.registers[e_reg_ip].w;
+    *ip = *reg_w(e_reg_ip);
 }
 
 void output_simulation_results()
