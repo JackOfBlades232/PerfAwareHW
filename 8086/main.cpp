@@ -12,7 +12,8 @@
 #include <cstdio>
 
 /* @TODO:
- * Memory instructions vid & hw
+ * Mem operands
+ * Memory segmentation
  */
 
 enum prog_action_t {

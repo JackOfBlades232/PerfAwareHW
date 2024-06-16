@@ -1,4 +1,5 @@
 #include "simulator.hpp"
+#include "memory.hpp"
 #include "print.hpp"
 #include "util.hpp"
 #include "instruction.hpp"
@@ -109,6 +110,29 @@ static void write_reg(reg_access_t access, u16 val)
         output::print_word_reg(access.reg);
         output::print(":0x%hx->0x%hx", prev_reg_content, *reg_mem);
     }
+}
+
+// @WIP
+static u16 calculate_ea(ea_mem_access_t access)
+{
+    const reg_t ops[e_ea_base_max][2] =
+    {
+        {e_reg_b,  e_reg_si},
+        {e_reg_b,  e_reg_di},
+        {e_reg_bp, e_reg_si},
+        {e_reg_bp, e_reg_di},
+        {e_reg_si, e_reg_max},
+        {e_reg_di, e_reg_max},
+        {e_reg_bp, e_reg_max},
+        {e_reg_b, e_reg_max},
+        {e_reg_max, e_reg_max},
+    };
+
+    reg_t r1 = ops[access.base][0];
+    reg_t r2 = ops[access.base][1];
+    u16 op1 = r1 == e_reg_max ? 0 : read_reg(get_word_reg_access(r1));
+    u16 op2 = r2 == e_reg_max ? 0 : read_reg(get_word_reg_access(r2));
+    return op1 + op1 + access.disp;
 }
 
 // @TODO: spec setting for reading EA in mem (in lea)
