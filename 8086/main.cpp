@@ -12,7 +12,7 @@
 #include <cstdio>
 
 /* @TODO:
- * Add/cmp/jmp & challenges (+ watch vid)
+ * Memory instructions vid & hw
  */
 
 enum prog_action_t {

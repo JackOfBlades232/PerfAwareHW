@@ -7,11 +7,6 @@
 // @TODO: think again if asserts are appropriate here.
 //        Where are we dealing with caller mistakes, and where with bad input?
 
-union reg_memory_t {
-    u16 w;
-    u8 b[2];
-};
-
 enum proc_flag_t {
     e_pflag_c = 1 << 0,
     e_pflag_p = 1 << 2,
@@ -30,7 +25,7 @@ enum arifm_op_t {
 // @TODO: I still think the main ip should be in machine!
 //        Maybe invert and make the machine visible everywhere?
 struct machine_t {
-    reg_memory_t registers[e_reg_max];
+    u16 registers[e_reg_max];
 };
 
 struct tracing_state_t {
@@ -44,11 +39,6 @@ static tracing_state_t g_tracing = {};
 void set_simulation_trace_level(u32 flags)
 {
     g_tracing.flags = flags;
-}
-
-static u16 *reg_w(reg_t reg)
-{
-    return &g_machine.registers[reg].w;
 }
 
 static u32 do_arifm_op(u32 a, u32 b, arifm_op_t op)
@@ -66,14 +56,14 @@ static u32 do_arifm_op(u32 a, u32 b, arifm_op_t op)
 static void set_flag(u16 flag, bool val)
 {
     if (val)
-        *reg_w(e_reg_flags) |= flag;
+        g_machine.registers[e_reg_flags] |= flag;
     else
-        *reg_w(e_reg_flags) &= ~flag;
+        g_machine.registers[e_reg_flags] &= ~flag;
 }
 
 static bool get_flag(u16 flag)
 {
-    return *reg_w(e_reg_flags) & flag;
+    return g_machine.registers[e_reg_flags] & flag;
 }
 
 static void output_flags_content()
@@ -81,7 +71,7 @@ static void output_flags_content()
     proc_flag_t flags[] = { e_pflag_c, e_pflag_p, e_pflag_a, e_pflag_z, e_pflag_s, e_pflag_o };
     const char *flags_names[ARR_CNT(flags)] = { "C", "P", "A", "Z", "S", "O" };
     for (int f = 0; f < ARR_CNT(flags); ++f) {
-        if (*reg_w(e_reg_flags) & flags[f])
+        if (g_machine.registers[e_reg_flags] & flags[f])
             output::print("%s", flags_names[f]);
     }
 }
@@ -91,11 +81,10 @@ static u16 read_reg(reg_access_t access)
     assert((access.offset == 0 && access.size == 2) ||
            (access.reg <= e_reg_d && access.size == 1 && access.offset <= 1));
 
-    reg_memory_t *reg_mem = &g_machine.registers[access.reg];
     if (access.size == 2) // => offset = 0
-        return reg_mem->w;
+        return g_machine.registers[access.reg];
     else
-        return reg_mem->b[access.offset];
+        return g_machine.registers[access.reg] >> access.offset;
 }
 
 static void write_reg(reg_access_t access, u16 val)
@@ -106,19 +95,19 @@ static void write_reg(reg_access_t access, u16 val)
 
     g_tracing.registers_used |= to_flag(access.reg);
 
-    reg_memory_t *reg_mem = &g_machine.registers[access.reg];
-    u16 prev_reg_content = reg_mem->w;
+    u16 *reg_mem = &g_machine.registers[access.reg];
+    u16 prev_reg_content = *reg_mem;
 
     if (access.size == 2) // => offset = 0
-        reg_mem->w = val;
+        *reg_mem = val;
     else
-        reg_mem->b[access.offset] = (u8)val;
+        set_byte(reg_mem, (u8)val, access.offset);
 
     // @TODO: more elegant/general side-effect tracing. No ideas for design now
     if (g_tracing.flags & e_trace_data_mutation) {
         output::print(" ");
         output::print_word_reg(access.reg);
-        output::print(":0x%hx->0x%hx", prev_reg_content, reg_mem->w);
+        output::print(":0x%hx->0x%hx", prev_reg_content, *reg_mem);
     }
 }
 
@@ -185,7 +174,7 @@ static void update_flags(arifm_op_t op, u32 a, u32 b, u32 res, bool is_wide)
 
     bool as = is_neg(a, is_wide), bs = is_neg(b, is_wide);
     set_flag(e_pflag_o, 
-        as != (bool)(g_machine.registers[e_reg_flags].w & e_pflag_s) && 
+        as != (bool)(g_machine.registers[e_reg_flags] & e_pflag_s) && 
         (
             (op == e_arifm_add && as == bs) ||
             (op == e_arifm_sub && as != bs)
@@ -202,7 +191,7 @@ static void update_flags(arifm_op_t op, u32 a, u32 b, u32 res, bool is_wide)
 void cond_jump(u16 disp, bool cond)
 {
     if (cond)
-        *reg_w(e_reg_ip) += disp;
+        g_machine.registers[e_reg_ip] += disp;
 }
 
 void cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
@@ -212,7 +201,7 @@ void cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
         write_reg(cx, read_reg(cx) + delta_cx);
 
     if (read_reg(cx) != 0 && cond)
-        *reg_w(e_reg_ip) += disp;
+        g_machine.registers[e_reg_ip] += disp;
 }
 
 void simulate_instruction_execution(instruction_t instr, u32 *ip)
@@ -223,10 +212,10 @@ void simulate_instruction_execution(instruction_t instr, u32 *ip)
         output::print(" ;");
 
     // @IDEA: do we even need readback on every instr? Maybe just return ip?
-    *reg_w(e_reg_ip) = *ip;
+    g_machine.registers[e_reg_ip] = *ip;
 
-    u32 prev_ip = *reg_w(e_reg_ip);
-    *reg_w(e_reg_ip) += instr.size;
+    u32 prev_ip = g_machine.registers[e_reg_ip];
+    g_machine.registers[e_reg_ip] += instr.size;
 
     // @TODO: correct instruction format validation
     switch (instr.op) {
@@ -324,11 +313,11 @@ void simulate_instruction_execution(instruction_t instr, u32 *ip)
     }
 
     if (g_tracing.flags & e_trace_data_mutation)
-        output::print(" ip:0x%hx->0x%hx", prev_ip, g_machine.registers[e_reg_ip].w);
+        output::print(" ip:0x%hx->0x%hx", prev_ip, g_machine.registers[e_reg_ip]);
     if (g_tracing.flags & (e_trace_disassembly | e_trace_data_mutation))
         output::print("\n");
 
-    *ip = *reg_w(e_reg_ip);
+    *ip = g_machine.registers[e_reg_ip];
 }
 
 void output_simulation_results()
