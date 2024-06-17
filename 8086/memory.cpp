@@ -6,7 +6,7 @@
 static constexpr u32 c_mem_size = POT(20);
 static constexpr u32 c_mem_mask = c_mem_size - 1;
 
-static u8 g_memory[c_mem_size];
+static u8 g_memory[c_mem_size] = {};
 
 memory_access_t get_main_memory_access()
 {
@@ -26,6 +26,11 @@ void write_byte_to(memory_access_t to, u32 offset, u8 val)
     to.mem[id] = val;
 }
 
+u32 get_full_address(memory_access_t at, u32 offset)
+{
+    return (at.base + offset) & c_mem_mask;
+}
+
 // @TODO: now I just load to the beginning of the memory, it would be better to change that
 u32 load_file_to_memory(memory_access_t dest, const char *fn)
 {
@@ -39,4 +44,16 @@ u32 load_file_to_memory(memory_access_t dest, const char *fn)
     u32 bytes_read = fread(dest.mem + dest.base, 1, dest.size, f);
     fclose(f);
     return bytes_read;
+}
+
+bool dump_memory_to_file(const char *fn)
+{
+    FILE *f = fopen(fn, "w");
+    if (!f)
+        return false;
+
+    size_t bytes_written = fwrite(g_memory, 1, sizeof(g_memory), f);
+
+    fclose(f);
+    return bytes_written == sizeof(g_memory);
 }

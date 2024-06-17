@@ -38,3 +38,5 @@
 #other
 nasm
 .vs/
+
+*.data

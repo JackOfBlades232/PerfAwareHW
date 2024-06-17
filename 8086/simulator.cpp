@@ -42,15 +42,6 @@ void set_simulation_trace_level(u32 flags)
     g_tracing.flags = flags;
 }
 
-void init_default_segment_reg_values()
-{
-    // @NOTE: in this impl cs should remain 0, as the code is loaded to 0 addr
-    g_machine.registers[e_reg_cs] = 0;
-    g_machine.registers[e_reg_ss] = c_seg_size >> 4;
-    g_machine.registers[e_reg_ds] = 2 * (c_seg_size >> 4);
-    g_machine.registers[e_reg_es] = 3 * (c_seg_size >> 4);
-}
-
 static u32 do_arifm_op(u32 a, u32 b, arifm_op_t op)
 {
     switch (op) {
@@ -153,7 +144,7 @@ static memory_access_t get_segment_access(ea_mem_access_t access, const instruct
     if (instr->flags & e_iflags_seg_override)
         seg.base = g_machine.registers[instr->segment_override];
 
-    if (access.base == e_ea_base_bp && access.disp == 0)
+    if (access.base == e_ea_base_bp)
         seg.base = g_machine.registers[e_reg_ss];
     else
         seg.base = g_machine.registers[e_reg_ds];
@@ -179,6 +170,8 @@ static void write_mem(ea_mem_access_t access, u16 val, const instruction_t *inst
     memory_access_t seg_mem = get_segment_access(access, instr);
     u16 offset = calculate_ea(access);
 
+    u16 prev_content = read_mem(access, instr);
+
     if (instr->flags & e_iflags_w) {
         // The simulated 8086 is little endian
         write_byte_to(seg_mem, offset, val & 0xFF);
@@ -186,7 +179,15 @@ static void write_mem(ea_mem_access_t access, u16 val, const instruction_t *inst
     } else
         write_byte_to(seg_mem, offset, val);
 
-    // @TODO: trace
+    if (g_tracing.flags & e_trace_data_mutation) {
+        u32 addr = get_full_address(seg_mem, offset);
+        output::print(" ");
+        if (instr->flags & e_iflags_w)
+            output::print("[0x%x-0x%x]", addr, addr+1);
+        else
+            output::print("[0x%x]", addr);
+        output::print(":0x%hx->0x%hx", prev_content, read_mem(access, instr));
+    }
 }
 
 // @TODO: spec setting for reading EA in mem (in lea)
