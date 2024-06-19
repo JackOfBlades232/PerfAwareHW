@@ -12,8 +12,6 @@
 #include <cstdio>
 
 /* @TODO:
- * The stack vid
- * Est cycles vid & hw
  * From 8086 to x64
  *
  * All instructions impl
@@ -106,7 +104,9 @@ int main(int argc, char **argv)
                 return 1;
             }
 
-            set_simulation_trace_level(e_trace_data_mutation | e_trace_disassembly);
+            set_simulation_trace_level(e_trace_data_mutation |
+                                       e_trace_disassembly |
+                                       e_trace_cycles);
         } else if (streq(argv[i], "-dump")) {
             ++i;
             if (i >= argc) {

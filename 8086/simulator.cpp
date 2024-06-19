@@ -2,6 +2,7 @@
 #include "memory.hpp"
 #include "print.hpp"
 #include "util.hpp"
+#include "clocks.hpp"
 #include "instruction.hpp"
 #include <cassert>
 
@@ -32,6 +33,7 @@ struct machine_t {
 struct tracing_state_t {
     u32 flags = 0;
     u32 registers_used = to_flag(e_reg_ip);
+    u32 total_cycles = 0;
 };
 
 static machine_t g_machine = {};
@@ -272,20 +274,26 @@ static void update_flags(arifm_op_t op, u32 a, u32 b, u32 res, bool is_wide)
     }
 }
 
-void cond_jump(u16 disp, bool cond)
+bool cond_jump(u16 disp, bool cond)
 {
     if (cond)
         g_machine.registers[e_reg_ip] += disp;
+
+    return cond;
 }
 
-void cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
+bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
 {
     reg_access_t cx = get_word_reg_access(e_reg_c);
     if (delta_cx)
         write_reg(cx, read_reg(cx) + delta_cx);
 
-    if (read_reg(cx) != 0 && cond)
+    if (read_reg(cx) != 0 && cond) {
         g_machine.registers[e_reg_ip] += disp;
+        return true;
+    }
+
+    return false;
 }
 
 u32 simulate_instruction_execution(instruction_t instr)
@@ -297,6 +305,8 @@ u32 simulate_instruction_execution(instruction_t instr)
 
     u32 prev_ip = g_machine.registers[e_reg_ip];
     g_machine.registers[e_reg_ip] += instr.size;
+
+    bool cond_action_happened = false;
 
     // @TODO: correct instruction format validation
 
@@ -330,65 +340,65 @@ u32 simulate_instruction_execution(instruction_t instr)
         } break;
 
         case e_op_je:
-            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_z));
             break;
         case e_op_jl:
-            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_s) && !get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_s) && !get_flag(e_pflag_z));
             break;
         case e_op_jle:
-            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_s) || get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_s) || get_flag(e_pflag_z));
             break;
         case e_op_jb:
-            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_c) && !get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_c) && !get_flag(e_pflag_z));
             break;
         case e_op_jbe:
-            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_c) || get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_c) || get_flag(e_pflag_z));
             break;
         case e_op_jp:
-            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_p));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_p));
             break;
         case e_op_jo:
-            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_o));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_o));
             break;
         case e_op_js:
-            cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_s));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_s));
             break;
         case e_op_jne:
-            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_z));
             break;
         case e_op_jge:
-            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_s) || get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_s) || get_flag(e_pflag_z));
             break;
         case e_op_jg:
-            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_s) && !get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_s) && !get_flag(e_pflag_z));
             break;
         case e_op_jae:
-            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_c) || get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_c) || get_flag(e_pflag_z));
             break;
         case e_op_ja:
-            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_c) && !get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_c) && !get_flag(e_pflag_z));
             break;
         case e_op_jnp:
-            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_p));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_p));
             break;
         case e_op_jno:
-            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_o));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_o));
             break;
         case e_op_jns:
-            cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_s));
+            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_s));
             break;
 
         case e_op_loop:
-            cx_loop_jump(read_operand(instr.operands[0]), -1);
+            cond_action_happened = cx_loop_jump(read_operand(instr.operands[0]), -1);
             break;
         case e_op_loopz:
-            cx_loop_jump(read_operand(instr.operands[0]), -1, get_flag(e_pflag_z));
+            cond_action_happened = cx_loop_jump(read_operand(instr.operands[0]), -1, get_flag(e_pflag_z));
             break;
         case e_op_loopnz:
-            cx_loop_jump(read_operand(instr.operands[0]), -1, !get_flag(e_pflag_z));
+            cond_action_happened = cx_loop_jump(read_operand(instr.operands[0]), -1, !get_flag(e_pflag_z));
             break;
         case e_op_jcxz:
-            cx_loop_jump(read_operand(instr.operands[0]), 0);
+            cond_action_happened = cx_loop_jump(read_operand(instr.operands[0]), 0);
             break;
 
         default:
@@ -398,7 +408,13 @@ u32 simulate_instruction_execution(instruction_t instr)
 
     if (g_tracing.flags & e_trace_data_mutation)
         output::print(" ip:0x%hx->0x%hx", prev_ip, g_machine.registers[e_reg_ip]);
-    if (g_tracing.flags & (e_trace_disassembly | e_trace_data_mutation))
+    if (g_tracing.flags & e_trace_cycles) {
+        u32 elapsed_cycles = estimate_instruction_clocks(instr, cond_action_happened);
+        g_tracing.total_cycles += elapsed_cycles;
+        output::print(" | Clocks: +%u=%u", elapsed_cycles, g_tracing.total_cycles);
+    }
+
+    if (g_tracing.flags)
         output::print("\n");
 
     // @TODO: pull this out with mem accesses?

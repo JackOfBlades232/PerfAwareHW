@@ -1,0 +1,118 @@
+// #include "clocks.hpp"
+#include "instruction.hpp"
+#include "util.hpp"
+#include <cassert>
+
+// @TODO: fixup count values with Casey's
+
+static u32 estimate_ea_clocks(ea_mem_access_t ea)
+{
+    assert(ea.base < e_ea_base_max);
+
+    if (ea.base == e_ea_base_direct)
+        return 6;
+
+    u32 cycles = 0;
+    if (ea.base == e_ea_base_bp_di || ea.base == e_ea_base_bx_si)
+        cycles += 7;
+    else if (ea.base == e_ea_base_bp_si || ea.base == e_ea_base_bx_di)
+        cycles += 8;
+    else // bp/bx/si/di
+        cycles += 5;
+
+    if (ea.disp != 0)
+        cycles += 4;
+    
+    return cycles;
+}
+
+bool operands_are_acc_mem(operand_t op1, operand_t op2)
+{
+    if (op1.type == e_operand_imm)
+        swap(&op1, &op2);
+    return (op1.type == e_operand_reg && op1.data.reg.reg == e_reg_a &&
+            op1.data.reg.offset == 0) &&
+           op2.type == e_operand_imm;
+}
+
+u32 estimate_instruction_clocks(instruction_t instr, bool cond_action_happened)
+{
+    // @TODO: additional cycles for prefixes
+
+    int op_cnt = instr.operand_cnt;
+    operand_t op1 = instr.operands[0];
+    operand_t op2 = instr.operands[1];
+
+    switch (instr.op) {
+    case e_op_mov:
+        if (op1.type == e_operand_reg && op2.type == e_operand_reg)
+            return 2;
+        else if (op1.type == e_operand_reg && op2.type == e_operand_imm)
+            return 4;
+        // @TODO: check this, seems very sus
+        else if (operands_are_acc_mem(op1, op2))
+            return 10;
+        else if (op1.type == e_operand_reg && op2.type == e_operand_mem)
+            return 8 + estimate_ea_clocks(op2.data.mem);
+        else if (op1.type == e_operand_mem && op2.type == e_operand_reg)
+            return 9 + estimate_ea_clocks(op1.data.mem);
+        else // imm -> mem, should be validated by now
+            return 10 + estimate_ea_clocks(op1.data.mem);
+
+    case e_op_add:
+    case e_op_sub:
+        if (op1.type == e_operand_reg && op2.type == e_operand_reg)
+            return 3;
+        else if (op1.type == e_operand_reg && op2.type == e_operand_imm)
+            return 4;
+        else if (op1.type == e_operand_reg && op2.type == e_operand_mem)
+            return 9 + estimate_ea_clocks(op2.data.mem);
+        else if (op1.type == e_operand_mem && op2.type == e_operand_reg)
+            return 16 + estimate_ea_clocks(op1.data.mem);
+        else // imm -> mem, should be validated by now
+            return 17 + estimate_ea_clocks(op1.data.mem);
+
+    case e_op_cmp:
+        if (op1.type == e_operand_reg && op2.type == e_operand_reg)
+            return 3;
+        else if (op1.type == e_operand_reg && op2.type == e_operand_imm)
+            return 4;
+        else if (op1.type == e_operand_reg && op2.type == e_operand_mem)
+            return 9 + estimate_ea_clocks(op2.data.mem);
+        else if (op1.type == e_operand_mem && op2.type == e_operand_reg)
+            return 9 + estimate_ea_clocks(op1.data.mem);
+        else // imm -> mem, should be validated by now
+            return 10 + estimate_ea_clocks(op1.data.mem);
+
+    case e_op_je:
+    case e_op_jl:
+    case e_op_jle:
+    case e_op_jb:
+    case e_op_jbe:
+    case e_op_jp:
+    case e_op_jo:
+    case e_op_js:
+    case e_op_jne:
+    case e_op_jge:
+    case e_op_jg:
+    case e_op_jae:
+    case e_op_ja:
+    case e_op_jnp:
+    case e_op_jno:
+    case e_op_jns:
+        return cond_action_happened ? 16 : 4;
+
+    case e_op_loop:
+        return cond_action_happened ? 17 : 5;
+    case e_op_loopnz:
+        return cond_action_happened ? 19 : 5;
+    case e_op_loopz:
+    case e_op_jcxz:
+        return cond_action_happened ? 18 : 6;
+
+
+    default: LOGERR("Cycle count not implemented"); assert(0);
+    }
+
+    return 0;
+}

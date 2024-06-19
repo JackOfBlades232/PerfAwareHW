@@ -5,6 +5,7 @@
 enum simulation_trace_bits_t : u32 {
     e_trace_data_mutation = 1 << 1,
     e_trace_disassembly   = 1 << 2,
+    e_trace_cycles        = 1 << 3,
 };
 void set_simulation_trace_level(u32 flags);
 
