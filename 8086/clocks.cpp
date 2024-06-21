@@ -3,7 +3,7 @@
 #include "util.hpp"
 #include <cassert>
 
-// @TODO: fixup count values with Casey's
+// @TODO: add unaligned access penalty (4 cycles per unaligned access)
 
 static u32 estimate_ea_clocks(ea_mem_access_t ea)
 {

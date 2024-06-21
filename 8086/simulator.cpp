@@ -9,6 +9,8 @@
 // @TODO: think again if asserts are appropriate here.
 //        Where are we dealing with caller mistakes, and where with bad input?
 
+// @TODO: warning output when tracing cycles
+
 static constexpr u32 c_seg_size = POT(16);
 
 enum proc_flag_t {
