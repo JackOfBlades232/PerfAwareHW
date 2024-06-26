@@ -3,7 +3,10 @@
 #include "util.hpp"
 #include <cassert>
 
-// @TODO: add unaligned access penalty (4 cycles per unaligned access)
+// @TODO: add unaligned access penalty for 8086 (4 cycles per unaligned access)
+//        and the same penalty for all on 8088
+
+// @TODO: better digest for logs? More hidden patterns to decompose cycles?
 
 static u32 estimate_ea_clocks(ea_mem_access_t ea)
 {
@@ -26,13 +29,13 @@ static u32 estimate_ea_clocks(ea_mem_access_t ea)
     return cycles;
 }
 
-bool operands_are_acc_mem(operand_t op1, operand_t op2)
+bool operands_are_acc_non_reg(operand_t op1, operand_t op2, operand_type_t op2_type)
 {
-    if (op1.type == e_operand_imm)
+    if (op1.type != e_operand_reg)
         swap(&op1, &op2);
     return (op1.type == e_operand_reg && op1.data.reg.reg == e_reg_a &&
             op1.data.reg.offset == 0) &&
-           op2.type == e_operand_imm;
+           op2.type == op2_type;
 }
 
 u32 estimate_instruction_clocks(instruction_t instr, bool cond_action_happened)
@@ -50,7 +53,7 @@ u32 estimate_instruction_clocks(instruction_t instr, bool cond_action_happened)
         else if (op1.type == e_operand_reg && op2.type == e_operand_imm)
             return 4;
         // @TODO: check this, seems very sus
-        else if (operands_are_acc_mem(op1, op2))
+        else if (operands_are_acc_non_reg(op1, op2, e_operand_mem))
             return 10;
         else if (op1.type == e_operand_reg && op2.type == e_operand_mem)
             return 8 + estimate_ea_clocks(op2.data.mem);
@@ -61,6 +64,7 @@ u32 estimate_instruction_clocks(instruction_t instr, bool cond_action_happened)
 
     case e_op_add:
     case e_op_sub:
+    case e_op_xor:
         if (op1.type == e_operand_reg && op2.type == e_operand_reg)
             return 3;
         else if (op1.type == e_operand_reg && op2.type == e_operand_imm)
@@ -83,6 +87,29 @@ u32 estimate_instruction_clocks(instruction_t instr, bool cond_action_happened)
             return 9 + estimate_ea_clocks(op1.data.mem);
         else // imm -> mem, should be validated by now
             return 10 + estimate_ea_clocks(op1.data.mem);
+
+    case e_op_test:
+        if (op1.type == e_operand_reg && op2.type == e_operand_reg)
+            return 3;
+        // @TODO: check this, seems sus
+        else if (operands_are_acc_non_reg(op1, op2, e_operand_imm))
+            return 4;
+        else if (op1.type == e_operand_reg && op2.type == e_operand_imm)
+            return 5;
+        else if (op1.type == e_operand_reg && op2.type == e_operand_mem)
+            return 9 + estimate_ea_clocks(op2.data.mem);
+        else // imm & mem, should be validated by now
+            return 11 + estimate_ea_clocks(op1.data.mem);
+
+    case e_op_inc:
+    case e_op_dec:
+        if (op1.type == e_operand_reg) {
+            if (op1.data.reg.size == 2)
+                return 2;
+            else
+                return 3;
+        } else // mem
+            return 15 + estimate_ea_clocks(op1.data.mem);
 
     case e_op_je:
     case e_op_jl:

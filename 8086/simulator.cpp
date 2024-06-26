@@ -23,6 +23,7 @@ enum proc_flag_t {
     e_pflag_o = 1 << 11,
 };
 
+// @TODO: what if I use 2-s complemet, will it remove the need for classification?
 enum arifm_op_t {
     e_arifm_add,
     e_arifm_sub
@@ -46,6 +47,7 @@ void set_simulation_trace_level(u32 flags)
     g_tracing.flags = flags;
 }
 
+// @TODO: i don't like this abstraction
 static u32 do_arifm_op(u32 a, u32 b, arifm_op_t op)
 {
     switch (op) {
@@ -56,6 +58,21 @@ static u32 do_arifm_op(u32 a, u32 b, arifm_op_t op)
     }
 
     return 0;
+}
+
+static bool is_zero(u32 n, bool is_wide)
+{
+    return (n & (is_wide ? 0xFFFF : 0xFF)) == 0;
+};
+
+static bool is_neg(u32 n, bool is_wide)
+{
+    return n & (1 << (is_wide ? 15 : 7));
+};
+
+static bool is_parity(u32 n)
+{
+    return count_ones(n, 8) % 2 == 0;
 }
 
 static void set_flag(u16 flag, bool val)
@@ -71,12 +88,12 @@ static bool get_flag(u16 flag)
     return g_machine.registers[e_reg_flags] & flag;
 }
 
-static void output_flags_content()
+static void output_flags_content(u16 flags_val)
 {
     proc_flag_t flags[] = { e_pflag_c, e_pflag_p, e_pflag_a, e_pflag_z, e_pflag_s, e_pflag_o };
     const char *flags_names[ARR_CNT(flags)] = { "C", "P", "A", "Z", "S", "O" };
     for (int f = 0; f < ARR_CNT(flags); ++f) {
-        if (g_machine.registers[e_reg_flags] & flags[f])
+        if (flags_val & flags[f])
             output::print("%s", flags_names[f]);
     }
 }
@@ -238,42 +255,40 @@ static void write_operand(operand_t op, u16 val, const instruction_t *instr = nu
     }
 }
 
-static void update_flags(arifm_op_t op, u32 a, u32 b, u32 res, bool is_wide)
+// @TODO: better masking?
+static void update_flags_arifm(arifm_op_t op, u32 a, u32 b, u32 res,
+                               bool is_wide, u16 ignore_mask = 0x0)
 {
-    if (g_tracing.flags & e_trace_data_mutation) {
-        output::print(" flags:");
-        output_flags_content();
-    }
+    u16 mask = ~ignore_mask;
 
-    auto is_neg = [](u32 n, bool is_wide) {
-        return n & (1 << (is_wide ? 15 : 7));
-    };
-
-    set_flag(e_pflag_z, (res & (is_wide ? 0xFFFF : 0xFF)) == 0);
-    set_flag(e_pflag_s, is_neg(res, is_wide));
-
-    // @TODO: manual sais parity == even bits, Casey sais even bits in low 8. Which is it?
-    //g_machine.flags[e_pflag_p] = count_ones(res, is_wide ? 16 : 8) % 2 == 0;
-    set_flag(e_pflag_p, count_ones(res, 8) % 2 == 0);
+    set_flag(e_pflag_z & mask, is_zero(res, is_wide));
+    set_flag(e_pflag_s & mask, is_neg(res, is_wide));
+    set_flag(e_pflag_p & mask, is_parity(res));
 
     // @TODO: I am getting conflicted evidence about c/o/a flags. Investigate, 
     //        May be better to run actual asm on linux. (or find a way on win64?)
-    set_flag(e_pflag_c, res >= (1 << (is_wide ? 16 : 8)));
+    set_flag(e_pflag_c & mask, res >= (1 << (is_wide ? 16 : 8)));
 
     bool as = is_neg(a, is_wide), bs = is_neg(b, is_wide);
-    set_flag(e_pflag_o, 
+    set_flag(e_pflag_o & mask, 
         as != (bool)(g_machine.registers[e_reg_flags] & e_pflag_s) && 
         (
             (op == e_arifm_add && as == bs) ||
             (op == e_arifm_sub && as != bs)
         ));
 
-    set_flag(e_pflag_a, do_arifm_op(a & 0xF, b & 0xF, op) & 0x10);
+    set_flag(e_pflag_a & mask, do_arifm_op(a & 0xF, b & 0xF, op) & 0x10);
+}
 
-    if (g_tracing.flags & e_trace_data_mutation) {
-        output::print("->");
-        output_flags_content();
-    }
+// @TODO: check abstraction
+// @TODO: pull out flag setting with masks and action types, maybe
+static void update_flags_logic(u32 res, bool is_wide)
+{
+    set_flag(e_pflag_o, 0);
+    set_flag(e_pflag_c, 0);
+    set_flag(e_pflag_z, is_zero(res, is_wide));
+    set_flag(e_pflag_s, is_neg(res, is_wide));
+    set_flag(e_pflag_p, is_parity(res));
 }
 
 bool cond_jump(u16 disp, bool cond)
@@ -302,11 +317,15 @@ u32 simulate_instruction_execution(instruction_t instr)
 {
     if (g_tracing.flags & e_trace_disassembly)
         output::print_intstruction(instr);
-    if (g_tracing.flags & e_trace_data_mutation)
+    if (g_tracing.flags & (e_trace_data_mutation | e_trace_cycles))
         output::print(" ;");
 
+    u16 prev_flags = g_machine.registers[e_reg_flags];
     u32 prev_ip = g_machine.registers[e_reg_ip];
+    
     g_machine.registers[e_reg_ip] += instr.size;
+
+    bool w = instr.flags & e_iflags_w;
 
     bool cond_action_happened = false;
 
@@ -324,7 +343,7 @@ u32 simulate_instruction_execution(instruction_t instr)
             u32 src = read_operand(instr.operands[1], &instr);
             u32 res = dst + src;
             write_operand(instr.operands[0], res, &instr);
-            update_flags(e_arifm_add, dst, src, res, instr.flags & e_iflags_w);
+            update_flags_arifm(e_arifm_add, dst, src, res, w);
         } break;
 
         case e_op_sub: {
@@ -332,13 +351,42 @@ u32 simulate_instruction_execution(instruction_t instr)
             u32 src = read_operand(instr.operands[1], &instr);
             u32 res = dst - src;
             write_operand(instr.operands[0], res, &instr);
-            update_flags(e_arifm_sub, dst, src, res, instr.flags & e_iflags_w);
+            update_flags_arifm(e_arifm_sub, dst, src, res, w);
         } break;
 
         case e_op_cmp: {
             u32 dst = read_operand(instr.operands[0], &instr);
             u32 src = read_operand(instr.operands[1], &instr);
-            update_flags(e_arifm_sub, dst, src, dst - src, instr.flags & e_iflags_w);
+            update_flags_arifm(e_arifm_sub, dst, src, dst - src, w);
+        } break;
+
+        case e_op_xor: {
+            u32 dst = read_operand(instr.operands[0], &instr);
+            u32 src = read_operand(instr.operands[1], &instr);
+            u32 res = dst ^ src;
+            write_operand(instr.operands[0], res, &instr);
+            update_flags_logic(res, w);
+        } break;
+
+        case e_op_test: {
+            u32 dst = read_operand(instr.operands[0], &instr);
+            u32 src = read_operand(instr.operands[1], &instr);
+            u32 res = dst & src;
+            update_flags_logic(res, w);
+        } break;
+
+        case e_op_inc: {
+            u32 dst = read_operand(instr.operands[0], &instr);
+            u32 res = dst + 1;
+            write_operand(instr.operands[0], res, &instr);
+            update_flags_arifm(e_arifm_add, dst, 1, res, w);
+        } break;
+
+        case e_op_dec: {
+            u32 dst = read_operand(instr.operands[0], &instr);
+            u32 res = dst - 1;
+            write_operand(instr.operands[0], res, &instr);
+            update_flags_arifm(e_arifm_sub, dst, 1, res, w);
         } break;
 
         case e_op_je:
@@ -408,8 +456,16 @@ u32 simulate_instruction_execution(instruction_t instr)
             assert(0);
     }
 
-    if (g_tracing.flags & e_trace_data_mutation)
+    if (g_tracing.flags & e_trace_data_mutation) {
         output::print(" ip:0x%hx->0x%hx", prev_ip, g_machine.registers[e_reg_ip]);
+
+        if (prev_flags != g_machine.registers[e_reg_flags]) {
+            output::print(" flags:");
+            output_flags_content(prev_flags);
+            output::print("->");
+            output_flags_content(g_machine.registers[e_reg_flags]);
+        }
+    }
     if (g_tracing.flags & e_trace_cycles) {
         u32 elapsed_cycles = estimate_instruction_clocks(instr, cond_action_happened);
         g_tracing.total_cycles += elapsed_cycles;
@@ -437,6 +493,6 @@ void output_simulation_results()
         }
     }
     output::print("   flags: ");
-    output_flags_content();
+    output_flags_content(g_machine.registers[e_reg_flags]);
     output::print("\n");
 }
