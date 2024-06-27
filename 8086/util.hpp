@@ -68,8 +68,9 @@ template <class TUint>
 inline void set_byte(TUint *dst, u8 val, uint byte_id)
 {
     assert(byte_id < sizeof(TUint));
-    *dst &= ~(0xFF << byte_id);
-    *dst |= val << byte_id;
+    uint shift = byte_id * 8;
+    *dst &= ~(0xFF << shift);
+    *dst |= val << shift;
 }
 
 inline bool streq(const char *s1, const char *s2)

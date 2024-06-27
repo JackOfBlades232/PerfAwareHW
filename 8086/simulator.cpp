@@ -106,7 +106,7 @@ static u16 read_reg(reg_access_t access)
     if (access.size == 2) // => offset = 0
         return g_machine.registers[access.reg];
     else
-        return g_machine.registers[access.reg] >> access.offset;
+        return g_machine.registers[access.reg] >> (access.offset * 8);
 }
 
 static void write_reg(reg_access_t access, u16 val)
@@ -264,9 +264,6 @@ static void update_flags_arifm(arifm_op_t op, u32 a, u32 b, u32 res,
     set_flag(e_pflag_z & mask, is_zero(res, is_wide));
     set_flag(e_pflag_s & mask, is_neg(res, is_wide));
     set_flag(e_pflag_p & mask, is_parity(res));
-
-    // @TODO: I am getting conflicted evidence about c/o/a flags. Investigate, 
-    //        May be better to run actual asm on linux. (or find a way on win64?)
     set_flag(e_pflag_c & mask, res >= (1 << (is_wide ? 16 : 8)));
 
     bool as = is_neg(a, is_wide), bs = is_neg(b, is_wide);

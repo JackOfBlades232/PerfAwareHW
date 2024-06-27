@@ -12,7 +12,7 @@
 #include <cstdio>
 
 /* @TODO:
- * All instructions impl (now: debug list 59)
+ * All instructions impl (now: list 63/64, need shr, and ret for all)
  *
  * CR vid
  *
@@ -84,6 +84,7 @@ int main(int argc, char **argv)
 
     fn = argv[2];
 
+    // @TODO: stop on ret flag
     for (int i = 3; i < argc; ++i) {
         if (streq(argv[i], "-o")) {
             ++i;
