@@ -113,7 +113,6 @@ static void write_reg(reg_access_t access, u16 val)
 {
     assert((access.offset == 0 && access.size == 2) ||
            (access.reg <= e_reg_d && access.size == 1 && access.offset <= 1));
-    assert(access.size == 2 || val < (1 << 8));
 
     g_tracing.registers_used |= to_flag(access.reg);
 
@@ -165,6 +164,7 @@ static memory_access_t get_segment_access(ea_mem_access_t access, const instruct
     if (instr->flags & e_iflags_seg_override)
         seg.base = g_machine.registers[instr->segment_override];
 
+    // @TODO: check in the manual
     if (access.base == e_ea_base_bp)
         seg.base = g_machine.registers[e_reg_ss];
     else

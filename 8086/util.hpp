@@ -68,7 +68,7 @@ template <class TUint>
 inline void set_byte(TUint *dst, u8 val, uint byte_id)
 {
     assert(byte_id < sizeof(TUint));
-    *dst &= ~(0xF << byte_id);
+    *dst &= ~(0xFF << byte_id);
     *dst |= val << byte_id;
 }
 
