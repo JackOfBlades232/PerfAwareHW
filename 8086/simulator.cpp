@@ -23,12 +23,6 @@ enum proc_flag_t {
     e_pflag_o = 1 << 11,
 };
 
-// @TODO: what if I use 2-s complemet, will it remove the need for classification?
-enum arifm_op_t {
-    e_arifm_add,
-    e_arifm_sub
-};
-
 struct machine_t {
     u16 registers[e_reg_max];
 };
@@ -47,19 +41,6 @@ void set_simulation_trace_level(u32 flags)
     g_tracing.flags = flags;
 }
 
-// @TODO: i don't like this abstraction
-static u32 do_arifm_op(u32 a, u32 b, arifm_op_t op)
-{
-    switch (op) {
-        case e_arifm_add:
-            return a+b;
-        case e_arifm_sub:
-            return a-b;
-    }
-
-    return 0;
-}
-
 static bool is_zero(u32 n, bool is_wide)
 {
     return (n & (is_wide ? 0xFFFF : 0xFF)) == 0;
@@ -73,6 +54,11 @@ static bool is_neg(u32 n, bool is_wide)
 static bool is_parity(u32 n)
 {
     return count_ones(n, 8) % 2 == 0;
+}
+
+static bool is_arifm_carry(u32 res, bool is_wide)
+{
+    return res & (1 << (is_wide ? 16 : 8));
 }
 
 static void set_flag(u16 flag, bool val)
@@ -255,40 +241,32 @@ static void write_operand(operand_t op, u16 val, const instruction_t *instr = nu
     }
 }
 
-// @TODO: better masking?
-static void update_flags_arifm(arifm_op_t op, u32 a, u32 b, u32 res,
-                               bool is_wide, u16 ignore_mask = 0x0)
+static void update_common_flags(u32 res, bool is_wide)
 {
-    u16 mask = ~ignore_mask;
-
-    set_flag(e_pflag_z & mask, is_zero(res, is_wide));
-    set_flag(e_pflag_s & mask, is_neg(res, is_wide));
-    set_flag(e_pflag_p & mask, is_parity(res));
-    set_flag(e_pflag_c & mask, res >= (1 << (is_wide ? 16 : 8)));
-
-    bool as = is_neg(a, is_wide), bs = is_neg(b, is_wide);
-    set_flag(e_pflag_o & mask, 
-        as != (bool)(g_machine.registers[e_reg_flags] & e_pflag_s) && 
-        (
-            (op == e_arifm_add && as == bs) ||
-            (op == e_arifm_sub && as != bs)
-        ));
-
-    set_flag(e_pflag_a & mask, do_arifm_op(a & 0xF, b & 0xF, op) & 0x10);
-}
-
-// @TODO: check abstraction
-// @TODO: pull out flag setting with masks and action types, maybe
-static void update_flags_logic(u32 res, bool is_wide)
-{
-    set_flag(e_pflag_o, 0);
-    set_flag(e_pflag_c, 0);
     set_flag(e_pflag_z, is_zero(res, is_wide));
     set_flag(e_pflag_s, is_neg(res, is_wide));
     set_flag(e_pflag_p, is_parity(res));
 }
 
-bool cond_jump(u16 disp, bool cond)
+static void update_arifm_flags(u32 a, i32 b, bool is_wide)
+{
+    u32 res = (u32)((i32)a + b);
+    update_common_flags(res, is_wide);
+    set_flag(e_pflag_c, is_arifm_carry(res, is_wide));
+    set_flag(e_pflag_o, is_neg(a, is_wide) == is_neg(b, is_wide) &&
+                        is_neg(a, is_wide) != is_neg(res, is_wide));
+    set_flag(e_pflag_a, ((0xF & a) + sgn(b)*(0xF & abs(b))) & 0x10);
+}
+
+static void update_logic_flags(u32 res, bool is_wide)
+{
+    update_common_flags(res, is_wide);
+    set_flag(e_pflag_c, 0);
+    set_flag(e_pflag_o, 0);
+    set_flag(e_pflag_a, 0);
+}
+
+static bool cond_jump(u16 disp, bool cond)
 {
     if (cond)
         g_machine.registers[e_reg_ip] += disp;
@@ -296,7 +274,7 @@ bool cond_jump(u16 disp, bool cond)
     return cond;
 }
 
-bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
+static bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
 {
     reg_access_t cx = get_word_reg_access(e_reg_c);
     if (delta_cx)
@@ -322,7 +300,19 @@ u32 simulate_instruction_execution(instruction_t instr)
     
     g_machine.registers[e_reg_ip] += instr.size;
 
+    operand_t op0 = instr.operands[0];
+    operand_t op1 = instr.operands[1];
+    u32 op0_val = op0.type == e_operand_none ? 0 : read_operand(op0, &instr);
+    u32 op1_val = op1.type == e_operand_none ? 0 : read_operand(op1, &instr);
+
     bool w = instr.flags & e_iflags_w;
+
+    bool zf = get_flag(e_pflag_z);
+    bool sf = get_flag(e_pflag_s);
+    bool pf = get_flag(e_pflag_p);
+    bool of = get_flag(e_pflag_o);
+    bool cf = get_flag(e_pflag_c);
+    bool af = get_flag(e_pflag_a);
 
     bool cond_action_happened = false;
 
@@ -330,122 +320,107 @@ u32 simulate_instruction_execution(instruction_t instr)
 
     // @TODO: set global instruction each iter to a context so as not to pass it around?
     switch (instr.op) {
-        case e_op_mov: {
-            u32 src = read_operand(instr.operands[1], &instr);
-            write_operand(instr.operands[0], src, &instr);
-        } break;
+        case e_op_mov:
+            write_operand(op0, op1_val, &instr);
+            break;
 
         case e_op_add: {
-            u32 dst = read_operand(instr.operands[0], &instr);
-            u32 src = read_operand(instr.operands[1], &instr);
-            u32 res = dst + src;
-            write_operand(instr.operands[0], res, &instr);
-            update_flags_arifm(e_arifm_add, dst, src, res, w);
+            write_operand(op0, op0_val + op1_val, &instr);
+            update_arifm_flags(op0_val, op1_val, w);
         } break;
 
         case e_op_sub: {
-            u32 dst = read_operand(instr.operands[0], &instr);
-            u32 src = read_operand(instr.operands[1], &instr);
-            u32 res = dst - src;
-            write_operand(instr.operands[0], res, &instr);
-            update_flags_arifm(e_arifm_sub, dst, src, res, w);
+            write_operand(op0, op0_val - op1_val, &instr);
+            update_arifm_flags(op0_val, -op1_val, w);
         } break;
 
-        case e_op_cmp: {
-            u32 dst = read_operand(instr.operands[0], &instr);
-            u32 src = read_operand(instr.operands[1], &instr);
-            update_flags_arifm(e_arifm_sub, dst, src, dst - src, w);
-        } break;
+        case e_op_cmp:
+            update_arifm_flags(op0_val, -op1_val, w);
+            break;
 
         case e_op_xor: {
-            u32 dst = read_operand(instr.operands[0], &instr);
-            u32 src = read_operand(instr.operands[1], &instr);
-            u32 res = dst ^ src;
-            write_operand(instr.operands[0], res, &instr);
-            update_flags_logic(res, w);
+            u32 res = op0_val ^ op1_val;
+            write_operand(op0, res, &instr);
+            update_logic_flags(res, w);
         } break;
 
         case e_op_test: {
-            u32 dst = read_operand(instr.operands[0], &instr);
-            u32 src = read_operand(instr.operands[1], &instr);
-            u32 res = dst & src;
-            update_flags_logic(res, w);
+            u32 res = op0_val & op1_val;
+            update_logic_flags(res, w);
         } break;
 
         case e_op_inc: {
-            u32 dst = read_operand(instr.operands[0], &instr);
-            u32 res = dst + 1;
-            write_operand(instr.operands[0], res, &instr);
-            update_flags_arifm(e_arifm_add, dst, 1, res, w);
+            u32 res = op0_val + 1;
+            write_operand(op0, res, &instr);
+            update_arifm_flags(op0_val, 1, w);
         } break;
 
         case e_op_dec: {
-            u32 dst = read_operand(instr.operands[0], &instr);
-            u32 res = dst - 1;
-            write_operand(instr.operands[0], res, &instr);
-            update_flags_arifm(e_arifm_sub, dst, 1, res, w);
+            u32 res = op0_val - 1;
+            write_operand(op0, res, &instr);
+            update_arifm_flags(op0_val, -1, w);
         } break;
 
         case e_op_je:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(op0_val, zf);
             break;
         case e_op_jl:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_s) && !get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(op0_val, sf && !zf);
             break;
         case e_op_jle:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_s) || get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(op0_val, sf || zf);
             break;
         case e_op_jb:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_c) && !get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(op0_val, cf && !zf);
             break;
         case e_op_jbe:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_c) || get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(op0_val, cf || zf);
             break;
         case e_op_jp:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_p));
+            cond_action_happened = cond_jump(op0_val, pf);
             break;
         case e_op_jo:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_o));
+            cond_action_happened = cond_jump(op0_val, of);
             break;
         case e_op_js:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), get_flag(e_pflag_s));
+            cond_action_happened = cond_jump(op0_val, sf);
             break;
         case e_op_jne:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(op0_val, !zf);
             break;
         case e_op_jge:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_s) || get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(op0_val, !sf || zf);
             break;
         case e_op_jg:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_s) && !get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(op0_val, !sf && !zf);
             break;
         case e_op_jae:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_c) || get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(op0_val, !cf || zf);
             break;
         case e_op_ja:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_c) && !get_flag(e_pflag_z));
+            cond_action_happened = cond_jump(op0_val, !cf && !zf);
             break;
         case e_op_jnp:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_p));
+            cond_action_happened = cond_jump(op0_val, !pf);
             break;
         case e_op_jno:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_o));
+            cond_action_happened = cond_jump(op0_val, !of);
             break;
         case e_op_jns:
-            cond_action_happened = cond_jump(read_operand(instr.operands[0]), !get_flag(e_pflag_s));
+            cond_action_happened = cond_jump(op0_val, !sf);
             break;
 
         case e_op_loop:
-            cond_action_happened = cx_loop_jump(read_operand(instr.operands[0]), -1);
+            cond_action_happened = cx_loop_jump(op0_val, -1);
             break;
         case e_op_loopz:
-            cond_action_happened = cx_loop_jump(read_operand(instr.operands[0]), -1, get_flag(e_pflag_z));
+            cond_action_happened = cx_loop_jump(op0_val, -1, zf);
             break;
         case e_op_loopnz:
-            cond_action_happened = cx_loop_jump(read_operand(instr.operands[0]), -1, !get_flag(e_pflag_z));
+            cond_action_happened = cx_loop_jump(op0_val, -1, !zf);
             break;
         case e_op_jcxz:
-            cond_action_happened = cx_loop_jump(read_operand(instr.operands[0]), 0);
+            cond_action_happened = cx_loop_jump(op0_val, 0);
             break;
 
         default:

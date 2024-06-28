@@ -73,6 +73,18 @@ inline void set_byte(TUint *dst, u8 val, uint byte_id)
     *dst |= val << shift;
 }
 
+template <class TInt>
+inline TInt sgn(TInt n)
+{
+    return n < 0 ? -1 : (n > 0 ? 1 : 0);
+}
+
+template <class TInt>
+inline TInt abs(TInt n)
+{
+    return n * sgn(n);
+}
+
 inline bool streq(const char *s1, const char *s2)
 {
     return strcmp(s1, s2) == 0;
