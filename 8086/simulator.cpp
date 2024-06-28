@@ -54,7 +54,7 @@ static bool is_zero(u32 n, bool is_wide)
 
 static bool is_neg(u32 n, bool is_wide)
 {
-    return n & (hmask(is_wide) << 1);
+    return n & hmask(is_wide);
 };
 
 static bool is_parity(u32 n)
@@ -62,9 +62,9 @@ static bool is_parity(u32 n)
     return count_ones(n, 8) % 2 == 0;
 }
 
-static bool is_arifm_carry(u32 res, bool is_wide)
+static bool is_arifm_carry(u32 n, bool is_wide)
 {
-    return res & (1 << (is_wide ? 16 : 8));
+    return n & (hmask(is_wide) << 1);
 }
 
 static void set_pflag(u16 flag, bool val)
@@ -98,7 +98,7 @@ static u16 read_reg(reg_access_t access)
     if (access.size == 2) // => offset = 0
         return g_machine.registers[access.reg];
     else
-        return g_machine.registers[access.reg] >> (access.offset * 8);
+        return (g_machine.registers[access.reg] >> (access.offset * 8)) & 0xFF;
 }
 
 static void write_reg(reg_access_t access, u16 val)
@@ -302,7 +302,6 @@ static bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
 
 u32 simulate_instruction_execution(instruction_t instr)
 {
-
     operand_t op0 = instr.operands[0];
     operand_t op1 = instr.operands[1];
     u32 op0_val = op0.type == e_operand_none ? 0 : read_operand(op0, &instr);
@@ -319,9 +318,10 @@ u32 simulate_instruction_execution(instruction_t instr)
 
     // @TODO: on all rets
     if (instr.op == e_op_ret && (g_tracing.flags & e_trace_stop_on_ret)) {
-        // @TODO: better exit facility
+        // @TODO: better exit facility, with break of decode loop
         // @TODO: address segmented?
         output::print("STOPONRET: Return encountered at address %d\n", g_machine.registers[e_reg_ip]);
+        output_simulation_results();
         exit(0);
     }
 
