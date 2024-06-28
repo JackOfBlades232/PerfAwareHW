@@ -99,16 +99,33 @@ int main(int argc, char **argv)
             }
 
             output::set_out_file(out_f);
-        } else if (streq(argv[i], "-trace")) {
-            // @TODO: different tracing settings
+        } else if (strncmp(argv[i], "-trace", 6) == 0) {
             if (action != e_act_simulate) {
                 LOGERR("Tracing [-trace] only valid for simulation");
                 return 1;
             }
+            
+            const char *p = argv[i] + 6; // skip -trace
+            u32 trace_flags = 0;
+            if (!*p || streq(p, "=data"))
+                trace_flags = e_trace_data_mutation | e_trace_disassembly;
+            else if (streq(p, "=clocks"))
+                trace_flags = e_trace_disassembly | e_trace_cycles;
+            else if (streq(p, "=all"))
+                trace_flags = e_trace_data_mutation | e_trace_disassembly | e_trace_cycles;
+            else {
+                LOGERR("Tracing modes: [-trace(=data|clocks|all)]");
+                return 1;
+            }
 
-            set_simulation_trace_level(e_trace_data_mutation |
-                                       e_trace_disassembly |
-                                       e_trace_cycles);
+            set_simulation_trace_option(trace_flags, true);
+        } else if (streq(argv[i], "-stoponret")) {
+            if (action != e_act_simulate) {
+                LOGERR("Stop on return [-stoponret] only valid for simulation");
+                return 1;
+            }
+
+            set_simulation_trace_option(e_trace_stop_on_ret, true);
         } else if (streq(argv[i], "-dump")) {
             ++i;
             if (i >= argc) {

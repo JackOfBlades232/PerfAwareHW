@@ -5,6 +5,7 @@
 #include "clocks.hpp"
 #include "instruction.hpp"
 #include <cassert>
+#include <cstdlib>
 
 // @TODO: think again if asserts are appropriate here.
 //        Where are we dealing with caller mistakes, and where with bad input?
@@ -36,9 +37,14 @@ struct tracing_state_t {
 static machine_t g_machine = {};
 static tracing_state_t g_tracing = {};
 
-void set_simulation_trace_level(u32 flags)
+void set_simulation_trace_option(u32 flags, bool set)
 {
-    g_tracing.flags = flags;
+    set_flags(&g_tracing.flags, flags, set);
+}
+
+static u32 hmask(bool is_wide)
+{
+    return 1 << (is_wide ? 15 : 7);
 }
 
 static bool is_zero(u32 n, bool is_wide)
@@ -48,7 +54,7 @@ static bool is_zero(u32 n, bool is_wide)
 
 static bool is_neg(u32 n, bool is_wide)
 {
-    return n & (1 << (is_wide ? 15 : 7));
+    return n & (hmask(is_wide) << 1);
 };
 
 static bool is_parity(u32 n)
@@ -61,7 +67,7 @@ static bool is_arifm_carry(u32 res, bool is_wide)
     return res & (1 << (is_wide ? 16 : 8));
 }
 
-static void set_flag(u16 flag, bool val)
+static void set_pflag(u16 flag, bool val)
 {
     if (val)
         g_machine.registers[e_reg_flags] |= flag;
@@ -243,27 +249,33 @@ static void write_operand(operand_t op, u16 val, const instruction_t *instr = nu
 
 static void update_common_flags(u32 res, bool is_wide)
 {
-    set_flag(e_pflag_z, is_zero(res, is_wide));
-    set_flag(e_pflag_s, is_neg(res, is_wide));
-    set_flag(e_pflag_p, is_parity(res));
+    set_pflag(e_pflag_z, is_zero(res, is_wide));
+    set_pflag(e_pflag_s, is_neg(res, is_wide));
+    set_pflag(e_pflag_p, is_parity(res));
 }
 
 static void update_arifm_flags(u32 a, i32 b, bool is_wide)
 {
     u32 res = (u32)((i32)a + b);
     update_common_flags(res, is_wide);
-    set_flag(e_pflag_c, is_arifm_carry(res, is_wide));
-    set_flag(e_pflag_o, is_neg(a, is_wide) == is_neg(b, is_wide) &&
+    set_pflag(e_pflag_c, is_arifm_carry(res, is_wide));
+    set_pflag(e_pflag_o, is_neg(a, is_wide) == is_neg(b, is_wide) &&
                         is_neg(a, is_wide) != is_neg(res, is_wide));
-    set_flag(e_pflag_a, ((0xF & a) + sgn(b)*(0xF & abs(b))) & 0x10);
+    set_pflag(e_pflag_a, ((0xF & a) + sgn(b)*(0xF & abs(b))) & 0x10);
 }
 
 static void update_logic_flags(u32 res, bool is_wide)
 {
     update_common_flags(res, is_wide);
-    set_flag(e_pflag_c, 0);
-    set_flag(e_pflag_o, 0);
-    set_flag(e_pflag_a, 0);
+    set_pflag(e_pflag_c, 0);
+    set_pflag(e_pflag_o, 0);
+    set_pflag(e_pflag_a, 0);
+}
+
+static void update_shift_flags(bool pushed_bit, u32 res, u32 orig, bool is_wide)
+{
+    set_pflag(e_pflag_c, pushed_bit);
+    set_pflag(e_pflag_o, is_neg(res, is_wide) != is_neg(orig, is_wide));
 }
 
 static bool cond_jump(u16 disp, bool cond)
@@ -290,15 +302,6 @@ static bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
 
 u32 simulate_instruction_execution(instruction_t instr)
 {
-    if (g_tracing.flags & e_trace_disassembly)
-        output::print_intstruction(instr);
-    if (g_tracing.flags & (e_trace_data_mutation | e_trace_cycles))
-        output::print(" ;");
-
-    u16 prev_flags = g_machine.registers[e_reg_flags];
-    u32 prev_ip = g_machine.registers[e_reg_ip];
-    
-    g_machine.registers[e_reg_ip] += instr.size;
 
     operand_t op0 = instr.operands[0];
     operand_t op1 = instr.operands[1];
@@ -314,7 +317,25 @@ u32 simulate_instruction_execution(instruction_t instr)
     bool cf = get_flag(e_pflag_c);
     bool af = get_flag(e_pflag_a);
 
+    // @TODO: on all rets
+    if (instr.op == e_op_ret && (g_tracing.flags & e_trace_stop_on_ret)) {
+        // @TODO: better exit facility
+        // @TODO: address segmented?
+        output::print("STOPONRET: Return encountered at address %d\n", g_machine.registers[e_reg_ip]);
+        exit(0);
+    }
+
+    u16 prev_flags = g_machine.registers[e_reg_flags];
+    u32 prev_ip = g_machine.registers[e_reg_ip];
+    
+    g_machine.registers[e_reg_ip] += instr.size;
+
     bool cond_action_happened = false;
+
+    if (g_tracing.flags & e_trace_disassembly)
+        output::print_intstruction(instr);
+    if (g_tracing.flags & (e_trace_data_mutation | e_trace_cycles))
+        output::print(" ;");
 
     // @TODO: correct instruction format validation
 
@@ -325,13 +346,13 @@ u32 simulate_instruction_execution(instruction_t instr)
             break;
 
         case e_op_add: {
-            write_operand(op0, op0_val + op1_val, &instr);
             update_arifm_flags(op0_val, op1_val, w);
+            write_operand(op0, op0_val + op1_val, &instr);
         } break;
 
         case e_op_sub: {
-            write_operand(op0, op0_val - op1_val, &instr);
             update_arifm_flags(op0_val, -op1_val, w);
+            write_operand(op0, op0_val - op1_val, &instr);
         } break;
 
         case e_op_cmp:
@@ -340,8 +361,8 @@ u32 simulate_instruction_execution(instruction_t instr)
 
         case e_op_xor: {
             u32 res = op0_val ^ op1_val;
-            write_operand(op0, res, &instr);
             update_logic_flags(res, w);
+            write_operand(op0, res, &instr);
         } break;
 
         case e_op_test: {
@@ -351,14 +372,32 @@ u32 simulate_instruction_execution(instruction_t instr)
 
         case e_op_inc: {
             u32 res = op0_val + 1;
-            write_operand(op0, res, &instr);
             update_arifm_flags(op0_val, 1, w);
+            write_operand(op0, res, &instr);
         } break;
 
         case e_op_dec: {
             u32 res = op0_val - 1;
-            write_operand(op0, res, &instr);
             update_arifm_flags(op0_val, -1, w);
+            write_operand(op0, res, &instr);
+        } break;
+
+        case e_op_shl: {
+            u32 res = op0_val << op1_val;
+            write_operand(op0, res, &instr);
+            update_shift_flags(op0_val & hmask(w), res, op0_val, w);
+        } break;
+
+        case e_op_shr: {
+            u32 res = op0_val >> op1_val;
+            write_operand(op0, res, &instr);
+            update_shift_flags(op0_val & 0x1, res, op0_val, w);
+        } break;
+
+        case e_op_sar: {
+            u32 res = (i32)op0_val >> op1_val;
+            write_operand(op0, res, &instr);
+            update_shift_flags(op0_val & 0x1, res, op0_val, w);
         } break;
 
         case e_op_je:
@@ -439,7 +478,9 @@ u32 simulate_instruction_execution(instruction_t instr)
         }
     }
     if (g_tracing.flags & e_trace_cycles) {
-        u32 elapsed_cycles = estimate_instruction_clocks(instr, cond_action_happened);
+        u32 elapsed_cycles = estimate_instruction_clocks(
+            instr, cond_action_happened, op1_val /*shift_bits*/);
+
         g_tracing.total_cycles += elapsed_cycles;
         output::print(" | Clocks: +%u=%u", elapsed_cycles, g_tracing.total_cycles);
     }

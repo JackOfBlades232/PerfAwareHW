@@ -85,6 +85,14 @@ inline TInt abs(TInt n)
     return n * sgn(n);
 }
 
+inline void set_flags(u32 *dest, u32 flags, bool set)
+{
+    if (set)
+        *dest |= flags;
+    else
+        *dest &= ~flags;
+}
+
 inline bool streq(const char *s1, const char *s2)
 {
     return strcmp(s1, s2) == 0;
