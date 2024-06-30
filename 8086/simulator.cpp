@@ -1,4 +1,5 @@
 #include "simulator.hpp"
+#include "consts.hpp"
 #include "memory.hpp"
 #include "print.hpp"
 #include "util.hpp"
@@ -148,13 +149,18 @@ static u16 calculate_ea(ea_mem_access_t access)
 }
 
 // @TODO: double check manual for segment tricks
-static memory_access_t get_segment_access(ea_mem_access_t access, const instruction_t *instr)
+static memory_access_t get_segment_access(ea_mem_access_t access, reg_t seg_override)
 {
     memory_access_t seg = get_main_memory_access();
     seg.size = c_seg_size;
 
-    if (instr->flags & e_iflags_seg_override)
-        seg.base = g_machine.registers[instr->segment_override];
+    if (seg_override != e_reg_max) {
+        assert(seg_override == e_reg_cs ||
+               seg_override == e_reg_ss ||
+               seg_override == e_reg_ds ||
+               seg_override == e_reg_es);
+        seg.base = g_machine.registers[seg_override];
+    }
 
     // @TODO: check in the manual
     if (access.base == e_ea_base_bp)
@@ -167,25 +173,25 @@ static memory_access_t get_segment_access(ea_mem_access_t access, const instruct
     return seg;
 }
 
-static u16 read_mem(ea_mem_access_t access, const instruction_t *instr)
+static u16 read_mem(ea_mem_access_t access, bool is_wide, reg_t seg_override)
 {
-    memory_access_t seg_mem = get_segment_access(access, instr);
+    memory_access_t seg_mem = get_segment_access(access, seg_override);
     u16 offset = calculate_ea(access);
 
-    if (instr->flags & e_iflags_w)
+    if (is_wide)
         return read_byte_at(seg_mem, offset) | (read_byte_at(seg_mem, offset+1) << 8);
     else
         return read_byte_at(seg_mem, offset);
 }
 
-static void write_mem(ea_mem_access_t access, u16 val, const instruction_t *instr)
+static void write_mem(ea_mem_access_t access, u16 val, bool is_wide, reg_t seg_override)
 {
-    memory_access_t seg_mem = get_segment_access(access, instr);
+    memory_access_t seg_mem = get_segment_access(access, seg_override);
     u16 offset = calculate_ea(access);
 
-    u16 prev_content = read_mem(access, instr);
+    u16 prev_content = read_mem(access, is_wide, seg_override);
 
-    if (instr->flags & e_iflags_w) {
+    if (is_wide) {
         // The simulated 8086 is little endian
         write_byte_to(seg_mem, offset, val & 0xFF);
         write_byte_to(seg_mem, offset+1, val >> 8);
@@ -195,16 +201,16 @@ static void write_mem(ea_mem_access_t access, u16 val, const instruction_t *inst
     if (g_tracing.flags & e_trace_data_mutation) {
         u32 addr = get_full_address(seg_mem, offset);
         output::print(" ");
-        if (instr->flags & e_iflags_w)
+        if (is_wide)
             output::print("[0x%x-0x%x]", addr, addr+1);
         else
             output::print("[0x%x]", addr);
-        output::print(":0x%hx->0x%hx", prev_content, read_mem(access, instr));
+        output::print(":0x%hx->0x%hx", prev_content, read_mem(access, is_wide, seg_override));
     }
 }
 
 // @TODO: spec setting for reading EA in mem (in lea)
-static u16 read_operand(operand_t op, const instruction_t *instr = nullptr)
+static u16 read_operand(operand_t op, bool is_wide, reg_t seg_override = e_reg_max)
 {
     switch (op.type) {
         case e_operand_reg:
@@ -214,7 +220,7 @@ static u16 read_operand(operand_t op, const instruction_t *instr = nullptr)
             return op.data.imm;
 
         case e_operand_mem:
-            return read_mem(op.data.mem, instr);
+            return read_mem(op.data.mem, is_wide, seg_override);
 
         case e_operand_cs_ip:
             LOGERR("Operand read not implemented for these types");
@@ -225,7 +231,7 @@ static u16 read_operand(operand_t op, const instruction_t *instr = nullptr)
     return 0;
 }
 
-static void write_operand(operand_t op, u16 val, const instruction_t *instr = nullptr)
+static void write_operand(operand_t op, u16 val, bool is_wide, reg_t seg_override = e_reg_max)
 {
     switch (op.type) {
         case e_operand_reg:
@@ -233,7 +239,7 @@ static void write_operand(operand_t op, u16 val, const instruction_t *instr = nu
             break;
 
         case e_operand_mem:
-            write_mem(op.data.mem, val, instr);
+            write_mem(op.data.mem, val, is_wide, seg_override);
             break;
 
         case e_operand_imm:
@@ -260,7 +266,7 @@ static void update_arifm_flags(u32 a, i32 b, bool is_wide)
     update_common_flags(res, is_wide);
     set_pflag(e_pflag_c, is_arifm_carry(res, is_wide));
     set_pflag(e_pflag_o, is_neg(a, is_wide) == is_neg(b, is_wide) &&
-                        is_neg(a, is_wide) != is_neg(res, is_wide));
+                         is_neg(a, is_wide) != is_neg(res, is_wide));
     set_pflag(e_pflag_a, ((0xF & a) + sgn(b)*(0xF & abs(b))) & 0x10);
 }
 
@@ -300,14 +306,27 @@ static bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
     return false;
 }
 
+u32 get_simulation_ip()
+{
+    return g_machine.registers[e_reg_ip];
+}
+
 u32 simulate_instruction_execution(instruction_t instr)
 {
+    // @TODO: s flag for add is already needed?
+    bool w = instr.flags & e_iflags_w;
+    reg_t seg_override = (instr.flags & e_iflags_seg_override) ?
+                         instr.segment_override : e_reg_max;
+
     operand_t op0 = instr.operands[0];
     operand_t op1 = instr.operands[1];
-    u32 op0_val = op0.type == e_operand_none ? 0 : read_operand(op0, &instr);
-    u32 op1_val = op1.type == e_operand_none ? 0 : read_operand(op1, &instr);
+    u32 op0_val = op0.type == e_operand_none ? 0 : read_operand(op0, w, seg_override);
+    u32 op1_val = op1.type == e_operand_none ? 0 : read_operand(op1, w, seg_override);
 
-    bool w = instr.flags & e_iflags_w;
+    instruction_metadata_t metadata = {};
+    metadata.instr = instr;
+    metadata.op0_val = op0_val;
+    metadata.op1_val = op1_val;
 
     bool zf = get_flag(e_pflag_z);
     bool sf = get_flag(e_pflag_s);
@@ -316,13 +335,13 @@ u32 simulate_instruction_execution(instruction_t instr)
     bool cf = get_flag(e_pflag_c);
     bool af = get_flag(e_pflag_a);
 
-    // @TODO: on all rets
-    if (instr.op == e_op_ret && (g_tracing.flags & e_trace_stop_on_ret)) {
-        // @TODO: better exit facility, with break of decode loop
-        // @TODO: address segmented?
-        output::print("STOPONRET: Return encountered at address %d\n", g_machine.registers[e_reg_ip]);
-        output_simulation_results();
-        exit(0);
+    if ((instr.op == e_op_ret || instr.op == e_op_retf) &&
+        (g_tracing.flags & e_trace_stop_on_ret))
+    {
+        output::print("STOPONRET: Return encountered at address %d:%d\n",
+                      g_machine.registers[e_reg_cs],
+                      g_machine.registers[e_reg_ip]);
+        return c_ip_terminate; // exits loop
     }
 
     u16 prev_flags = g_machine.registers[e_reg_flags];
@@ -330,29 +349,28 @@ u32 simulate_instruction_execution(instruction_t instr)
     
     g_machine.registers[e_reg_ip] += instr.size;
 
-    bool cond_action_happened = false;
-
     if (g_tracing.flags & e_trace_disassembly)
-        output::print_intstruction(instr);
+        output::print_instruction(instr);
     if (g_tracing.flags & (e_trace_data_mutation | e_trace_cycles))
         output::print(" ;");
 
     // @TODO: correct instruction format validation
+    // (as a separate module, it could be useful in decoder/main loop,
+    //  since the whole system relies on this invariant)
 
-    // @TODO: set global instruction each iter to a context so as not to pass it around?
     switch (instr.op) {
         case e_op_mov:
-            write_operand(op0, op1_val, &instr);
+            write_operand(op0, op1_val, w, seg_override);
             break;
 
         case e_op_add: {
             update_arifm_flags(op0_val, op1_val, w);
-            write_operand(op0, op0_val + op1_val, &instr);
+            write_operand(op0, op0_val + op1_val, w, seg_override);
         } break;
 
         case e_op_sub: {
             update_arifm_flags(op0_val, -op1_val, w);
-            write_operand(op0, op0_val - op1_val, &instr);
+            write_operand(op0, op0_val - op1_val, w, seg_override);
         } break;
 
         case e_op_cmp:
@@ -362,7 +380,7 @@ u32 simulate_instruction_execution(instruction_t instr)
         case e_op_xor: {
             u32 res = op0_val ^ op1_val;
             update_logic_flags(res, w);
-            write_operand(op0, res, &instr);
+            write_operand(op0, res, w, seg_override);
         } break;
 
         case e_op_test: {
@@ -373,93 +391,93 @@ u32 simulate_instruction_execution(instruction_t instr)
         case e_op_inc: {
             u32 res = op0_val + 1;
             update_arifm_flags(op0_val, 1, w);
-            write_operand(op0, res, &instr);
+            write_operand(op0, res, w, seg_override);
         } break;
 
         case e_op_dec: {
             u32 res = op0_val - 1;
             update_arifm_flags(op0_val, -1, w);
-            write_operand(op0, res, &instr);
+            write_operand(op0, res, w, seg_override);
         } break;
 
         case e_op_shl: {
             u32 res = op0_val << op1_val;
-            write_operand(op0, res, &instr);
-            update_shift_flags(op0_val & hmask(w), res, op0_val, w);
+            write_operand(op0, res, w, seg_override);
+            update_shift_flags((op0_val << (op1_val-1)) & hmask(w), res, op0_val, w);
         } break;
 
         case e_op_shr: {
             u32 res = op0_val >> op1_val;
-            write_operand(op0, res, &instr);
-            update_shift_flags(op0_val & 0x1, res, op0_val, w);
+            write_operand(op0, res, w, seg_override);
+            update_shift_flags((op0_val >> (op1_val-1)) & 0x1, res, op0_val, w);
         } break;
 
         case e_op_sar: {
-            u32 res = (i32)op0_val >> op1_val;
-            write_operand(op0, res, &instr);
-            update_shift_flags(op0_val & 0x1, res, op0_val, w);
+            i32 res = (i32)op0_val >> op1_val;
+            write_operand(op0, res, w, seg_override);
+            update_shift_flags(((i32)op0_val >> (op1_val-1)) & 0x1, res, op0_val, w);
         } break;
 
         case e_op_je:
-            cond_action_happened = cond_jump(op0_val, zf);
+            metadata.cond_action_happened = cond_jump(op0_val, zf);
             break;
         case e_op_jl:
-            cond_action_happened = cond_jump(op0_val, sf && !zf);
+            metadata.cond_action_happened = cond_jump(op0_val, sf && !zf);
             break;
         case e_op_jle:
-            cond_action_happened = cond_jump(op0_val, sf || zf);
+            metadata.cond_action_happened = cond_jump(op0_val, sf || zf);
             break;
         case e_op_jb:
-            cond_action_happened = cond_jump(op0_val, cf && !zf);
+            metadata.cond_action_happened = cond_jump(op0_val, cf && !zf);
             break;
         case e_op_jbe:
-            cond_action_happened = cond_jump(op0_val, cf || zf);
+            metadata.cond_action_happened = cond_jump(op0_val, cf || zf);
             break;
         case e_op_jp:
-            cond_action_happened = cond_jump(op0_val, pf);
+            metadata.cond_action_happened = cond_jump(op0_val, pf);
             break;
         case e_op_jo:
-            cond_action_happened = cond_jump(op0_val, of);
+            metadata.cond_action_happened = cond_jump(op0_val, of);
             break;
         case e_op_js:
-            cond_action_happened = cond_jump(op0_val, sf);
+            metadata.cond_action_happened = cond_jump(op0_val, sf);
             break;
         case e_op_jne:
-            cond_action_happened = cond_jump(op0_val, !zf);
+            metadata.cond_action_happened = cond_jump(op0_val, !zf);
             break;
         case e_op_jge:
-            cond_action_happened = cond_jump(op0_val, !sf || zf);
+            metadata.cond_action_happened = cond_jump(op0_val, !sf || zf);
             break;
         case e_op_jg:
-            cond_action_happened = cond_jump(op0_val, !sf && !zf);
+            metadata.cond_action_happened = cond_jump(op0_val, !sf && !zf);
             break;
         case e_op_jae:
-            cond_action_happened = cond_jump(op0_val, !cf || zf);
+            metadata.cond_action_happened = cond_jump(op0_val, !cf || zf);
             break;
         case e_op_ja:
-            cond_action_happened = cond_jump(op0_val, !cf && !zf);
+            metadata.cond_action_happened = cond_jump(op0_val, !cf && !zf);
             break;
         case e_op_jnp:
-            cond_action_happened = cond_jump(op0_val, !pf);
+            metadata.cond_action_happened = cond_jump(op0_val, !pf);
             break;
         case e_op_jno:
-            cond_action_happened = cond_jump(op0_val, !of);
+            metadata.cond_action_happened = cond_jump(op0_val, !of);
             break;
         case e_op_jns:
-            cond_action_happened = cond_jump(op0_val, !sf);
+            metadata.cond_action_happened = cond_jump(op0_val, !sf);
             break;
 
         case e_op_loop:
-            cond_action_happened = cx_loop_jump(op0_val, -1);
+            metadata.cond_action_happened = cx_loop_jump(op0_val, -1);
             break;
         case e_op_loopz:
-            cond_action_happened = cx_loop_jump(op0_val, -1, zf);
+            metadata.cond_action_happened = cx_loop_jump(op0_val, -1, zf);
             break;
         case e_op_loopnz:
-            cond_action_happened = cx_loop_jump(op0_val, -1, !zf);
+            metadata.cond_action_happened = cx_loop_jump(op0_val, -1, !zf);
             break;
         case e_op_jcxz:
-            cond_action_happened = cx_loop_jump(op0_val, 0);
+            metadata.cond_action_happened = cx_loop_jump(op0_val, 0);
             break;
 
         default:
@@ -478,9 +496,7 @@ u32 simulate_instruction_execution(instruction_t instr)
         }
     }
     if (g_tracing.flags & e_trace_cycles) {
-        u32 elapsed_cycles = estimate_instruction_clocks(
-            instr, cond_action_happened, op1_val /*shift_bits*/);
-
+        u32 elapsed_cycles = estimate_instruction_clocks(metadata);
         g_tracing.total_cycles += elapsed_cycles;
         output::print(" | Clocks: +%u=%u", elapsed_cycles, g_tracing.total_cycles);
     }

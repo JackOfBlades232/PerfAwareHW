@@ -1,4 +1,5 @@
 ﻿#include "defs.hpp"
+#include "consts.hpp"
 #include "simulator.hpp"
 #include "util.hpp"
 #include "instruction.hpp"
@@ -28,16 +29,18 @@ enum prog_action_t {
     e_act_disassemble,
 };
 
-template <u32 (*t_insrunction_processor)(instruction_t)>
-bool decode_and_process_instructions(memory_access_t at, u32 bytes, bool interactive = false)
+typedef u32 (*instruction_processor_t)(instruction_t);
+typedef u32 (*ip_initializer_t)();
+
+template <instruction_processor_t t_process_instr, ip_initializer_t t_init_ip>
+inline bool decode_and_process_instructions(memory_access_t at, u32 bytes, bool interactive = false)
 {
     instruction_table_t table = build_instruction_table();
     decoder_context_t ctx = {};
 
-    // @TODO: enforce internal ip initialization as 0, or make a getter?
-    u32 ip = 0;
+    u32 ip = t_init_ip();
 
-    while (bytes - ip) {
+    while (bytes - ip > 0 && ip != c_ip_terminate) {
         if (interactive)
             getchar();
 
@@ -53,7 +56,7 @@ bool decode_and_process_instructions(memory_access_t at, u32 bytes, bool interac
         }
 
         update_decoder_ctx(instr, &ctx);
-        ip = t_insrunction_processor(instr);
+        ip = t_process_instr(instr);
     }
 
     return true;
@@ -152,11 +155,11 @@ int main(int argc, char **argv)
     if (action == e_act_disassemble) {
         output::print(";; %s disassembly ;;\n", fn);
         output::print("bits 16\n");
-        res = decode_and_process_instructions<output_instrunction_disassembly>(
+        res = decode_and_process_instructions<output_instrunction_disassembly, get_disassembly_ip>(
             main_memory, code_bytes, interactive);
     } else {
         output::print("--- %s execution ---\n", fn);
-        res = decode_and_process_instructions<simulate_instruction_execution>(
+        res = decode_and_process_instructions<simulate_instruction_execution, get_simulation_ip>(
             main_memory, code_bytes, interactive);
         output_simulation_results();
     }

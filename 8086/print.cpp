@@ -81,7 +81,7 @@ static void print_cs_ip(cs_ip_pair_t cs_ip)
     print("%hu:%hu", cs_ip.cs, cs_ip.ip);
 }
 
-void print_intstruction(instruction_t instr)
+void print_instruction(instruction_t instr)
 {
     const char *op_mnemonics[e_op_max] =
     {

@@ -1,9 +1,8 @@
 // #include "clocks.hpp"
+#include "clocks.hpp"
 #include "instruction.hpp"
 #include "util.hpp"
 #include <cassert>
-
-// @TODO: expose machine for easier clock counting
 
 // @TODO: add unaligned access penalty for 8086 (4 cycles per unaligned access)
 //        and the same penalty for all on 8088
@@ -31,7 +30,7 @@ static u32 estimate_ea_clocks(ea_mem_access_t ea)
     return cycles;
 }
 
-bool operands_are_acc_non_reg(operand_t op0, operand_t op1, operand_type_t op2_type)
+static bool operands_are_acc_non_reg(operand_t op0, operand_t op1, operand_type_t op2_type)
 {
     if (op0.type != e_operand_reg)
         swap(&op0, &op1);
@@ -40,12 +39,13 @@ bool operands_are_acc_non_reg(operand_t op0, operand_t op1, operand_type_t op2_t
            op1.type == op2_type;
 }
 
-u32 estimate_instruction_clocks(instruction_t instr, bool cond_action_happened,
-                                uint shift_bits)
+u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
 {
     // @TODO: additional cycles for prefixes
 
-    int op_cnt = instr.operand_cnt;
+    instruction_t instr = instr_data.instr;
+
+    int op_cnt    = instr.operand_cnt;
     operand_t op0 = instr.operands[0];
     operand_t op1 = instr.operands[1];
 
@@ -124,11 +124,11 @@ u32 estimate_instruction_clocks(instruction_t instr, bool cond_action_happened,
         if (op0.type == e_operand_reg && op1.type == e_operand_imm) // must be reg, 1
             return 2;
         else if (op0.type == e_operand_reg && op1.type == e_operand_reg) // must be reg, cl
-            return 8 + 4*shift_bits;
+            return 8 + 4*instr_data.op1_val;
         if (op0.type == e_operand_mem && op1.type == e_operand_imm) // must be mem, 1
             return 15 + estimate_ea_clocks(op0.data.mem);
         else // must be mem, cl
-            return 20 + estimate_ea_clocks(op0.data.mem) + 4*shift_bits;
+            return 20 + estimate_ea_clocks(op0.data.mem) + 4*instr_data.op1_val;
 
     case e_op_je:
     case e_op_jl:
@@ -146,15 +146,15 @@ u32 estimate_instruction_clocks(instruction_t instr, bool cond_action_happened,
     case e_op_jnp:
     case e_op_jno:
     case e_op_jns:
-        return cond_action_happened ? 16 : 4;
+        return instr_data.cond_action_happened ? 16 : 4;
 
     case e_op_loop:
-        return cond_action_happened ? 17 : 5;
+        return instr_data.cond_action_happened ? 17 : 5;
     case e_op_loopnz:
-        return cond_action_happened ? 19 : 5;
+        return instr_data.cond_action_happened ? 19 : 5;
     case e_op_loopz:
     case e_op_jcxz:
-        return cond_action_happened ? 18 : 6;
+        return instr_data.cond_action_happened ? 18 : 6;
 
 
     default: LOGERR("Cycle count not implemented"); assert(0);
