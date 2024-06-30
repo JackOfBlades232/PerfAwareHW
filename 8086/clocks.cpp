@@ -30,13 +30,25 @@ static u32 estimate_ea_clocks(ea_mem_access_t ea)
     return cycles;
 }
 
-static bool operands_are_acc_non_reg(operand_t op0, operand_t op1, operand_type_t op2_type)
+static bool operand_is_seg_reg(operand_t op)
 {
-    if (op0.type != e_operand_reg)
+    return op.type == e_operand_reg &&
+           (op.data.reg.reg == e_reg_cs || op.data.reg.reg == e_reg_ss ||
+            op.data.reg.reg == e_reg_ds || op.data.reg.reg == e_reg_es);
+}
+
+static bool operand_is_flags_reg(operand_t op)
+{
+    return op.type == e_operand_reg && op.data.reg.reg == e_reg_flags;
+}
+
+static bool operands_are_acc_and_type(operand_t op0, operand_t op1, operand_type_t op1_req_type)
+{
+    if (op0.type != e_operand_reg || op0.data.reg.reg != e_reg_a)
         swap(&op0, &op1);
     return (op0.type == e_operand_reg && op0.data.reg.reg == e_reg_a &&
             op0.data.reg.offset == 0) &&
-           op1.type == op2_type;
+           op1.type == op1_req_type;
 }
 
 u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
@@ -44,6 +56,8 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     // @TODO: additional cycles for prefixes
 
     instruction_t instr = instr_data.instr;
+
+    bool w = instr.flags & e_iflags_w;
 
     int op_cnt    = instr.operand_cnt;
     operand_t op0 = instr.operands[0];
@@ -56,7 +70,7 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
         else if (op0.type == e_operand_reg && op1.type == e_operand_imm)
             return 4;
         // @TODO: check this, seems very sus
-        else if (operands_are_acc_non_reg(op0, op1, e_operand_mem))
+        else if (operands_are_acc_and_type(op0, op1, e_operand_mem))
             return 10;
         else if (op0.type == e_operand_reg && op1.type == e_operand_mem)
             return 8 + estimate_ea_clocks(op1.data.mem);
@@ -64,6 +78,30 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
             return 9 + estimate_ea_clocks(op0.data.mem);
         else // imm -> mem, should be validated by now
             return 10 + estimate_ea_clocks(op0.data.mem);
+
+    case e_op_push:
+    case e_op_pushf:
+        if (operand_is_seg_reg(op0) || operand_is_flags_reg(op0))
+            return 10;
+        else if (op0.type == e_operand_reg)
+            return 11;
+        else // mem
+            return 16 + estimate_ea_clocks(op0.data.mem);
+
+    case e_op_pop:
+    case e_op_popf:
+        if (op0.type == e_operand_reg)
+            return 8;
+        else // mem
+            return 17 + estimate_ea_clocks(op0.data.mem);
+
+    case e_op_xchg:
+        if (operands_are_acc_and_type(op0, op1, e_operand_reg) && w)
+            return 3;
+        else if (op0.type == e_operand_reg && op1.type == e_operand_reg)
+            return 4;
+        else // mem, reg
+            return 17 + estimate_ea_clocks(op0.type == e_operand_mem ? op0.data.mem : op1.data.mem);
 
     case e_op_add:
     case e_op_sub:
@@ -95,7 +133,7 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
         if (op0.type == e_operand_reg && op1.type == e_operand_reg)
             return 3;
         // @TODO: check this, seems sus
-        else if (operands_are_acc_non_reg(op0, op1, e_operand_imm))
+        else if (operands_are_acc_and_type(op0, op1, e_operand_imm))
             return 4;
         else if (op0.type == e_operand_reg && op1.type == e_operand_imm)
             return 5;
@@ -106,12 +144,9 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
 
     case e_op_inc:
     case e_op_dec:
-        if (op0.type == e_operand_reg) {
-            if (op0.data.reg.size == 2)
-                return 2;
-            else
-                return 3;
-        } else // mem
+        if (op0.type == e_operand_reg)
+            return 4 - op0.data.reg.size; // 2 for 16bit, 3 for 8bit
+        else // mem
             return 15 + estimate_ea_clocks(op0.data.mem);
 
     case e_op_shl:

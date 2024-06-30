@@ -20,10 +20,21 @@ u8 read_byte_at(memory_access_t at, u32 offset)
     return at.mem[id];
 }
 
+u16 read_word_at(memory_access_t at, u32 offset)
+{
+    return read_byte_at(at, 0) | (read_byte_at(at, 1) << 8);
+}
+
 void write_byte_to(memory_access_t to, u32 offset, u8 val)
 {
     u32 id = (to.base + offset) & c_mem_mask;
     to.mem[id] = val;
+}
+
+void write_word_to(memory_access_t to, u32 offset, u16 val)
+{
+    write_byte_to(to, 0, val & 0xFF);
+    write_byte_to(to, 1, val >> 8);
 }
 
 u32 get_full_address(memory_access_t at, u32 offset)

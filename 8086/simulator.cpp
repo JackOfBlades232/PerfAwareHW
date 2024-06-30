@@ -91,6 +91,22 @@ static void output_flags_content(u16 flags_val)
     }
 }
 
+static u16 read_val_at(memory_access_t at, u32 offset, bool is_wide)
+{
+    if (is_wide)
+        return read_word_at(at, offset);
+    else
+        return read_byte_at(at, offset);
+}
+
+static void write_val_to(memory_access_t to, u32 offset, u32 val, bool is_wide)
+{
+    if (is_wide)
+        write_word_to(to, offset, val);
+    else
+        write_byte_to(to, offset, val);
+}
+
 static u16 read_reg(reg_access_t access)
 {
     assert((access.offset == 0 && access.size == 2) ||
@@ -148,55 +164,53 @@ static u16 calculate_ea(ea_mem_access_t access)
     return op1 + op2 + access.disp;
 }
 
-// @TODO: double check manual for segment tricks
-static memory_access_t get_segment_access(ea_mem_access_t access, reg_t seg_override)
+static u32 get_full_address(u16 seg_val, u16 offset)
+{
+    return ((u32)seg_val << 4) + offset;
+}
+
+static memory_access_t get_segment_access(reg_t seg_reg)
 {
     memory_access_t seg = get_main_memory_access();
     seg.size = c_seg_size;
+    seg.base += get_full_address(seg_reg, 0);
+    return seg;
+}
 
+// @TODO: double check manual for segment tricks
+static memory_access_t get_segment_access_for_ea(ea_mem_access_t access, reg_t seg_override)
+{
     if (seg_override != e_reg_max) {
         assert(seg_override == e_reg_cs ||
                seg_override == e_reg_ss ||
                seg_override == e_reg_ds ||
                seg_override == e_reg_es);
-        seg.base = g_machine.registers[seg_override];
+        return get_segment_access(seg_override);
     }
 
-    // @TODO: check in the manual
+    // @TODO: check in the manual, es for string instructions?
     if (access.base == e_ea_base_bp)
-        seg.base = g_machine.registers[e_reg_ss];
+        return get_segment_access(e_reg_ss);
     else
-        seg.base = g_machine.registers[e_reg_ds];
-
-    seg.base <<= 4;
-
-    return seg;
+        return get_segment_access(e_reg_ds);
 }
 
 static u16 read_mem(ea_mem_access_t access, bool is_wide, reg_t seg_override)
 {
-    memory_access_t seg_mem = get_segment_access(access, seg_override);
+    memory_access_t seg_mem = get_segment_access_for_ea(access, seg_override);
     u16 offset = calculate_ea(access);
 
-    if (is_wide)
-        return read_byte_at(seg_mem, offset) | (read_byte_at(seg_mem, offset+1) << 8);
-    else
-        return read_byte_at(seg_mem, offset);
+    return read_val_at(seg_mem, offset, is_wide);
 }
 
 static void write_mem(ea_mem_access_t access, u16 val, bool is_wide, reg_t seg_override)
 {
-    memory_access_t seg_mem = get_segment_access(access, seg_override);
+    memory_access_t seg_mem = get_segment_access_for_ea(access, seg_override);
     u16 offset = calculate_ea(access);
 
     u16 prev_content = read_mem(access, is_wide, seg_override);
 
-    if (is_wide) {
-        // The simulated 8086 is little endian
-        write_byte_to(seg_mem, offset, val & 0xFF);
-        write_byte_to(seg_mem, offset+1, val >> 8);
-    } else
-        write_byte_to(seg_mem, offset, val);
+    write_val_to(seg_mem, offset, val, is_wide);
 
     if (g_tracing.flags & e_trace_data_mutation) {
         u32 addr = get_full_address(seg_mem, offset);
@@ -253,6 +267,18 @@ static void write_operand(operand_t op, u16 val, bool is_wide, reg_t seg_overrid
     }
 }
 
+static u16 read_stack(bool is_wide)
+{
+    memory_access_t stack = get_segment_access(e_reg_ss);
+    return read_val_at(stack, g_machine.registers[e_reg_sp], is_wide);
+}
+
+static void write_stack(u16 val, bool is_wide)
+{
+    memory_access_t stack = get_segment_access(e_reg_ss);
+    write_val_to(stack, g_machine.registers[e_reg_sp], val, is_wide);
+}
+
 static void update_common_flags(u32 res, bool is_wide)
 {
     set_pflag(e_pflag_z, is_zero(res, is_wide));
@@ -306,9 +332,14 @@ static bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
     return false;
 }
 
+static u32 get_full_ip()
+{
+    return get_full_address(g_machine.registers[e_reg_cs], g_machine.registers[e_reg_ip]);
+}
+
 u32 get_simulation_ip()
 {
-    return g_machine.registers[e_reg_ip];
+    return get_full_ip();
 }
 
 u32 simulate_instruction_execution(instruction_t instr)
@@ -338,9 +369,7 @@ u32 simulate_instruction_execution(instruction_t instr)
     if ((instr.op == e_op_ret || instr.op == e_op_retf) &&
         (g_tracing.flags & e_trace_stop_on_ret))
     {
-        output::print("STOPONRET: Return encountered at address %d:%d\n",
-                      g_machine.registers[e_reg_cs],
-                      g_machine.registers[e_reg_ip]);
+        output::print("STOPONRET: Return encountered at address %u\n", get_full_ip());
         return c_ip_terminate; // exits loop
     }
 
@@ -363,15 +392,31 @@ u32 simulate_instruction_execution(instruction_t instr)
             write_operand(op0, op1_val, w, seg_override);
             break;
 
-        case e_op_add: {
+        case e_op_push:
+            write_stack(op0_val, w);
+            g_machine.registers[e_reg_sp] -= w ? 2 : 1;
+            break;
+
+        case e_op_pop:
+            // @TODO: restrict popping cs
+            write_operand(op0, read_stack(w), w);
+            g_machine.registers[e_reg_sp] += w ? 2 : 1;
+            break;
+
+        case e_op_xchg:
+            write_operand(op0, op1_val, w, seg_override);
+            write_operand(op1, op0_val, w, seg_override);
+            break;
+
+        case e_op_add:
             update_arifm_flags(op0_val, op1_val, w);
             write_operand(op0, op0_val + op1_val, w, seg_override);
-        } break;
+            break;
 
-        case e_op_sub: {
+        case e_op_sub:
             update_arifm_flags(op0_val, -op1_val, w);
             write_operand(op0, op0_val - op1_val, w, seg_override);
-        } break;
+            break;
 
         case e_op_cmp:
             update_arifm_flags(op0_val, -op1_val, w);
@@ -504,8 +549,7 @@ u32 simulate_instruction_execution(instruction_t instr)
     if (g_tracing.flags)
         output::print("\n");
 
-    // @TODO: pull this out with mem accesses?
-    return (g_machine.registers[e_reg_cs] << 4) | g_machine.registers[e_reg_ip];
+    return get_full_ip();
 }
 
 void output_simulation_results()
