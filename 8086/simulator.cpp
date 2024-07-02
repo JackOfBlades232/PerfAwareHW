@@ -13,6 +13,8 @@
 
 // @TODO: warning output when tracing cycles
 
+// @TODO: in-out ports side effect tracing?
+
 static constexpr u32 c_seg_size = POT(16);
 
 enum proc_flag_t {
@@ -387,26 +389,39 @@ u32 simulate_instruction_execution(instruction_t instr)
     // (as a separate module, it could be useful in decoder/main loop,
     //  since the whole system relies on this invariant)
 
+    auto nop_effect = []() {
+        if (g_tracing.flags & e_trace_data_mutation) 
+            output::print(" nop");
+    };
+
     switch (instr.op) {
         case e_op_mov:
             write_operand(op0, op1_val, w, seg_override);
             break;
 
-        case e_op_push:
+        case e_op_push: {
             write_stack(op0_val, w);
-            g_machine.registers[e_reg_sp] -= w ? 2 : 1;
-            break;
+            reg_access_t sp = get_word_reg_access(e_reg_sp);
+            write_reg(sp, read_reg(sp) - 1);
+        } break;
 
-        case e_op_pop:
-            // @TODO: restrict popping cs
+        case e_op_pop: {
+           // @TODO: restrict popping cs
             write_operand(op0, read_stack(w), w);
-            g_machine.registers[e_reg_sp] += w ? 2 : 1;
-            break;
+            reg_access_t sp = get_word_reg_access(e_reg_sp);
+            write_reg(sp, read_reg(sp) + 1);
+        } break;
 
         case e_op_xchg:
             write_operand(op0, op1_val, w, seg_override);
             write_operand(op1, op0_val, w, seg_override);
             break;
+
+        case e_op_xlat: {
+            reg_access_t al = get_low_byte_reg_access(e_reg_a);
+            ea_mem_access_t access = {e_ea_base_bx, (u8)read_reg(al)};
+            write_reg(al, read_mem(access, false, e_reg_max));
+        } break;
 
         case e_op_add:
             update_arifm_flags(op0_val, op1_val, w);
@@ -523,6 +538,11 @@ u32 simulate_instruction_execution(instruction_t instr)
             break;
         case e_op_jcxz:
             metadata.cond_action_happened = cx_loop_jump(op0_val, 0);
+            break;
+
+        case e_op_in:
+        case e_op_out:
+            nop_effect();
             break;
 
         default:

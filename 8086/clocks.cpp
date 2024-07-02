@@ -103,6 +103,16 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
         else // mem, reg
             return 17 + estimate_ea_clocks(op0.type == e_operand_mem ? op0.data.mem : op1.data.mem);
 
+    case e_op_in:
+    case e_op_out:
+        if (op0.type == e_operand_reg && op1.type == e_operand_reg) // acc, dx
+            return 8;
+        else // acc, immed
+            return 10;
+
+    case e_op_xlat:
+        return 11;
+
     case e_op_add:
     case e_op_sub:
     case e_op_xor:
