@@ -122,9 +122,12 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
 
     case e_op_lahf:
     case e_op_sahf:
+    case e_op_aaa:
+    case e_op_aas:
         return 4;
 
     case e_op_add:
+    case e_op_adc:
     case e_op_sub:
     case e_op_xor:
         if (op0.type == e_operand_reg && op1.type == e_operand_reg)

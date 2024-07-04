@@ -15,6 +15,9 @@
 
 // @TODO: in-out ports side effect tracing?
 
+// @TODO: get rid of convoluted access calls
+// @TODO: remake reg traces as delta
+
 static constexpr u32 c_seg_size = POT(16);
 
 enum proc_flag_t {
@@ -28,7 +31,25 @@ enum proc_flag_t {
 };
 
 struct machine_t {
-    u16 registers[e_reg_max];
+    union {
+        struct {
+            u16 a;
+            u16 b;
+            u16 c;
+            u16 d;
+            u16 sp;
+            u16 bp;
+            u16 si;
+            u16 di;
+            u16 es;
+            u16 cs;
+            u16 ss;
+            u16 ds;
+            u16 ip;
+            u16 flags;
+        };
+        u16 regs[e_reg_max];
+    };
 };
 
 struct tracing_state_t {
@@ -73,14 +94,14 @@ static bool is_arifm_carry(u32 n, bool is_wide)
 static void set_pflag(u16 flag, bool val)
 {
     if (val)
-        g_machine.registers[e_reg_flags] |= flag;
+        g_machine.flags |= flag;
     else
-        g_machine.registers[e_reg_flags] &= ~flag;
+        g_machine.flags &= ~flag;
 }
 
 static bool get_pflag(u16 flag)
 {
-    return g_machine.registers[e_reg_flags] & flag;
+    return g_machine.flags & flag;
 }
 
 static void output_flags_content(u16 flags_val)
@@ -115,9 +136,9 @@ static u16 read_reg(reg_access_t access)
            (access.reg <= e_reg_d && access.size == 1 && access.offset <= 1));
 
     if (access.size == 2) // => offset = 0
-        return g_machine.registers[access.reg];
+        return g_machine.regs[access.reg];
     else
-        return (g_machine.registers[access.reg] >> (access.offset * 8)) & 0xFF;
+        return (g_machine.regs[access.reg] >> (access.offset * 8)) & 0xFF;
 }
 
 static void write_reg(reg_access_t access, u16 val)
@@ -127,20 +148,11 @@ static void write_reg(reg_access_t access, u16 val)
 
     g_tracing.registers_used |= to_flag(access.reg);
 
-    u16 *reg_mem = &g_machine.registers[access.reg];
-    u16 prev_reg_content = *reg_mem;
-
+    u16 *reg_mem = &g_machine.regs[access.reg];
     if (access.size == 2) // => offset = 0
         *reg_mem = val;
     else
         set_byte(reg_mem, (u8)val, access.offset);
-
-    // @TODO: more elegant/general side-effect tracing. No ideas for design now
-    if (g_tracing.flags & e_trace_data_mutation) {
-        output::print(" ");
-        output::print_word_reg(access.reg);
-        output::print(":0x%hx->0x%hx", prev_reg_content, *reg_mem);
-    }
 }
 
 static u16 calculate_ea(ea_mem_access_t access)
@@ -175,7 +187,7 @@ static memory_access_t get_segment_access(reg_t seg_reg)
 {
     memory_access_t seg = get_main_memory_access();
     seg.size = c_seg_size;
-    seg.base += get_address_in_segment(g_machine.registers[seg_reg], 0);
+    seg.base += get_address_in_segment(g_machine.regs[seg_reg], 0);
     return seg;
 }
 
@@ -271,13 +283,13 @@ static void write_operand(operand_t op, u16 val, bool is_wide, reg_t seg_overrid
 static u16 read_stack(bool is_wide)
 {
     memory_access_t stack = get_segment_access(e_reg_ss);
-    return read_val_at(stack, g_machine.registers[e_reg_sp], is_wide);
+    return read_val_at(stack, g_machine.sp, is_wide);
 }
 
 static void write_stack(u16 val, bool is_wide)
 {
     memory_access_t stack = get_segment_access(e_reg_ss);
-    write_val_to(stack, g_machine.registers[e_reg_sp], val, is_wide);
+    write_val_to(stack, g_machine.sp, val, is_wide);
 }
 
 static void update_common_flags(u32 res, bool is_wide)
@@ -314,7 +326,7 @@ static void update_shift_flags(bool pushed_bit, u32 res, u32 orig, bool is_wide)
 static bool cond_jump(u16 disp, bool cond)
 {
     if (cond)
-        g_machine.registers[e_reg_ip] += disp;
+        g_machine.ip += disp;
 
     return cond;
 }
@@ -326,7 +338,7 @@ static bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
         write_reg(cx, read_reg(cx) + delta_cx);
 
     if (read_reg(cx) != 0 && cond) {
-        g_machine.registers[e_reg_ip] += disp;
+        g_machine.ip += disp;
         return true;
     }
 
@@ -335,7 +347,7 @@ static bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
 
 static u32 get_full_ip()
 {
-    return get_address_in_segment(g_machine.registers[e_reg_cs], g_machine.registers[e_reg_ip]);
+    return get_address_in_segment(g_machine.cs, g_machine.ip);
 }
 
 u32 get_simulation_ip()
@@ -347,6 +359,8 @@ u32 simulate_instruction_execution(instruction_t instr)
 {
     // @TODO: s flag for add is already needed?
     bool w = instr.flags & e_iflags_w;
+    int op_bytes = w ? 2 : 1;
+
     reg_t seg_override = (instr.flags & e_iflags_seg_override) ?
                          instr.segment_override : e_reg_max;
 
@@ -374,10 +388,9 @@ u32 simulate_instruction_execution(instruction_t instr)
         return c_ip_terminate; // exits loop
     }
 
-    u16 prev_flags = g_machine.registers[e_reg_flags];
-    u32 prev_ip = g_machine.registers[e_reg_ip];
+    machine_t prev_machine = g_machine;
     
-    g_machine.registers[e_reg_ip] += instr.size;
+    g_machine.ip += instr.size;
 
     if (g_tracing.flags & e_trace_disassembly)
         output::print_instruction(instr);
@@ -398,18 +411,16 @@ u32 simulate_instruction_execution(instruction_t instr)
             write_operand(op0, op1_val, w, seg_override);
             break;
 
-        case e_op_push: {
+        case e_op_push:
             write_stack(op0_val, w);
-            reg_access_t sp = get_word_reg_access(e_reg_sp);
-            write_reg(sp, read_reg(sp) - 1);
-        } break;
+            g_machine.sp -= op_bytes;
+            break;
 
-        case e_op_pop: {
+        case e_op_pop:
            // @TODO: restrict popping cs
             write_operand(op0, read_stack(w), w);
-            reg_access_t sp = get_word_reg_access(e_reg_sp);
-            write_reg(sp, read_reg(sp) + 1);
-        } break;
+            g_machine.sp += op_bytes;
+            break;
 
         case e_op_xchg:
             write_operand(op0, op1_val, w, seg_override);
@@ -432,18 +443,17 @@ u32 simulate_instruction_execution(instruction_t instr)
             base_mem.disp += 2; // high 16bits
             u16 base = read_mem(base_mem, w, seg_override);
             write_operand(op0, op1_val, w);
-            reg_access_t reg = get_word_reg_access(instr.op == e_op_lds ? e_reg_ds : e_reg_es);
-            write_reg(reg, base);
+            (instr.op == e_op_lds ? g_machine.ds : g_machine.es) = base;
         } break;
 
         case e_op_lahf:
             write_reg(get_high_byte_reg_access(e_reg_a),
-                      g_machine.registers[e_reg_flags] &
+                      g_machine.flags &
                       (e_pflag_s | e_pflag_z | e_pflag_a | e_pflag_p | e_pflag_c));
             break;
 
         case e_op_sahf: {
-            u16 ah = read_reg(get_high_byte_reg_access(e_reg_a));
+            u16 ah = g_machine.a >> 8;
             set_pflag(e_pflag_s, ah & e_pflag_s);
             set_pflag(e_pflag_z, ah & e_pflag_z);
             set_pflag(e_pflag_a, ah & e_pflag_a);
@@ -451,10 +461,35 @@ u32 simulate_instruction_execution(instruction_t instr)
             set_pflag(e_pflag_c, ah & e_pflag_c);
         } break;
 
+        // @TODO: pull out stach operations
+        case e_op_pushf:
+            write_stack(g_machine.flags, true);
+            g_machine.sp -= 2;
+            break;
+
+        case e_op_popf:
+            g_machine.flags = read_stack(true);
+            g_machine.sp += 2;
+            break;
+
+        case e_op_adc:
+            if (get_pflag(e_pflag_c))
+                ++op1_val;
         case e_op_add:
             update_arifm_flags(op0_val, op1_val, w);
             write_operand(op0, op0_val + op1_val, w, seg_override);
             break;
+
+        case e_op_aaa: {
+            reg_access_t al = get_low_byte_reg_access(e_reg_a);
+            u8 res = read_reg(al);
+            bool carry = res >= 10;
+            set_pflag(e_pflag_c, carry);
+            set_pflag(e_pflag_a, carry);
+            // @TODO: rewrite more clearly
+            g_machine.a += carry ? 1 << 8 : 0; // ++AH, 
+            write_reg(al, min(res, (u8)9));
+        } break;
 
         case e_op_sub:
             update_arifm_flags(op0_val, -op1_val, w);
@@ -579,13 +614,18 @@ u32 simulate_instruction_execution(instruction_t instr)
     }
 
     if (g_tracing.flags & e_trace_data_mutation) {
-        output::print(" ip:0x%hx->0x%hx", prev_ip, g_machine.registers[e_reg_ip]);
+        for (int reg = 0; reg < e_reg_flags; ++reg)
+            if (prev_machine.regs[reg] != g_machine.regs[reg]) {
+                output::print(" ");
+                output::print_word_reg((reg_t)reg);
+                output::print(":0x%hx->0x%hx", prev_machine.regs[reg], g_machine.regs[reg]);
+            }
 
-        if (prev_flags != g_machine.registers[e_reg_flags]) {
+        if (prev_machine.flags != g_machine.flags) {
             output::print(" flags:");
-            output_flags_content(prev_flags);
+            output_flags_content(prev_machine.flags);
             output::print("->");
-            output_flags_content(g_machine.registers[e_reg_flags]);
+            output_flags_content(g_machine.flags);
         }
     }
     if (g_tracing.flags & e_trace_cycles) {
@@ -614,6 +654,6 @@ void output_simulation_results()
         }
     }
     output::print("   flags: ");
-    output_flags_content(g_machine.registers[e_reg_flags]);
+    output_flags_content(g_machine.flags);
     output::print("\n");
 }

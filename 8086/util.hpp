@@ -85,6 +85,12 @@ inline TInt abs(TInt n)
     return n * sgn(n);
 }
 
+template <class TInt>
+inline TInt min(TInt a, TInt b)
+{
+    return a < b ? a : b;
+}
+
 inline void set_flags(u32 *dest, u32 flags, bool set)
 {
     if (set)
