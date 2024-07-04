@@ -125,3 +125,8 @@ inline reg_access_t get_low_byte_reg_access(reg_t reg)
     assert(reg <= e_reg_d);
     return {reg, 0, 1};
 }
+inline reg_access_t get_high_byte_reg_access(reg_t reg)
+{
+    assert(reg <= e_reg_d);
+    return {reg, 1, 1};
+}

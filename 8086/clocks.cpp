@@ -113,6 +113,17 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     case e_op_xlat:
         return 11;
 
+    case e_op_lea:
+        return 2 + estimate_ea_clocks(op1.data.mem);
+
+    case e_op_lds:
+    case e_op_les:
+        return 16 + estimate_ea_clocks(op1.data.mem);
+
+    case e_op_lahf:
+    case e_op_sahf:
+        return 4;
+
     case e_op_add:
     case e_op_sub:
     case e_op_xor:

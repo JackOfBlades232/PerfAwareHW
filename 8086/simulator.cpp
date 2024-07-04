@@ -78,7 +78,7 @@ static void set_pflag(u16 flag, bool val)
         g_machine.registers[e_reg_flags] &= ~flag;
 }
 
-static bool get_flag(u16 flag)
+static bool get_pflag(u16 flag)
 {
     return g_machine.registers[e_reg_flags] & flag;
 }
@@ -166,7 +166,7 @@ static u16 calculate_ea(ea_mem_access_t access)
     return op1 + op2 + access.disp;
 }
 
-static u32 get_full_address(u16 seg_val, u16 offset)
+static u32 get_address_in_segment(u16 seg_val, u16 offset)
 {
     return ((u32)seg_val << 4) + offset;
 }
@@ -175,7 +175,7 @@ static memory_access_t get_segment_access(reg_t seg_reg)
 {
     memory_access_t seg = get_main_memory_access();
     seg.size = c_seg_size;
-    seg.base += get_full_address(seg_reg, 0);
+    seg.base += get_address_in_segment(g_machine.registers[seg_reg], 0);
     return seg;
 }
 
@@ -225,7 +225,6 @@ static void write_mem(ea_mem_access_t access, u16 val, bool is_wide, reg_t seg_o
     }
 }
 
-// @TODO: spec setting for reading EA in mem (in lea)
 static u16 read_operand(operand_t op, bool is_wide, reg_t seg_override = e_reg_max)
 {
     switch (op.type) {
@@ -336,7 +335,7 @@ static bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
 
 static u32 get_full_ip()
 {
-    return get_full_address(g_machine.registers[e_reg_cs], g_machine.registers[e_reg_ip]);
+    return get_address_in_segment(g_machine.registers[e_reg_cs], g_machine.registers[e_reg_ip]);
 }
 
 u32 get_simulation_ip()
@@ -361,12 +360,12 @@ u32 simulate_instruction_execution(instruction_t instr)
     metadata.op0_val = op0_val;
     metadata.op1_val = op1_val;
 
-    bool zf = get_flag(e_pflag_z);
-    bool sf = get_flag(e_pflag_s);
-    bool pf = get_flag(e_pflag_p);
-    bool of = get_flag(e_pflag_o);
-    bool cf = get_flag(e_pflag_c);
-    bool af = get_flag(e_pflag_a);
+    bool zf = get_pflag(e_pflag_z);
+    bool sf = get_pflag(e_pflag_s);
+    bool pf = get_pflag(e_pflag_p);
+    bool of = get_pflag(e_pflag_o);
+    bool cf = get_pflag(e_pflag_c);
+    bool af = get_pflag(e_pflag_a);
 
     if ((instr.op == e_op_ret || instr.op == e_op_retf) &&
         (g_tracing.flags & e_trace_stop_on_ret))
@@ -421,6 +420,35 @@ u32 simulate_instruction_execution(instruction_t instr)
             reg_access_t al = get_low_byte_reg_access(e_reg_a);
             ea_mem_access_t access = {e_ea_base_bx, (u8)read_reg(al)};
             write_reg(al, read_mem(access, false, e_reg_max));
+        } break;
+
+        case e_op_lea:
+            write_operand(op0, calculate_ea(op1.data.mem), true);
+            break;
+
+        case e_op_lds:
+        case e_op_les: {
+            ea_mem_access_t base_mem = op1.data.mem;
+            base_mem.disp += 2; // high 16bits
+            u16 base = read_mem(base_mem, w, seg_override);
+            write_operand(op0, op1_val, w);
+            reg_access_t reg = get_word_reg_access(instr.op == e_op_lds ? e_reg_ds : e_reg_es);
+            write_reg(reg, base);
+        } break;
+
+        case e_op_lahf:
+            write_reg(get_high_byte_reg_access(e_reg_a),
+                      g_machine.registers[e_reg_flags] &
+                      (e_pflag_s | e_pflag_z | e_pflag_a | e_pflag_p | e_pflag_c));
+            break;
+
+        case e_op_sahf: {
+            u16 ah = read_reg(get_high_byte_reg_access(e_reg_a));
+            set_pflag(e_pflag_s, ah & e_pflag_s);
+            set_pflag(e_pflag_z, ah & e_pflag_z);
+            set_pflag(e_pflag_a, ah & e_pflag_a);
+            set_pflag(e_pflag_p, ah & e_pflag_p);
+            set_pflag(e_pflag_c, ah & e_pflag_c);
         } break;
 
         case e_op_add:
