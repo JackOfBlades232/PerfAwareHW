@@ -123,12 +123,15 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     case e_op_lahf:
     case e_op_sahf:
     case e_op_aaa:
+    case e_op_daa:
     case e_op_aas:
+    case e_op_das:
         return 4;
 
     case e_op_add:
     case e_op_adc:
     case e_op_sub:
+    case e_op_sbb:
     case e_op_xor:
         if (op0.type == e_operand_reg && op1.type == e_operand_reg)
             return 3;
@@ -153,6 +156,27 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
         else // imm -> mem, should be validated by now
             return 10 + estimate_ea_clocks(op0.data.mem);
 
+    // @TODO: these are ranged, depict somehow? Now, I am using high estimate
+    case e_op_mul:
+        if (op0.type == e_operand_reg && !w)
+            return 77;
+        else if (op0.type == e_operand_reg && w)
+            return 133;
+        else if (op0.type == e_operand_mem && !w)
+            return 83 + estimate_ea_clocks(op0.data.mem);
+        else if (op0.type == e_operand_mem && w)
+            return 139 + estimate_ea_clocks(op0.data.mem);
+
+    case e_op_imul:
+        if (op0.type == e_operand_reg && !w)
+            return 98;
+        else if (op0.type == e_operand_reg && w)
+            return 154;
+        else if (op0.type == e_operand_mem && !w)
+            return 104 + estimate_ea_clocks(op0.data.mem);
+        else if (op0.type == e_operand_mem && w)
+            return 160 + estimate_ea_clocks(op0.data.mem);
+
     case e_op_test:
         if (op0.type == e_operand_reg && op1.type == e_operand_reg)
             return 3;
@@ -172,6 +196,12 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
             return 4 - op0.data.reg.size; // 2 for 16bit, 3 for 8bit
         else // mem
             return 15 + estimate_ea_clocks(op0.data.mem);
+
+    case e_op_neg:
+        if (op0.type == e_operand_reg)
+            return 4;
+        else // mem
+            return 16 + estimate_ea_clocks(op0.data.mem);
 
     case e_op_shl:
     case e_op_shr:

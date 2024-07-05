@@ -360,6 +360,8 @@ u32 simulate_instruction_execution(instruction_t instr)
     // @TODO: s flag for add is already needed?
     bool w = instr.flags & e_iflags_w;
     int op_bytes = w ? 2 : 1;
+    int op_bits  = op_bytes * 8;
+    int op_mask  = n_bit_mask(op_bits);
 
     reg_t seg_override = (instr.flags & e_iflags_seg_override) ?
                          instr.segment_override : e_reg_max;
@@ -480,17 +482,40 @@ u32 simulate_instruction_execution(instruction_t instr)
             write_operand(op0, op0_val + op1_val, w, seg_override);
             break;
 
-        case e_op_aaa: {
+        // @TODO: rewrite more clearly, check against microcode and manual
+        case e_op_aaa:
+        case e_op_aas:
+        case e_op_daa:
+        case e_op_das: {
             reg_access_t al = get_low_byte_reg_access(e_reg_a);
             u8 res = read_reg(al);
-            bool carry = res >= 10;
+            bool is_add = instr.op == e_op_aaa || instr.op == e_op_daa;
+            bool carry;
+            if (instr.op == e_op_aaa || instr.op == e_op_aas) {
+                carry = res >= 10;
+                g_machine.a += (carry ? 1 << 8 : 0) * (is_add ? 1 : -1); // ++AH or --AH
+                write_reg(al, carry ? res - 10 : res);
+            } else { // @TODO: is there really no difference in daa/das?
+                u8 lo = res & 0xF;
+                u8 hi = res >> 4;
+                carry = lo >= 10 || hi >= 10;
+                if (lo >= 10) {
+                    lo -= 10;
+                    ++hi;
+                }
+                if (hi >= 10)
+                    hi -= 10;
+                res = (hi << 4) | lo;
+                update_common_flags(res, false);
+                write_reg(al, res);
+            }
             set_pflag(e_pflag_c, carry);
             set_pflag(e_pflag_a, carry);
-            // @TODO: rewrite more clearly
-            g_machine.a += carry ? 1 << 8 : 0; // ++AH, 
-            write_reg(al, min(res, (u8)9));
         } break;
 
+        case e_op_sbb:
+            if (get_pflag(e_pflag_c))
+                --op1_val;
         case e_op_sub:
             update_arifm_flags(op0_val, -op1_val, w);
             write_operand(op0, op0_val - op1_val, w, seg_override);
@@ -499,6 +524,35 @@ u32 simulate_instruction_execution(instruction_t instr)
         case e_op_cmp:
             update_arifm_flags(op0_val, -op1_val, w);
             break;
+
+        case e_op_mul: {
+            u32 res = op0_val * op1_val;
+            if (w) {
+                g_machine.a = res & 0xFFFF;
+                g_machine.d = res >> 16;
+            } else
+                g_machine.a = res;
+            u16 hi = res >> op_bits;
+            set_pflag(e_pflag_c, hi != 0);
+            set_pflag(e_pflag_o, hi != 0);
+        } break;
+
+        case e_op_imul: {
+            // @TODO: check conversion, one cast ok?
+            u32 res = (i32)op0_val * (i32)op1_val;
+            // @TODO: pull out, refac
+            if (w) {
+                g_machine.a = res & 0xFFFF;
+                g_machine.d = res >> 16;
+            } else
+                g_machine.a = res;
+            u16 hi = res >> op_bits;
+            u16 lo = res & op_mask;
+            bool hi_is_sign_ext = (hi == op_mask && (lo & hmask(w))) ||
+                                  (hi == 0 && !(lo & hmask(w)));
+            set_pflag(e_pflag_c, hi_is_sign_ext);
+            set_pflag(e_pflag_o, hi_is_sign_ext);
+        } break;
 
         case e_op_xor: {
             u32 res = op0_val ^ op1_val;
@@ -522,6 +576,10 @@ u32 simulate_instruction_execution(instruction_t instr)
             update_arifm_flags(op0_val, -1, w);
             write_operand(op0, res, w, seg_override);
         } break;
+
+        case e_op_neg:
+            write_operand(op0, -op0_val, w, seg_override);
+            break;
 
         case e_op_shl: {
             u32 res = op0_val << op1_val;
