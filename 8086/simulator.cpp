@@ -15,8 +15,9 @@
 
 // @TODO: in-out ports side effect tracing?
 
-// @TODO: get rid of convoluted access calls
-// @TODO: remake reg traces as delta
+// @TODO: get rid of convoluted access calls, further
+
+// @TODO: nop instr?
 
 static constexpr u32 c_seg_size = POT(16);
 
@@ -29,6 +30,8 @@ enum proc_flag_t {
 
     e_pflag_o = 1 << 11,
 };
+
+// @TODO: global endian checks and macros for h/l regs
 
 struct machine_t {
     union {
@@ -554,6 +557,61 @@ u32 simulate_instruction_execution(instruction_t instr)
             set_pflag(e_pflag_o, hi_is_sign_ext);
         } break;
 
+        // @TODO: move/merge?
+        case e_op_aam: {
+            u16 res = g_machine.a;
+            u8 lo = res & 0xFF;
+            u8 hi = res >> 8;
+            u8 carries = lo % 10;
+            lo -= 10 * carries;
+            hi += carries;
+            g_machine.a = res;
+            // @TODO: sais so on felix cite, not manual, verify
+            update_common_flags(lo, false);
+        } break;
+
+        // @TODO: sort out max remainders' checking for div and idiv
+        case e_op_div:
+        case e_op_idiv: {
+            if (op0_val == 0) {
+                // @TODO: generate int 0 instead, and log it properly
+                // And make a test that actually does something useful
+                LOGERR("Division by 0 exception");
+                //exit(1);
+                break;
+            }
+            u32 whole = w ? ((g_machine.d << 16) | g_machine.a) : g_machine.a;
+            u16 quot, rem;
+            if (instr.op == e_op_div) {
+                quot = whole / op0_val;
+                rem  = whole - quot*op0_val;
+            } else {
+                // @TODO: check conversion, one cast ok?
+                quot = (i32)whole / (i32)op0_val;
+                rem  = (i32)whole - (i32)quot*(i32)op0_val;
+            }
+            if (w) {
+                g_machine.a = quot;
+                g_machine.d = rem;
+            } else
+                g_machine.a = (rem << 8) | quot;
+            // @TODO: clear flags on undefined instead of ignoring?
+        } break;
+
+        // @TODO: check effect and what byte influences the flags
+        case e_op_aad:
+            write_reg(get_low_byte_reg_access(e_reg_a), (g_machine.a & 0xFF) % 10);
+            update_common_flags(g_machine.a & 0xFF, false);
+            break;
+
+        case e_op_cbw:
+            g_machine.a = (i8)(g_machine.a & 0xFF);
+            break;
+
+        case e_op_cwd:
+            g_machine.d = sgn(g_machine.a);
+            break;
+
         case e_op_xor: {
             u32 res = op0_val ^ op1_val;
             update_logic_flags(res, w);
@@ -579,6 +637,10 @@ u32 simulate_instruction_execution(instruction_t instr)
 
         case e_op_neg:
             write_operand(op0, -op0_val, w, seg_override);
+            break;
+
+        case e_op_not:
+            write_operand(op0, ~op0_val, w, seg_override);
             break;
 
         case e_op_shl: {

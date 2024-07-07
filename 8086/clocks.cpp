@@ -177,6 +177,38 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
         else if (op0.type == e_operand_mem && w)
             return 160 + estimate_ea_clocks(op0.data.mem);
 
+    case e_op_aam:
+        return 83;
+
+    // @TODO: these are ranged, depict somehow? Now, I am using high estimate
+    case e_op_div:
+        if (op0.type == e_operand_reg && !w)
+            return 90;
+        else if (op0.type == e_operand_reg && w)
+            return 162;
+        else if (op0.type == e_operand_mem && !w)
+            return 96 + estimate_ea_clocks(op0.data.mem);
+        else if (op0.type == e_operand_mem && w)
+            return 168 + estimate_ea_clocks(op0.data.mem);
+
+    case e_op_idiv:
+        if (op0.type == e_operand_reg && !w)
+            return 112;
+        else if (op0.type == e_operand_reg && w)
+            return 184;
+        else if (op0.type == e_operand_mem && !w)
+            return 118 + estimate_ea_clocks(op0.data.mem);
+        else if (op0.type == e_operand_mem && w)
+            return 190 + estimate_ea_clocks(op0.data.mem);
+
+    case e_op_aad:
+        return 60;
+
+    case e_op_cbw:
+        return 2;
+    case e_op_cwd:
+        return 5;
+
     case e_op_test:
         if (op0.type == e_operand_reg && op1.type == e_operand_reg)
             return 3;
@@ -200,6 +232,12 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     case e_op_neg:
         if (op0.type == e_operand_reg)
             return 4;
+        else // mem
+            return 16 + estimate_ea_clocks(op0.data.mem);
+
+    case e_op_not:
+        if (op0.type == e_operand_reg)
+            return 3;
         else // mem
             return 16 + estimate_ea_clocks(op0.data.mem);
 
