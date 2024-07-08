@@ -57,7 +57,8 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
 
     instruction_t instr = instr_data.instr;
 
-    bool w = instr.flags & e_iflags_w;
+    bool w   = instr.flags & e_iflags_w;
+    bool rep = instr.flags & e_iflags_rep;
 
     int op_cnt    = instr.operand_cnt;
     operand_t op0 = instr.operands[0];
@@ -132,6 +133,8 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     case e_op_adc:
     case e_op_sub:
     case e_op_sbb:
+    case e_op_and:
+    case e_op_or:
     case e_op_xor:
         if (op0.type == e_operand_reg && op1.type == e_operand_reg)
             return 3;
@@ -257,6 +260,29 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
         else // must be mem, cl
             return 20 + estimate_ea_clocks(op0.data.mem) + 4*instr_data.op1_val;
 
+    case e_op_movs:
+        if (rep)
+            return 9 + 17*instr_data.rep_count;
+        else
+            return 18;
+
+    case e_op_cmps:
+        return (rep ? 9 : 0) + 22*instr_data.rep_count;
+    case e_op_scas:
+        return (rep ? 9 : 0) + 15*instr_data.rep_count;
+
+    case e_op_lods:
+        if (rep)
+            return 9 + 13*instr_data.rep_count;
+        else
+            return 12;
+
+    case e_op_stos:
+        if (rep)
+            return 9 + 10*instr_data.rep_count;
+        else
+            return 11;
+
     case e_op_je:
     case e_op_jl:
     case e_op_jle:
@@ -283,6 +309,11 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     case e_op_jcxz:
         return instr_data.cond_action_happened ? 18 : 6;
 
+    case e_op_lock:
+    case e_op_rep:
+    case e_op_segment:
+        LOGERR("Don't query cycle counts on raw prefixes");
+        // Fallthrough to assert(0)
 
     default: LOGERR("Cycle count not implemented"); assert(0);
     }

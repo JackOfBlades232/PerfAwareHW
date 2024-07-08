@@ -58,6 +58,7 @@ struct machine_t {
 struct tracing_state_t {
     u32 flags = 0;
     u32 registers_used = to_flag(e_reg_ip);
+    u32 ip_offset_from_prefixes = 0;
     u32 total_cycles = 0;
 };
 
@@ -86,7 +87,7 @@ static bool is_neg(u32 n, bool is_wide)
 
 static bool is_parity(u32 n)
 {
-    return count_ones(n, 8) % 2 == 0;
+    return (count_ones(n, 8) & 1) == 0;
 }
 
 static bool is_arifm_carry(u32 n, bool is_wide)
@@ -206,9 +207,13 @@ static memory_access_t get_segment_access_for_ea(ea_mem_access_t access, reg_t s
     }
 
     // @TODO: check in the manual, es for string instructions?
-    if (access.base == e_ea_base_bp)
+    //        Seems that es only pops up in the *s instructions themselves.
+    if (access.base == e_ea_base_bp ||
+        access.base == e_ea_base_bp_di ||
+        access.base == e_ea_base_bp_si)
+    {
         return get_segment_access(e_reg_ss);
-    else
+    } else
         return get_segment_access(e_reg_ds);
 }
 
@@ -320,6 +325,7 @@ static void update_logic_flags(u32 res, bool is_wide)
     set_pflag(e_pflag_a, 0);
 }
 
+// @TODO: recheck
 static void update_shift_flags(bool pushed_bit, u32 res, u32 orig, bool is_wide)
 {
     set_pflag(e_pflag_c, pushed_bit);
@@ -348,6 +354,70 @@ static bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
     return false;
 }
 
+// @TODO: consts in other places? This here can enable optimizations, I think.
+//        check disassembly of this func
+static u32 string_instruction(const op_t op, const bool is_wide,
+                              const bool rep, const bool req_zero)
+{
+    const memory_access_t src_base = get_segment_access(e_reg_ds);
+    const memory_access_t dst_base = get_segment_access(e_reg_es);
+    auto execute_op = [op, is_wide, &src_base, &dst_base]() {
+        u16 src_val   = read_val_at(src_base, g_machine.si, is_wide);
+        u16 dst_val   = read_val_at(dst_base, g_machine.di, is_wide);
+        u16 accum_val = is_wide ? g_machine.a : (g_machine.a & 0xFF);
+
+        switch (op) {
+        case e_op_movs:
+            write_val_to(dst_base, g_machine.di, src_val, is_wide);
+            ++g_machine.si;
+            ++g_machine.di;
+            break;
+
+        case e_op_cmps:
+            update_arifm_flags(src_val, -dst_val, is_wide);
+            ++g_machine.si;
+            ++g_machine.di;
+            break;
+
+        case e_op_scas:
+            update_arifm_flags(accum_val, -dst_val, is_wide);
+            ++g_machine.di;
+            break;
+
+        case e_op_lods:
+            // @TODO: simplify
+            write_reg({e_reg_a, 0, is_wide ? 2u : 1u}, src_val);
+            ++g_machine.si;
+            break;
+
+        case e_op_stos:
+            write_val_to(dst_base, g_machine.di, accum_val, is_wide);
+            ++g_machine.di;
+            break;
+
+        default:
+            LOGERR("Not a valid string instruction"); // @TODO: what instruction
+            assert(0);
+        }
+    };
+
+    if (!rep) {
+        execute_op();
+        return 1;
+    }
+
+    // w/ rep
+    u32 repetitions;
+    for (repetitions = 0;
+         g_machine.c != 0 && get_pflag(e_pflag_z) == req_zero;
+         --g_machine.c, ++repetitions)
+    {
+        execute_op();
+    }
+
+    return repetitions;
+}
+
 static u32 get_full_ip()
 {
     return get_address_in_segment(g_machine.cs, g_machine.ip);
@@ -360,8 +430,29 @@ u32 get_simulation_ip()
 
 u32 simulate_instruction_execution(instruction_t instr)
 {
+    machine_t prev_machine = g_machine;
+    g_machine.ip += instr.size;
+
+    if ((instr.op == e_op_ret || instr.op == e_op_retf) &&
+        (g_tracing.flags & e_trace_stop_on_ret))
+    {
+        output::print("STOPONRET: Return encountered at address %u\n", get_full_ip());
+        return c_ip_terminate; // exits loop
+    }
+
+    if (instr.op == e_op_lock || instr.op == e_op_rep || instr.op == e_op_segment) {
+        g_tracing.ip_offset_from_prefixes += instr.size;
+        return get_full_ip();
+    } else if (g_tracing.ip_offset_from_prefixes > 0) {
+        prev_machine.ip -= g_tracing.ip_offset_from_prefixes;
+        g_tracing.ip_offset_from_prefixes = 0;
+    }
+
     // @TODO: s flag for add is already needed?
-    bool w = instr.flags & e_iflags_w;
+    bool w   = instr.flags & e_iflags_w;
+    bool z   = instr.flags & e_iflags_z;
+    bool rep = instr.flags & e_iflags_rep;
+
     int op_bytes = w ? 2 : 1;
     int op_bits  = op_bytes * 8;
     int op_mask  = n_bit_mask(op_bits);
@@ -385,17 +476,6 @@ u32 simulate_instruction_execution(instruction_t instr)
     bool of = get_pflag(e_pflag_o);
     bool cf = get_pflag(e_pflag_c);
     bool af = get_pflag(e_pflag_a);
-
-    if ((instr.op == e_op_ret || instr.op == e_op_retf) &&
-        (g_tracing.flags & e_trace_stop_on_ret))
-    {
-        output::print("STOPONRET: Return encountered at address %u\n", get_full_ip());
-        return c_ip_terminate; // exits loop
-    }
-
-    machine_t prev_machine = g_machine;
-    
-    g_machine.ip += instr.size;
 
     if (g_tracing.flags & e_trace_disassembly)
         output::print_instruction(instr);
@@ -598,9 +678,9 @@ u32 simulate_instruction_execution(instruction_t instr)
             // @TODO: clear flags on undefined instead of ignoring?
         } break;
 
-        // @TODO: check effect and what byte influences the flags
+        // @TODO: check effect on other resources
         case e_op_aad:
-            write_reg(get_low_byte_reg_access(e_reg_a), (g_machine.a & 0xFF) % 10);
+            g_machine.a = ((g_machine.a >> 8) * 10 + (g_machine.a & 0xFF)) & 0xFF;
             update_common_flags(g_machine.a & 0xFF, false);
             break;
 
@@ -612,15 +692,27 @@ u32 simulate_instruction_execution(instruction_t instr)
             g_machine.d = sgn(g_machine.a);
             break;
 
-        case e_op_xor: {
-            u32 res = op0_val ^ op1_val;
-            update_logic_flags(res, w);
+        case e_op_and: {
+            u32 res = op0_val & op1_val;
             write_operand(op0, res, w, seg_override);
+            update_logic_flags(res, w);
         } break;
 
         case e_op_test: {
             u32 res = op0_val & op1_val;
             update_logic_flags(res, w);
+        } break;
+
+        case e_op_or: {
+            u32 res = op0_val | op1_val;
+            write_operand(op0, res, w, seg_override);
+            update_logic_flags(res, w);
+        } break;
+
+        case e_op_xor: {
+            u32 res = op0_val ^ op1_val;
+            update_logic_flags(res, w);
+            write_operand(op0, res, w, seg_override);
         } break;
 
         case e_op_inc: {
@@ -647,19 +739,55 @@ u32 simulate_instruction_execution(instruction_t instr)
             u32 res = op0_val << op1_val;
             write_operand(op0, res, w, seg_override);
             update_shift_flags((op0_val << (op1_val-1)) & hmask(w), res, op0_val, w);
+            update_common_flags(res, w); // @TODO: verify with Casey's listing
         } break;
 
         case e_op_shr: {
             u32 res = op0_val >> op1_val;
             write_operand(op0, res, w, seg_override);
             update_shift_flags((op0_val >> (op1_val-1)) & 0x1, res, op0_val, w);
+            update_common_flags(res, w);
         } break;
 
         case e_op_sar: {
             i32 res = (i32)op0_val >> op1_val;
             write_operand(op0, res, w, seg_override);
             update_shift_flags(((i32)op0_val >> (op1_val-1)) & 0x1, res, op0_val, w);
+            update_common_flags(res, w);
         } break;
+
+        // @TODO: pull out common logic
+        // @TODO: check that all rotates also use sign chage for OF.
+        //        Also, check the claim about OF being set only on count=1.
+        case e_op_rcl: // @HACK: put the CF bit into the op
+            op0_val |= get_pflag(e_pflag_o) << op_bits;
+            ++op_bits;
+        case e_op_rol: {
+            int rot_bits = op1_val & op_bits; // 8 or 16 is a valid mask
+            int left_bits = op_bits - rot_bits;
+            u32 res = (op0_val << rot_bits) | (op0_val >> left_bits);
+            write_operand(op0, res & op_mask, w, seg_override);
+            update_shift_flags(res & 1, res & op_mask, op0_val & op_mask, w);
+        } break;
+
+        case e_op_rcr: // @HACK: put the CF bit into the op
+            op0_val |= get_pflag(e_pflag_o) << op_bits;
+            ++op_bits;
+        case e_op_ror: {
+            int rot_bits = op1_val & op_bits; // 8 or 16 is a valid mask
+            int left_bits = op_bits - rot_bits;
+            u16 res = (op0_val >> rot_bits) | (op0_val << left_bits);
+            write_operand(op0, res & op_mask, w, seg_override);
+            update_shift_flags(res & hmask(w), res & op_mask, op0_val & op_mask, w);
+        } break;
+
+        case e_op_movs:
+        case e_op_cmps:
+        case e_op_scas:
+        case e_op_lods:
+        case e_op_stos:
+            metadata.rep_count = string_instruction(instr.op, w, rep, z);
+            break;
 
         case e_op_je:
             metadata.cond_action_happened = cond_jump(op0_val, zf);
@@ -729,7 +857,7 @@ u32 simulate_instruction_execution(instruction_t instr)
             break;
 
         default:
-            LOGERR("Instruction execution not implemented");
+            LOGERR("Instruction execution not implemented"); // @TODO: what instruction?
             assert(0);
     }
 
