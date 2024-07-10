@@ -13,8 +13,7 @@
 #include <cstdio>
 
 /* @TODO:
- * All instructions impl->test (listing 42 wip)
- *  Draft impl up to cond jumps (there, list42 breaks)
+ * All instructions impl->test (listing 42 broke on calls, code got overwritten)
  *  Handcraft a full operational test + expected dump
  *  Impl all and refactor to make sense
  *

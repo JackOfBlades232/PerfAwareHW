@@ -37,6 +37,17 @@ void write_word_to(memory_access_t to, u32 offset, u16 val)
     write_byte_to(to, offset+1, val >> 8);
 }
 
+u32 read_dword_at(memory_access_t at, u32 offset)
+{
+    return read_word_at(at, offset) | (read_word_at(at, offset+2) << 16);
+}
+
+void write_dword_to(memory_access_t to, u32 offset, u32 val)
+{
+    write_word_to(to, offset,   val & 0xFFFF);
+    write_word_to(to, offset+2, val >> 16);
+}
+
 u32 get_full_address(memory_access_t at, u32 offset)
 {
     return (at.base + offset) & c_mem_mask;

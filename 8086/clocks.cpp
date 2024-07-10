@@ -57,8 +57,9 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
 
     instruction_t instr = instr_data.instr;
 
-    bool w   = instr.flags & e_iflags_w;
-    bool rep = instr.flags & e_iflags_rep;
+    const bool w   = instr.flags & e_iflags_w;
+    const bool rep = instr.flags & e_iflags_rep;
+    const bool far = instr.flags & e_iflags_far;
 
     int op_cnt    = instr.operand_cnt;
     operand_t op0 = instr.operands[0];
@@ -282,6 +283,24 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
             return 9 + 10*instr_data.rep_count;
         else
             return 11;
+
+    case e_op_call:
+        if (op0.type == e_operand_reg)
+            return 16;
+        else if (op0.type == e_operand_imm)
+            return 19;
+        else if (op0.type == e_operand_cs_ip)
+            return 28;
+        else if (op0.type == e_operand_mem)
+            return far ? 37 : 21 + estimate_ea_clocks(op0.data.mem);
+
+    case e_op_jmp:
+        if (op0.type == e_operand_reg)
+            return 11;
+        else if (op0.type == e_operand_imm || op0.type == e_operand_cs_ip)
+            return 15; // @TODO: this is sus
+        else if (op0.type == e_operand_mem)
+            return far ? 24 : 18 + estimate_ea_clocks(op0.data.mem);
 
     case e_op_je:
     case e_op_jl:

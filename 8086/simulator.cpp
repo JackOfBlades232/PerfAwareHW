@@ -245,7 +245,7 @@ static void write_mem(ea_mem_access_t access, u16 val, bool is_wide, reg_t seg_o
     }
 }
 
-static u16 read_operand(operand_t op, bool is_wide, reg_t seg_override = e_reg_max)
+static u32 read_operand(operand_t op, bool is_wide, reg_t seg_override = e_reg_max)
 {
     switch (op.type) {
         case e_operand_reg:
@@ -258,7 +258,8 @@ static u16 read_operand(operand_t op, bool is_wide, reg_t seg_override = e_reg_m
             return read_mem(op.data.mem, is_wide, seg_override);
 
         case e_operand_cs_ip:
-            LOGERR("Operand read not implemented for these types");
+            return (op.data.cs_ip.cs << 16) | op.data.cs_ip.ip;
+
         case e_operand_none:
             assert(0);
     }
@@ -288,14 +289,17 @@ static void write_operand(operand_t op, u16 val, bool is_wide, reg_t seg_overrid
     }
 }
 
-static u16 read_stack(bool is_wide)
+static u16 pop_from_stack(bool is_wide)
 {
     memory_access_t stack = get_segment_access(e_reg_ss);
-    return read_val_at(stack, g_machine.sp, is_wide);
+    u16 val = read_val_at(stack, g_machine.sp, is_wide);
+    g_machine.sp += is_wide ? 2 : 1;
+    return val;
 }
 
-static void write_stack(u16 val, bool is_wide)
+static void push_to_stack(u16 val, bool is_wide)
 {
+    g_machine.sp -= is_wide ? 2 : 1;
     memory_access_t stack = get_segment_access(e_reg_ss);
     write_val_to(stack, g_machine.sp, val, is_wide);
 }
@@ -352,6 +356,46 @@ static bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
     }
 
     return false;
+}
+
+static void uncond_jump(operand_t op, bool is_rel, bool is_far, bool save_to_stack)
+{
+    // @TODO: this whole mess needs validation and cleaning
+    if (is_far || op.type == e_operand_cs_ip) {
+        u16 cs, ip;
+        if (op.type == e_operand_mem) { // => is_far
+            // @TODO: pull out somewhere?
+            memory_access_t seg_mem = get_segment_access_for_ea(op.data.mem, e_reg_cs);
+            u32 cs_ip = read_dword_at(seg_mem, calculate_ea(op.data.mem));
+            cs = cs_ip >> 16;
+            ip = cs_ip & 0xFFFF;
+        } else { // e_operand_cs_ip, @TODO: validate
+            cs = op.data.cs_ip.cs;
+            ip = op.data.cs_ip.ip;
+        }
+
+        if (save_to_stack) {
+            push_to_stack(g_machine.cs, true);
+            push_to_stack(g_machine.ip, true);
+        }
+
+        g_machine.cs = cs;
+        g_machine.ip = ip;
+    } else { // intrasegment
+        u16 disp;
+        if (op.type == e_operand_mem)
+            disp = read_mem(op.data.mem, true, e_reg_cs);
+        else
+            disp = op.data.imm;
+
+        if (save_to_stack)
+            push_to_stack(g_machine.ip, true);
+
+        if (is_rel)
+            g_machine.ip += disp;
+        else
+            g_machine.ip = disp;
+    }
 }
 
 // @TODO: consts in other places? This here can enable optimizations, I think.
@@ -449,9 +493,12 @@ u32 simulate_instruction_execution(instruction_t instr)
     }
 
     // @TODO: s flag for add is already needed?
-    bool w   = instr.flags & e_iflags_w;
-    bool z   = instr.flags & e_iflags_z;
-    bool rep = instr.flags & e_iflags_rep;
+    const bool w   = instr.flags & e_iflags_w;
+    const bool z   = instr.flags & e_iflags_z;
+    const bool rep = instr.flags & e_iflags_rep;
+
+    const bool rel_disp = instr.flags & e_iflags_imm_is_rel_disp;
+    const bool far      = instr.flags & e_iflags_far;
 
     int op_bytes = w ? 2 : 1;
     int op_bits  = op_bytes * 8;
@@ -470,12 +517,12 @@ u32 simulate_instruction_execution(instruction_t instr)
     metadata.op0_val = op0_val;
     metadata.op1_val = op1_val;
 
-    bool zf = get_pflag(e_pflag_z);
-    bool sf = get_pflag(e_pflag_s);
-    bool pf = get_pflag(e_pflag_p);
-    bool of = get_pflag(e_pflag_o);
-    bool cf = get_pflag(e_pflag_c);
-    bool af = get_pflag(e_pflag_a);
+    const bool zf = get_pflag(e_pflag_z);
+    const bool sf = get_pflag(e_pflag_s);
+    const bool pf = get_pflag(e_pflag_p);
+    const bool of = get_pflag(e_pflag_o);
+    const bool cf = get_pflag(e_pflag_c);
+    const bool af = get_pflag(e_pflag_a);
 
     if (g_tracing.flags & e_trace_disassembly)
         output::print_instruction(instr);
@@ -497,14 +544,12 @@ u32 simulate_instruction_execution(instruction_t instr)
             break;
 
         case e_op_push:
-            write_stack(op0_val, w);
-            g_machine.sp -= op_bytes;
+            push_to_stack(op0_val, w);
             break;
 
         case e_op_pop:
            // @TODO: restrict popping cs
-            write_operand(op0, read_stack(w), w);
-            g_machine.sp += op_bytes;
+            write_operand(op0, pop_from_stack(w), w);
             break;
 
         case e_op_xchg:
@@ -548,13 +593,11 @@ u32 simulate_instruction_execution(instruction_t instr)
 
         // @TODO: pull out stach operations
         case e_op_pushf:
-            write_stack(g_machine.flags, true);
-            g_machine.sp -= 2;
+            push_to_stack(g_machine.flags, true);
             break;
 
         case e_op_popf:
-            g_machine.flags = read_stack(true);
-            g_machine.sp += 2;
+            g_machine.flags = pop_from_stack(true);
             break;
 
         case e_op_adc:
@@ -787,6 +830,13 @@ u32 simulate_instruction_execution(instruction_t instr)
         case e_op_lods:
         case e_op_stos:
             metadata.rep_count = string_instruction(instr.op, w, rep, z);
+            break;
+
+        case e_op_call:
+            uncond_jump(op0, rel_disp, far, true);
+            break;
+        case e_op_jmp:
+            uncond_jump(op0, rel_disp, far, false);
             break;
 
         case e_op_je:
