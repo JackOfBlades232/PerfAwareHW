@@ -14,7 +14,8 @@ mov sp, 0xFFFF
 mov bp, sp
 
 ; set label here
-jmp test_funcs
+; jmp test_funcs
+jmp test_arithm
 
 ; @TEST: function call
 ; it tests:
@@ -63,6 +64,23 @@ mov [bx], ax
 sub word [bx], 0xF
 pop dx
 ret
+
+; @TEST: arithmetics
+; it tests:
+; also:
+;
+; Correct result:
+; Registers state:
+;
+; Total clocks:
+test_arithm:
+mov ax, 9
+mov bx, 7
+add ax, bx
+aaa
+out 0, ax
+
+jmp done
 
 done:
 hlt

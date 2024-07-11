@@ -946,13 +946,13 @@ u32 simulate_instruction_execution(instruction_t instr)
         case e_op_in:
             // @TODO: optional keyboard (or eve file?) input.
             if (g_tracing.flags & e_trace_data_mutation)
-                output::print(" <read %s from port %hu>", w ? "word" : "byte", op1_val);
+                output::print(" <read %s from port %u>", w ? "word" : "byte", op1_val);
             write_operand(op0, 0, w); // @TEMP
             break;
             
         case e_op_out:
             if (g_tracing.flags & e_trace_data_mutation)
-                output::print(" <write %s %hu to port %hu>", w ? "word" : "byte", op1_val, op0_val);
+                output::print(" <write %s 0x%hx to port %hu>", w ? "word" : "byte", op1_val, op0_val);
             break;
 
         // @NOTE: this is not really accurate, but suffices for our simulation
