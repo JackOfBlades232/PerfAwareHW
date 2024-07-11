@@ -33,26 +33,30 @@ enum proc_flag_t {
 
 // @TODO: global endian checks and macros for h/l regs
 
+union reg_mem_t {
+    u16 word;
+    u8 bytes[2];
+};
+
 struct machine_t {
     union {
         struct {
-            union gp_reg_mem_t { u16 word; u8 bytes[2]; };
-            gp_reg_mem_t a;
-            gp_reg_mem_t b;
-            gp_reg_mem_t c;
-            gp_reg_mem_t d;
-            u16 sp;
-            u16 bp;
-            u16 si;
-            u16 di;
-            u16 es;
-            u16 cs;
-            u16 ss;
-            u16 ds;
-            u16 ip;
-            u16 flags;
+            reg_mem_t a;
+            reg_mem_t b;
+            reg_mem_t c;
+            reg_mem_t d;
+            reg_mem_t sp;
+            reg_mem_t bp;
+            reg_mem_t si;
+            reg_mem_t di;
+            reg_mem_t es;
+            reg_mem_t cs;
+            reg_mem_t ss;
+            reg_mem_t ds;
+            reg_mem_t ip;
+            reg_mem_t flags;
         };
-        u16 regs[e_reg_max];
+        reg_mem_t regs[e_reg_max];
     };
 };
 
@@ -65,32 +69,40 @@ struct tracing_state_t {
 static machine_t g_machine = {};
 static tracing_state_t g_tracing = {};
 
+#define W(reg_)  (reg_).word
 #define LO(reg_) (reg_).bytes[is_little_endian() ? 0 : 1]
 #define HI(reg_) (reg_).bytes[is_little_endian() ? 1 : 0]
 
+#define WREG(reg_id_)  W(g_machine.regs[reg_id_])
+#define LOREG(reg_id_) LO(g_machine.regs[reg_id_])
+#define HIREG(reg_id_) HI(g_machine.regs[reg_id_])
+
 #define AL LO(g_machine.a)
 #define AH HI(g_machine.a)
-#define AX g_machine.a.word
+#define AX W(g_machine.a)
+
 #define BL LO(g_machine.b)
 #define BH HI(g_machine.b)
-#define BX g_machine.b.word
+#define BX W(g_machine.b)
+
 #define CL LO(g_machine.c)
 #define CH HI(g_machine.c)
-#define CX g_machine.c.word
+#define CX W(g_machine.c)
+
 #define DL LO(g_machine.d)
 #define DH HI(g_machine.d)
-#define DX g_machine.d.word
+#define DX W(g_machine.d)
 
-#define SP g_machine.sp
-#define BP g_machine.bp
-#define SI g_machine.si
-#define DI g_machine.di
-#define CS g_machine.cs
-#define SS g_machine.ss
-#define DS g_machine.ds
-#define ES g_machine.es
-#define IP g_machine.ip
-#define FLAGS g_machine.flags
+#define SP    W(g_machine.sp)
+#define BP    W(g_machine.bp)
+#define SI    W(g_machine.si)
+#define DI    W(g_machine.di)
+#define CS    W(g_machine.cs)
+#define SS    W(g_machine.ss)
+#define DS    W(g_machine.ds)
+#define ES    W(g_machine.es)
+#define IP    W(g_machine.ip)
+#define FLAGS W(g_machine.flags)
 
 void set_simulation_trace_option(u32 flags, bool set)
 {
@@ -167,9 +179,11 @@ static u16 read_reg(reg_access_t access)
            (access.reg <= e_reg_d && access.size == 1 && access.offset <= 1));
 
     if (access.size == 2) // => offset = 0
-        return g_machine.regs[access.reg];
+        return WREG(access.reg);
+    else if (access.offset == 1)
+        return HIREG(access.reg);
     else
-        return (g_machine.regs[access.reg] >> (access.offset * 8)) & 0xFF;
+        return LOREG(access.reg);
 }
 
 static void write_reg(reg_access_t access, u16 val)
@@ -177,12 +191,12 @@ static void write_reg(reg_access_t access, u16 val)
     assert((access.offset == 0 && access.size == 2) ||
            (access.reg <= e_reg_d && access.size == 1 && access.offset <= 1));
 
-
-    u16 *reg_mem = &g_machine.regs[access.reg];
     if (access.size == 2) // => offset = 0
-        *reg_mem = val;
+        WREG(access.reg) = val;
+    else if (access.offset == 1)
+        HIREG(access.reg) = val;
     else
-        set_byte(reg_mem, (u8)val, access.offset);
+        LOREG(access.reg) = val;
 }
 
 static u16 calculate_ea(ea_mem_access_t access)
@@ -217,7 +231,7 @@ static memory_access_t get_segment_access(reg_t seg_reg)
 {
     memory_access_t seg = get_main_memory_access();
     seg.size = c_seg_size;
-    seg.base += get_address_in_segment(g_machine.regs[seg_reg], 0);
+    seg.base += get_address_in_segment(WREG(seg_reg), 0);
     return seg;
 }
 
@@ -503,6 +517,10 @@ u32 get_simulation_ip()
 u32 simulate_instruction_execution(instruction_t instr)
 {
     machine_t prev_machine = g_machine;
+#define PREV_WREG(reg_id_) prev_machine.regs[reg_id_].word
+#define PREV_IP            prev_machine.ip.word
+#define PREV_FLAGS         prev_machine.flags.word
+
     IP += instr.size;
 
     if ((instr.op == e_op_ret || instr.op == e_op_retf) &&
@@ -516,7 +534,7 @@ u32 simulate_instruction_execution(instruction_t instr)
         g_tracing.ip_offset_from_prefixes += instr.size;
         return get_full_ip();
     } else if (g_tracing.ip_offset_from_prefixes > 0) {
-        prev_machine.ip -= g_tracing.ip_offset_from_prefixes;
+        PREV_IP -= g_tracing.ip_offset_from_prefixes;
         g_tracing.ip_offset_from_prefixes = 0;
     }
 
@@ -949,15 +967,15 @@ u32 simulate_instruction_execution(instruction_t instr)
 
     if (g_tracing.flags & e_trace_data_mutation) {
         for (int reg = 0; reg < e_reg_flags; ++reg)
-            if (prev_machine.regs[reg] != g_machine.regs[reg]) {
+            if (PREV_WREG(reg) != WREG(reg)) {
                 output::print(" ");
                 output::print_word_reg((reg_t)reg);
-                output::print(":0x%hx->0x%hx", prev_machine.regs[reg], g_machine.regs[reg]);
+                output::print(":0x%hx->0x%hx", PREV_WREG(reg), WREG(reg));
             }
 
-        if (prev_machine.flags != FLAGS) {
+        if (PREV_FLAGS != FLAGS) {
             output::print(" flags:");
-            output_flags_content(prev_machine.flags);
+            output_flags_content(PREV_FLAGS);
             output::print("->");
             output_flags_content(FLAGS);
         }
@@ -970,6 +988,10 @@ u32 simulate_instruction_execution(instruction_t instr)
 
     if (g_tracing.flags)
         output::print("\n");
+
+#undef PREV_WREG
+#undef PREV_IP
+#undef PREV_FLAGS
 
     return get_full_ip();
 }
