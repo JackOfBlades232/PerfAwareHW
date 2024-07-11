@@ -455,7 +455,10 @@ static u32 string_instruction(const op_t op, const bool is_wide,
             break;
 
         case e_op_lods:
-            (is_wide ? AX : AL) = src_val;
+            if (is_wide)
+                AX = src_val;
+            else
+                AL = src_val;
             ++SI;
             break;
 
