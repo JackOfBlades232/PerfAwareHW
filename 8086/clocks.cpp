@@ -302,6 +302,11 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
         else if (op0.type == e_operand_mem)
             return far ? 24 : 18 + estimate_ea_clocks(op0.data.mem);
 
+    case e_op_ret:
+        return op_cnt ? 12 : 8;
+    case e_op_retf:
+        return op_cnt ? 17 : 18; // @TODO: seems like a typo
+
     case e_op_je:
     case e_op_jl:
     case e_op_jle:

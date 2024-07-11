@@ -3,12 +3,15 @@
 #include <cstdio>
 #include <cstring>
 #include <cassert>
+#include <bit>
 
 #define POT(_p) (1 << (_p))
 
 #define ARR_CNT(_arr) (sizeof(_arr) / sizeof((_arr)[0]))
 
 #define LOGERR(_fmt, ...) fprintf(stderr, "[ERR] " _fmt "\n", ##__VA_ARGS__)
+
+constexpr bool is_little_endian() { return std::endian::native == std::endian::little; }
 
 template <class T>
 inline void swap(T *a, T *b)

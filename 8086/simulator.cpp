@@ -36,10 +36,11 @@ enum proc_flag_t {
 struct machine_t {
     union {
         struct {
-            u16 a;
-            u16 b;
-            u16 c;
-            u16 d;
+            union gp_reg_mem_t { u16 word; u8 bytes[2]; };
+            gp_reg_mem_t a;
+            gp_reg_mem_t b;
+            gp_reg_mem_t c;
+            gp_reg_mem_t d;
             u16 sp;
             u16 bp;
             u16 si;
@@ -57,13 +58,39 @@ struct machine_t {
 
 struct tracing_state_t {
     u32 flags = 0;
-    u32 registers_used = to_flag(e_reg_ip);
     u32 ip_offset_from_prefixes = 0;
     u32 total_cycles = 0;
 };
 
 static machine_t g_machine = {};
 static tracing_state_t g_tracing = {};
+
+#define LO(reg_) (reg_).bytes[is_little_endian() ? 0 : 1]
+#define HI(reg_) (reg_).bytes[is_little_endian() ? 1 : 0]
+
+#define AL LO(g_machine.a)
+#define AH HI(g_machine.a)
+#define AX g_machine.a.word
+#define BL LO(g_machine.b)
+#define BH HI(g_machine.b)
+#define BX g_machine.b.word
+#define CL LO(g_machine.c)
+#define CH HI(g_machine.c)
+#define CX g_machine.c.word
+#define DL LO(g_machine.d)
+#define DH HI(g_machine.d)
+#define DX g_machine.d.word
+
+#define SP g_machine.sp
+#define BP g_machine.bp
+#define SI g_machine.si
+#define DI g_machine.di
+#define CS g_machine.cs
+#define SS g_machine.ss
+#define DS g_machine.ds
+#define ES g_machine.es
+#define IP g_machine.ip
+#define FLAGS g_machine.flags
 
 void set_simulation_trace_option(u32 flags, bool set)
 {
@@ -98,14 +125,14 @@ static bool is_arifm_carry(u32 n, bool is_wide)
 static void set_pflag(u16 flag, bool val)
 {
     if (val)
-        g_machine.flags |= flag;
+        FLAGS |= flag;
     else
-        g_machine.flags &= ~flag;
+        FLAGS &= ~flag;
 }
 
 static bool get_pflag(u16 flag)
 {
-    return g_machine.flags & flag;
+    return FLAGS & flag;
 }
 
 static void output_flags_content(u16 flags_val)
@@ -150,7 +177,6 @@ static void write_reg(reg_access_t access, u16 val)
     assert((access.offset == 0 && access.size == 2) ||
            (access.reg <= e_reg_d && access.size == 1 && access.offset <= 1));
 
-    g_tracing.registers_used |= to_flag(access.reg);
 
     u16 *reg_mem = &g_machine.regs[access.reg];
     if (access.size == 2) // => offset = 0
@@ -292,16 +318,16 @@ static void write_operand(operand_t op, u16 val, bool is_wide, reg_t seg_overrid
 static u16 pop_from_stack(bool is_wide)
 {
     memory_access_t stack = get_segment_access(e_reg_ss);
-    u16 val = read_val_at(stack, g_machine.sp, is_wide);
-    g_machine.sp += is_wide ? 2 : 1;
+    u16 val = read_val_at(stack, SP, is_wide);
+    SP += is_wide ? 2 : 1;
     return val;
 }
 
 static void push_to_stack(u16 val, bool is_wide)
 {
-    g_machine.sp -= is_wide ? 2 : 1;
+    SP -= is_wide ? 2 : 1;
     memory_access_t stack = get_segment_access(e_reg_ss);
-    write_val_to(stack, g_machine.sp, val, is_wide);
+    write_val_to(stack, SP, val, is_wide);
 }
 
 static void update_common_flags(u32 res, bool is_wide)
@@ -339,7 +365,7 @@ static void update_shift_flags(bool pushed_bit, u32 res, u32 orig, bool is_wide)
 static bool cond_jump(u16 disp, bool cond)
 {
     if (cond)
-        g_machine.ip += disp;
+        IP += disp;
 
     return cond;
 }
@@ -351,7 +377,7 @@ static bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
         write_reg(cx, read_reg(cx) + delta_cx);
 
     if (read_reg(cx) != 0 && cond) {
-        g_machine.ip += disp;
+        IP += disp;
         return true;
     }
 
@@ -375,12 +401,12 @@ static void uncond_jump(operand_t op, bool is_rel, bool is_far, bool save_to_sta
         }
 
         if (save_to_stack) {
-            push_to_stack(g_machine.cs, true);
-            push_to_stack(g_machine.ip, true);
+            push_to_stack(CS, true);
+            push_to_stack(IP, true);
         }
 
-        g_machine.cs = cs;
-        g_machine.ip = ip;
+        CS = cs;
+        IP = ip;
     } else { // intrasegment
         u16 disp;
         if (op.type == e_operand_mem)
@@ -389,12 +415,12 @@ static void uncond_jump(operand_t op, bool is_rel, bool is_far, bool save_to_sta
             disp = op.data.imm;
 
         if (save_to_stack)
-            push_to_stack(g_machine.ip, true);
+            push_to_stack(IP, true);
 
         if (is_rel)
-            g_machine.ip += disp;
+            IP += disp;
         else
-            g_machine.ip = disp;
+            IP = disp;
     }
 }
 
@@ -406,37 +432,36 @@ static u32 string_instruction(const op_t op, const bool is_wide,
     const memory_access_t src_base = get_segment_access(e_reg_ds);
     const memory_access_t dst_base = get_segment_access(e_reg_es);
     auto execute_op = [op, is_wide, &src_base, &dst_base]() {
-        u16 src_val   = read_val_at(src_base, g_machine.si, is_wide);
-        u16 dst_val   = read_val_at(dst_base, g_machine.di, is_wide);
-        u16 accum_val = is_wide ? g_machine.a : (g_machine.a & 0xFF);
+        u16 src_val   = read_val_at(src_base, SI, is_wide);
+        u16 dst_val   = read_val_at(dst_base, DI, is_wide);
+        u16 accum_val = is_wide ? AX : AL;
 
         switch (op) {
         case e_op_movs:
-            write_val_to(dst_base, g_machine.di, src_val, is_wide);
-            ++g_machine.si;
-            ++g_machine.di;
+            write_val_to(dst_base, DI, src_val, is_wide);
+            ++SI;
+            ++DI;
             break;
 
         case e_op_cmps:
             update_arifm_flags(src_val, -dst_val, is_wide);
-            ++g_machine.si;
-            ++g_machine.di;
+            ++SI;
+            ++DI;
             break;
 
         case e_op_scas:
             update_arifm_flags(accum_val, -dst_val, is_wide);
-            ++g_machine.di;
+            ++DI;
             break;
 
         case e_op_lods:
-            // @TODO: simplify
-            write_reg({e_reg_a, 0, is_wide ? 2u : 1u}, src_val);
-            ++g_machine.si;
+            (is_wide ? AX : AL) = src_val;
+            ++SI;
             break;
 
         case e_op_stos:
-            write_val_to(dst_base, g_machine.di, accum_val, is_wide);
-            ++g_machine.di;
+            write_val_to(dst_base, DI, accum_val, is_wide);
+            ++DI;
             break;
 
         default:
@@ -453,8 +478,8 @@ static u32 string_instruction(const op_t op, const bool is_wide,
     // w/ rep
     u32 repetitions;
     for (repetitions = 0;
-         g_machine.c != 0 && get_pflag(e_pflag_z) == req_zero;
-         --g_machine.c, ++repetitions)
+         CX != 0 && get_pflag(e_pflag_z) == req_zero;
+         --CX, ++repetitions)
     {
         execute_op();
     }
@@ -464,7 +489,7 @@ static u32 string_instruction(const op_t op, const bool is_wide,
 
 static u32 get_full_ip()
 {
-    return get_address_in_segment(g_machine.cs, g_machine.ip);
+    return get_address_in_segment(CS, IP);
 }
 
 u32 get_simulation_ip()
@@ -475,7 +500,7 @@ u32 get_simulation_ip()
 u32 simulate_instruction_execution(instruction_t instr)
 {
     machine_t prev_machine = g_machine;
-    g_machine.ip += instr.size;
+    IP += instr.size;
 
     if ((instr.op == e_op_ret || instr.op == e_op_retf) &&
         (g_tracing.flags & e_trace_stop_on_ret))
@@ -507,6 +532,7 @@ u32 simulate_instruction_execution(instruction_t instr)
     reg_t seg_override = (instr.flags & e_iflags_seg_override) ?
                          instr.segment_override : e_reg_max;
 
+    int op_cnt    = instr.operand_cnt;
     operand_t op0 = instr.operands[0];
     operand_t op1 = instr.operands[1];
     u32 op0_val = op0.type == e_operand_none ? 0 : read_operand(op0, w, seg_override);
@@ -533,11 +559,6 @@ u32 simulate_instruction_execution(instruction_t instr)
     // (as a separate module, it could be useful in decoder/main loop,
     //  since the whole system relies on this invariant)
 
-    auto nop_effect = []() {
-        if (g_tracing.flags & e_trace_data_mutation) 
-            output::print(" nop");
-    };
-
     switch (instr.op) {
         case e_op_mov:
             write_operand(op0, op1_val, w, seg_override);
@@ -558,9 +579,8 @@ u32 simulate_instruction_execution(instruction_t instr)
             break;
 
         case e_op_xlat: {
-            reg_access_t al = get_low_byte_reg_access(e_reg_a);
-            ea_mem_access_t access = {e_ea_base_bx, (u8)read_reg(al)};
-            write_reg(al, read_mem(access, false, e_reg_max));
+            ea_mem_access_t access = {e_ea_base_bx, AL};
+            AL = read_mem(access, false, e_reg_max);
         } break;
 
         case e_op_lea:
@@ -573,31 +593,29 @@ u32 simulate_instruction_execution(instruction_t instr)
             base_mem.disp += 2; // high 16bits
             u16 base = read_mem(base_mem, w, seg_override);
             write_operand(op0, op1_val, w);
-            (instr.op == e_op_lds ? g_machine.ds : g_machine.es) = base;
+            (instr.op == e_op_lds ? DS : ES) = base;
         } break;
 
         case e_op_lahf:
             write_reg(get_high_byte_reg_access(e_reg_a),
-                      g_machine.flags &
-                      (e_pflag_s | e_pflag_z | e_pflag_a | e_pflag_p | e_pflag_c));
+                      FLAGS & (e_pflag_s | e_pflag_z | e_pflag_a | e_pflag_p | e_pflag_c));
             break;
 
         case e_op_sahf: {
-            u16 ah = g_machine.a >> 8;
-            set_pflag(e_pflag_s, ah & e_pflag_s);
-            set_pflag(e_pflag_z, ah & e_pflag_z);
-            set_pflag(e_pflag_a, ah & e_pflag_a);
-            set_pflag(e_pflag_p, ah & e_pflag_p);
-            set_pflag(e_pflag_c, ah & e_pflag_c);
+            set_pflag(e_pflag_s, AH & e_pflag_s);
+            set_pflag(e_pflag_z, AH & e_pflag_z);
+            set_pflag(e_pflag_a, AH & e_pflag_a);
+            set_pflag(e_pflag_p, AH & e_pflag_p);
+            set_pflag(e_pflag_c, AH & e_pflag_c);
         } break;
 
         // @TODO: pull out stach operations
         case e_op_pushf:
-            push_to_stack(g_machine.flags, true);
+            push_to_stack(FLAGS, true);
             break;
 
         case e_op_popf:
-            g_machine.flags = pop_from_stack(true);
+            FLAGS = pop_from_stack(true);
             break;
 
         case e_op_adc:
@@ -613,14 +631,14 @@ u32 simulate_instruction_execution(instruction_t instr)
         case e_op_aas:
         case e_op_daa:
         case e_op_das: {
-            reg_access_t al = get_low_byte_reg_access(e_reg_a);
-            u8 res = read_reg(al);
+            u8 res = AL;
             bool is_add = instr.op == e_op_aaa || instr.op == e_op_daa;
             bool carry;
             if (instr.op == e_op_aaa || instr.op == e_op_aas) {
                 carry = res >= 10;
-                g_machine.a += (carry ? 1 << 8 : 0) * (is_add ? 1 : -1); // ++AH or --AH
-                write_reg(al, carry ? res - 10 : res);
+                if (carry)
+                    AH += is_add ? 1 : -1;
+                AL = carry ? res - 10 : res;
             } else { // @TODO: is there really no difference in daa/das?
                 u8 lo = res & 0xF;
                 u8 hi = res >> 4;
@@ -631,9 +649,8 @@ u32 simulate_instruction_execution(instruction_t instr)
                 }
                 if (hi >= 10)
                     hi -= 10;
-                res = (hi << 4) | lo;
-                update_common_flags(res, false);
-                write_reg(al, res);
+                AL = (hi << 4) | lo;
+                update_common_flags(AL, false);
             }
             set_pflag(e_pflag_c, carry);
             set_pflag(e_pflag_a, carry);
@@ -654,10 +671,10 @@ u32 simulate_instruction_execution(instruction_t instr)
         case e_op_mul: {
             u32 res = op0_val * op1_val;
             if (w) {
-                g_machine.a = res & 0xFFFF;
-                g_machine.d = res >> 16;
+                AX = res & 0xFFFF;
+                DX = res >> 16;
             } else
-                g_machine.a = res;
+                AX = res;
             u16 hi = res >> op_bits;
             set_pflag(e_pflag_c, hi != 0);
             set_pflag(e_pflag_o, hi != 0);
@@ -668,10 +685,10 @@ u32 simulate_instruction_execution(instruction_t instr)
             u32 res = (i32)op0_val * (i32)op1_val;
             // @TODO: pull out, refac
             if (w) {
-                g_machine.a = res & 0xFFFF;
-                g_machine.d = res >> 16;
+                AX = res & 0xFFFF;
+                DX = res >> 16;
             } else
-                g_machine.a = res;
+                AX = res;
             u16 hi = res >> op_bits;
             u16 lo = res & op_mask;
             bool hi_is_sign_ext = (hi == op_mask && (lo & hmask(w))) ||
@@ -682,15 +699,11 @@ u32 simulate_instruction_execution(instruction_t instr)
 
         // @TODO: move/merge?
         case e_op_aam: {
-            u16 res = g_machine.a;
-            u8 lo = res & 0xFF;
-            u8 hi = res >> 8;
-            u8 carries = lo % 10;
-            lo -= 10 * carries;
-            hi += carries;
-            g_machine.a = res;
+            u8 carries = AL % 10;
+            AL -= 10 * carries;
+            AH += carries;
             // @TODO: sais so on felix cite, not manual, verify
-            update_common_flags(lo, false);
+            update_common_flags(AL, false);
         } break;
 
         // @TODO: sort out max remainders' checking for div and idiv
@@ -703,7 +716,7 @@ u32 simulate_instruction_execution(instruction_t instr)
                 //exit(1);
                 break;
             }
-            u32 whole = w ? ((g_machine.d << 16) | g_machine.a) : g_machine.a;
+            u32 whole = w ? ((DX << 16) | AX) : AX;
             u16 quot, rem;
             if (instr.op == e_op_div) {
                 quot = whole / op0_val;
@@ -714,25 +727,25 @@ u32 simulate_instruction_execution(instruction_t instr)
                 rem  = (i32)whole - (i32)quot*(i32)op0_val;
             }
             if (w) {
-                g_machine.a = quot;
-                g_machine.d = rem;
+                AX = quot;
+                DX = rem;
             } else
-                g_machine.a = (rem << 8) | quot;
+                AX = (rem << 8) | quot;
             // @TODO: clear flags on undefined instead of ignoring?
         } break;
 
         // @TODO: check effect on other resources
         case e_op_aad:
-            g_machine.a = ((g_machine.a >> 8) * 10 + (g_machine.a & 0xFF)) & 0xFF;
-            update_common_flags(g_machine.a & 0xFF, false);
+            AX = (AH*10 + AL) & 0xFF;
+            update_common_flags(AL, false);
             break;
 
         case e_op_cbw:
-            g_machine.a = (i8)(g_machine.a & 0xFF);
+            AX = (i8)AL;
             break;
 
         case e_op_cwd:
-            g_machine.d = sgn(g_machine.a);
+            DX = sgn(AX);
             break;
 
         case e_op_and: {
@@ -839,6 +852,14 @@ u32 simulate_instruction_execution(instruction_t instr)
             uncond_jump(op0, rel_disp, far, false);
             break;
 
+        case e_op_retf:
+            CS = pop_from_stack(true);
+        case e_op_ret:
+            IP = pop_from_stack(true);
+            if (op_cnt)
+                IP += read_operand(op0, w);
+            break;
+
         case e_op_je:
             metadata.cond_action_happened = cond_jump(op0_val, zf);
             break;
@@ -902,9 +923,21 @@ u32 simulate_instruction_execution(instruction_t instr)
             break;
 
         case e_op_in:
-        case e_op_out:
-            nop_effect();
+            // @TODO: optional keyboard (or eve file?) input.
+            if (g_tracing.flags & e_trace_data_mutation)
+                output::print(" <read %s from port %hu>", w ? "word" : "byte", op1_val);
+            write_operand(op0, 0, w); // @TEMP
             break;
+            
+        case e_op_out:
+            if (g_tracing.flags & e_trace_data_mutation)
+                output::print(" <write %s %hu to port %hu>", w ? "word" : "byte", op1_val, op0_val);
+            break;
+
+        // @NOTE: this is not really accurate, but suffices for our simulation
+        case e_op_hlt:
+            output::print("\n");
+            return c_ip_terminate;
 
         default:
             LOGERR("Instruction execution not implemented"); // @TODO: what instruction?
@@ -919,11 +952,11 @@ u32 simulate_instruction_execution(instruction_t instr)
                 output::print(":0x%hx->0x%hx", prev_machine.regs[reg], g_machine.regs[reg]);
             }
 
-        if (prev_machine.flags != g_machine.flags) {
+        if (prev_machine.flags != FLAGS) {
             output::print(" flags:");
             output_flags_content(prev_machine.flags);
             output::print("->");
-            output_flags_content(g_machine.flags);
+            output_flags_content(FLAGS);
         }
     }
     if (g_tracing.flags & e_trace_cycles) {
@@ -944,14 +977,14 @@ void output_simulation_results()
         output::print("\n");
     output::print("Registers state:\n");
     for (int reg = e_reg_a; reg < e_reg_flags; ++reg) {
-        if (g_tracing.registers_used & to_flag(reg)) {
-            u16 val = read_reg(get_word_reg_access((reg_t)reg));
-            output::print("      ");
-            output::print_word_reg((reg_t)reg);
-            output::print(": 0x%04hx (%hu)\n", val, val);
-        }
+        u16 val = read_reg(get_word_reg_access((reg_t)reg));
+        output::print("      ");
+        output::print_word_reg((reg_t)reg);
+        output::print(": 0x%04hx (%hu)\n", val, val);
     }
     output::print("   flags: ");
-    output_flags_content(g_machine.flags);
+    output_flags_content(FLAGS);
+    if (g_tracing.flags & e_trace_cycles)
+        output::print("\n\nTotal clocks: %d", g_tracing.total_cycles);
     output::print("\n");
 }
