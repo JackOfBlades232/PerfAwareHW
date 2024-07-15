@@ -98,7 +98,9 @@ add al, dl
 daa
 out 0, ax
 
+mov dl, 0x69
 dec dl
+mov al, 0x82
 sub al, dl
 das
 out 0, ax

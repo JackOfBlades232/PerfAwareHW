@@ -6,6 +6,7 @@
 #include "clocks.hpp"
 #include "instruction.hpp"
 #include <cassert>
+#include <cmath>
 #include <cstdlib>
 
 // @TODO: think again if asserts are appropriate here.
@@ -376,11 +377,9 @@ static void update_shift_flags(bool pushed_bit, u32 res, u32 orig, bool is_wide)
     set_pflag(e_pflag_o, is_neg(res, is_wide) != is_neg(orig, is_wide));
 }
 
-// @TODO: Check the additional AF flag for indicating decimal carry:
-//        This should already be reflected in the value, no?
 static void ascii_adjust_addsub(u8 al_adjust, u8 ah_carry_adjust)
 {
-    if (AL >= 10) {
+    if (AL > 9) {
         AL += al_adjust;
         AH += ah_carry_adjust;
         set_pflag(e_pflag_c, true);
@@ -393,6 +392,23 @@ static void ascii_adjust_addsub(u8 al_adjust, u8 ah_carry_adjust)
     AL &= 0xF;
 }
 
+static void decimal_adjust_addsub(u8 al_adjust, u8 al_hi_adjust)
+{
+    u8 old_al = AL;
+    if ((AL & 0xF) > 9 || get_pflag(e_pflag_a)) {
+        AL += al_adjust; // Carries the 1 over on it's own, use pos adjust
+        set_pflag(e_pflag_a, true);
+    } else
+        set_pflag(e_pflag_a, false);
+    if (old_al > 0x99) {
+        AL += al_hi_adjust;
+        set_pflag(e_pflag_c, true);
+    } else
+        set_pflag(e_pflag_c, false);
+
+    update_common_flags(AL, false);
+}
+
 static bool cond_jump(u16 disp, bool cond)
 {
     if (cond)
@@ -403,11 +419,9 @@ static bool cond_jump(u16 disp, bool cond)
 
 static bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
 {
-    reg_access_t cx = get_word_reg_access(e_reg_c);
-    if (delta_cx)
-        write_reg(cx, read_reg(cx) + delta_cx);
+    CX += delta_cx;
 
-    if (read_reg(cx) != 0 && cond) {
+    if (CX != 0 && cond) {
         IP += disp;
         return true;
     }
@@ -667,37 +681,16 @@ u32 simulate_instruction_execution(instruction_t instr)
         case e_op_aaa:
             ascii_adjust_addsub(6, 1);
             break;
-
         case e_op_aas:
             ascii_adjust_addsub(-6, -1);
             break;
-            
+
         case e_op_daa:
-        case e_op_das: {
-            u8 res = AL;
-            bool is_add = instr.op == e_op_aaa || instr.op == e_op_daa;
-            bool carry;
-            if (instr.op == e_op_aaa || instr.op == e_op_aas) {
-                carry = res >= 10;
-                if (carry)
-                    AH += is_add ? 1 : -1;
-                AL = carry ? res - 10 : res;
-            } else { // @TODO: is there really no difference in daa/das?
-                u8 lo = res & 0xF;
-                u8 hi = res >> 4;
-                carry = lo >= 10 || hi >= 10;
-                if (lo >= 10) {
-                    lo -= 10;
-                    ++hi;
-                }
-                if (hi >= 10)
-                    hi -= 10;
-                AL = (hi << 4) | lo;
-                update_common_flags(AL, false);
-            }
-            set_pflag(e_pflag_c, carry);
-            set_pflag(e_pflag_a, carry);
-        } break;
+            decimal_adjust_addsub(6, 0x60);
+            break;
+        case e_op_das:
+            decimal_adjust_addsub(-6, -0x60);
+            break;
 
         case e_op_sbb:
             if (get_pflag(e_pflag_c))
