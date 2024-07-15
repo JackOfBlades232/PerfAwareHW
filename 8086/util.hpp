@@ -5,11 +5,11 @@
 #include <cassert>
 #include <bit>
 
-#define POT(_p) (1 << (_p))
+#define POT(p_) (1 << (p_))
 
-#define ARR_CNT(_arr) (sizeof(_arr) / sizeof((_arr)[0]))
+#define ARR_CNT(arr_) (sizeof(arr_) / sizeof((arr_)[0]))
 
-#define LOGERR(_fmt, ...) fprintf(stderr, "[ERR] " _fmt "\n", ##__VA_ARGS__)
+#define LOGERR(fmt_, ...) fprintf(stderr, "[ERR] " fmt_ "\n", ##__VA_ARGS__)
 
 constexpr bool is_little_endian() { return std::endian::native == std::endian::little; }
 

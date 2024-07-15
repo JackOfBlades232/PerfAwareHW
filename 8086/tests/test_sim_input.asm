@@ -65,19 +65,51 @@ sub word [bx], 0xF
 pop dx
 ret
 
-; @TEST: arithmetics
+; @TEST: addition/subtraction arithmetics
 ; it tests:
-; also:
+;   add, adc, aaa, daa
+;   sub, sbb, aas, das
+;   inc, dec
+;   cmp, neg
 ;
 ; Correct result:
 ; Registers state:
 ;
 ; Total clocks:
 test_arithm:
-mov ax, 9
-mov bx, 7
-add ax, bx
+xor ax, ax
+mov al, 9
+mov bl, 7
+mov dx, 0xF
+inc dx
+add al, bl
 aaa
+out 0, ax
+
+mov al, 7
+mov bl, 9
+sub al, bl
+aas
+out 0, ax
+
+mov al, 0x79
+mov dl, 0x19
+add al, dl
+daa
+out 0, ax
+
+dec dl
+sub al, dl
+das
+out 0, ax
+
+adc ax, dx
+sub cx, 1
+sbb ax, dx
+out 0, ax
+
+cmp ax, 1234
+neg dx
 out 0, ax
 
 jmp done

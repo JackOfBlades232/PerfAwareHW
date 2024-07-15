@@ -376,6 +376,23 @@ static void update_shift_flags(bool pushed_bit, u32 res, u32 orig, bool is_wide)
     set_pflag(e_pflag_o, is_neg(res, is_wide) != is_neg(orig, is_wide));
 }
 
+// @TODO: Check the additional AF flag for indicating decimal carry:
+//        This should already be reflected in the value, no?
+static void ascii_adjust_addsub(u8 al_adjust, u8 ah_carry_adjust)
+{
+    if (AL >= 10) {
+        AL += al_adjust;
+        AH += ah_carry_adjust;
+        set_pflag(e_pflag_c, true);
+        set_pflag(e_pflag_a, true);
+    } else {
+        set_pflag(e_pflag_c, false);
+        set_pflag(e_pflag_a, false);
+    }
+    
+    AL &= 0xF;
+}
+
 static bool cond_jump(u16 disp, bool cond)
 {
     if (cond)
@@ -647,9 +664,14 @@ u32 simulate_instruction_execution(instruction_t instr)
             write_operand(op0, op0_val + op1_val, w, seg_override);
             break;
 
-        // @TODO: rewrite more clearly, check against microcode and manual
         case e_op_aaa:
+            ascii_adjust_addsub(6, 1);
+            break;
+
         case e_op_aas:
+            ascii_adjust_addsub(-6, -1);
+            break;
+            
         case e_op_daa:
         case e_op_das: {
             u8 res = AL;
