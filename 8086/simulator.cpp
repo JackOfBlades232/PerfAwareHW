@@ -20,6 +20,8 @@
 
 // @TODO: nop instr?
 
+// @TODO: clear flags that are undefined instead of ignoring them?
+
 static constexpr u32 c_seg_size = POT(16);
 
 enum proc_flag_t {
@@ -115,9 +117,19 @@ static u32 hmask(bool is_wide)
     return 1 << (is_wide ? 15 : 7);
 }
 
+static u32 max_val(bool is_wide)
+{
+    return is_wide ? 0xFFFF : 0xFF;
+}
+
+static i32 max_ival(bool is_wide)
+{
+    return is_wide ? 0x7FFF : 0x7F;
+}
+
 static bool is_zero(u32 n, bool is_wide)
 {
-    return (n & (is_wide ? 0xFFFF : 0xFF)) == 0;
+    return (n & max_val(is_wide)) == 0;
 };
 
 static bool is_neg(u32 n, bool is_wide)
@@ -407,6 +419,67 @@ static void decimal_adjust_addsub(u8 al_adjust, u8 al_hi_adjust)
         set_pflag(e_pflag_c, false);
 
     update_common_flags(AL, false);
+}
+
+template <class TNum32, class TNum16, class TNum8>
+static void do_multiplication(u32 mult, bool is_wide)
+{
+    static_assert(sizeof(TNum32) == 4, "Pass i32 or u32 here");
+    static_assert(sizeof(TNum16) == 2, "Pass i16 or u16 here");
+    static_assert(sizeof(TNum8)  == 1, "Pass i8 or u8 here");
+
+    TNum32 adj_mult = is_wide ? (TNum16)mult : (TNum8)mult;
+    TNum32 base     = is_wide ? (TNum16)AX : (TNum8)AL;
+
+    TNum32 res = base * adj_mult;
+    TNum32 lo;
+    if (is_wide) {
+        DX = res >> 16;
+        AX = res & 0xFFFF;
+        lo = AX;
+    } else {
+        AX = res;
+        lo = AL;
+    }
+    bool carry_overflow = res == lo;
+    set_pflag(e_pflag_c, carry_overflow);
+    set_pflag(e_pflag_o, carry_overflow);
+}
+
+template <class TNum32, class TNum16, class TNum8, class TFQuotChecker>
+static void do_division(u32 divisor, bool is_wide, TFQuotChecker &&quot_checker)
+{
+    static_assert(sizeof(TNum32) == 4, "Pass i32 or u32 here");
+    static_assert(sizeof(TNum16) == 2, "Pass i16 or u16 here");
+    static_assert(sizeof(TNum8)  == 1, "Pass i8 or u8 here");
+
+    if (divisor == 0) {
+        // @TODO: generate int 0 instead, and log it properly
+        // And make a test that actually does something useful
+        LOGERR("Int 0 exception");
+        //exit(1);
+        return;
+    }
+
+    TNum32 adj_div = is_wide ? (TNum16)divisor : (TNum8)divisor;
+    TNum32 base    = is_wide ? ((DX << 16) | AX) : (TNum16)AX;
+
+    TNum32 quot = base / adj_div;
+    TNum32 rem  = base % adj_div;
+
+    // @TODO: as above
+    if (!quot_checker(quot)) {
+        LOGERR("Int 0 exception");
+        return;
+    }
+
+    if (is_wide) {
+        DX = rem;
+        AX = quot;
+    } else {
+        AH = rem;
+        AL = quot;
+    }
 }
 
 static bool cond_jump(u16 disp, bool cond)
@@ -704,34 +777,21 @@ u32 simulate_instruction_execution(instruction_t instr)
             update_arifm_flags(op0_val, -op1_val, w);
             break;
 
-        case e_op_mul: {
-            u32 res = op0_val * op1_val;
-            if (w) {
-                AX = res & 0xFFFF;
-                DX = res >> 16;
-            } else
-                AX = res;
-            u16 hi = res >> op_bits;
-            set_pflag(e_pflag_c, hi != 0);
-            set_pflag(e_pflag_o, hi != 0);
-        } break;
+        case e_op_mul:
+            do_multiplication<u32, u16, u8>(op0_val, w);
+            break;
+        case e_op_imul:
+            do_multiplication<i32, i16, i8>(op0_val, w);
+            break;
 
-        case e_op_imul: {
-            // @TODO: check conversion, one cast ok?
-            u32 res = (i32)op0_val * (i32)op1_val;
-            // @TODO: pull out, refac
-            if (w) {
-                AX = res & 0xFFFF;
-                DX = res >> 16;
-            } else
-                AX = res;
-            u16 hi = res >> op_bits;
-            u16 lo = res & op_mask;
-            bool hi_is_sign_ext = (hi == op_mask && (lo & hmask(w))) ||
-                                  (hi == 0 && !(lo & hmask(w)));
-            set_pflag(e_pflag_c, hi_is_sign_ext);
-            set_pflag(e_pflag_o, hi_is_sign_ext);
-        } break;
+        case e_op_div:
+            do_division<u32, u16, u8>(
+                op0_val, w, [w](u32 quot) { return quot <= max_val(w); });
+            break;
+        case e_op_idiv:
+            do_division<i32, i16, i8>(
+                op0_val, w, [w](u32 quot) { return (i32)quot <= max_ival(w) && (i32)quot >= -max_ival(w); });
+            break;
 
         // @TODO: move/merge?
         case e_op_aam: {
@@ -740,34 +800,6 @@ u32 simulate_instruction_execution(instruction_t instr)
             AH += carries;
             // @TODO: sais so on felix cite, not manual, verify
             update_common_flags(AL, false);
-        } break;
-
-        // @TODO: sort out max remainders' checking for div and idiv
-        case e_op_div:
-        case e_op_idiv: {
-            if (op0_val == 0) {
-                // @TODO: generate int 0 instead, and log it properly
-                // And make a test that actually does something useful
-                LOGERR("Division by 0 exception");
-                //exit(1);
-                break;
-            }
-            u32 whole = w ? ((DX << 16) | AX) : AX;
-            u16 quot, rem;
-            if (instr.op == e_op_div) {
-                quot = whole / op0_val;
-                rem  = whole - quot*op0_val;
-            } else {
-                // @TODO: check conversion, one cast ok?
-                quot = (i32)whole / (i32)op0_val;
-                rem  = (i32)whole - (i32)quot*(i32)op0_val;
-            }
-            if (w) {
-                AX = quot;
-                DX = rem;
-            } else
-                AX = (rem << 8) | quot;
-            // @TODO: clear flags on undefined instead of ignoring?
         } break;
 
         // @TODO: check effect on other resources
@@ -959,7 +991,7 @@ u32 simulate_instruction_execution(instruction_t instr)
             break;
 
         case e_op_in:
-            // @TODO: optional keyboard (or eve file?) input.
+            // @TODO: optional keyboard (or even file?) input.
             if (g_tracing.flags & e_trace_data_mutation)
                 output::print(" <read %s from port %u>", w ? "word" : "byte", op1_val);
             write_operand(op0, 0, w); // @TEMP

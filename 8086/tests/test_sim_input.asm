@@ -15,7 +15,7 @@ mov bp, sp
 
 ; set label here
 ; jmp test_funcs
-jmp test_arithm
+jmp test_muldiv
 
 ; @TEST: function call
 ; it tests:
@@ -71,12 +71,29 @@ ret
 ;   sub, sbb, aas, das
 ;   inc, dec
 ;   cmp, neg
+; also:
+;   xchg
 ;
 ; Correct result:
 ; Registers state:
+;      ax: 0x0015 (21)
+;      bx: 0x0009 (9)
+;      cx: 0xffff (65535)
+;      dx: 0xff98 (65432)
+;      sp: 0xffff (65535)
+;      bp: 0xffff (65535)
+;      si: 0x0000 (0)
+;      di: 0x0000 (0)
+;      es: 0x3000 (12288)
+;      cs: 0x0000 (0)
+;      ss: 0x1000 (4096)
+;      ds: 0x2000 (8192)
+;      ip: 0x0070 (112)
+;   flags: CS
 ;
-; Total clocks:
+; Total clocks: 204
 test_arithm:
+
 xor ax, ax
 mov al, 9
 mov bl, 7
@@ -113,6 +130,34 @@ out 0, ax
 cmp ax, 1234
 neg dx
 out 0, ax
+
+jmp done
+
+; @TEST: mul/div arithmetics
+; it tests:
+;   mul, imul, div, idiv
+;   aam, aad
+;
+; Correct result:
+test_muldiv:
+
+mov ax, 123
+mov bh, 222
+mul bx
+
+mov cx, 323
+div cx
+
+mov al, -3
+mov ch, -12
+imul ch
+
+mov cl, -5
+idiv cl
+
+out 0, ax
+mov ax, dx
+out 1, ax
 
 jmp done
 
