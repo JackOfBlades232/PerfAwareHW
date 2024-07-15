@@ -1,5 +1,7 @@
 bits 16
 
+; @TODO: Verify clocks
+
 ; Prep segments
 ; cs is 0 already
 mov ax, 0x1000
@@ -15,6 +17,7 @@ mov bp, sp
 
 ; set label here
 ; jmp test_funcs
+; jmp test_arithm
 jmp test_muldiv
 
 ; @TEST: function call
@@ -44,7 +47,7 @@ jmp test_muldiv
 ;      ip: 0x0032 (50)
 ;   flags: AS
 ;
-; Total clocks: 644 // @TODO: this is not sure info
+; Total clocks: 644
 test_funcs:
 
 xor bx, bx
@@ -139,6 +142,23 @@ jmp done
 ;   aam, aad
 ;
 ; Correct result:
+; Registers state:
+;      ax: 0x0125 (293)
+;      bx: 0xde08 (56840)
+;      cx: 0xf4fb (62715)
+;      dx: 0x0125 (293)
+;      sp: 0xffff (65535)
+;      bp: 0xffff (65535)
+;      si: 0x0000 (0)
+;      di: 0x0000 (0)
+;      es: 0x3000 (12288)
+;      cs: 0x0000 (0)
+;      ss: 0x1000 (4096)
+;      ds: 0x2000 (8192)
+;      ip: 0x009f (159)
+;   flags: CO
+; 
+; Total clocks: 931
 test_muldiv:
 
 mov ax, 123
@@ -154,6 +174,16 @@ imul ch
 
 mov cl, -5
 idiv cl
+
+mov al, 0x8
+mov bl, 0x7
+mul bl
+aam
+
+mov ax, 0x607
+mov bl, 8
+aad
+div bl
 
 out 0, ax
 mov ax, dx

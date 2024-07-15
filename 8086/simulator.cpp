@@ -793,16 +793,12 @@ u32 simulate_instruction_execution(instruction_t instr)
                 op0_val, w, [w](u32 quot) { return (i32)quot <= max_ival(w) && (i32)quot >= -max_ival(w); });
             break;
 
-        // @TODO: move/merge?
-        case e_op_aam: {
-            u8 carries = AL % 10;
-            AL -= 10 * carries;
-            AH += carries;
-            // @TODO: sais so on felix cite, not manual, verify
+        case e_op_aam:
+            AH = AL / 10;
+            AL -= AH * 10;
             update_common_flags(AL, false);
-        } break;
+            break;
 
-        // @TODO: check effect on other resources
         case e_op_aad:
             AX = (AH*10 + AL) & 0xFF;
             update_common_flags(AL, false);
