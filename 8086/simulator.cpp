@@ -270,6 +270,16 @@ static memory_access_t get_segment_access_for_ea(ea_mem_access_t access, reg_t s
         return get_segment_access(e_reg_ds);
 }
 
+static void trace_mem_write(u32 addr, u16 prev_content, u16 new_content, bool is_wide)
+{
+    output::print(" ");
+    if (is_wide)
+        output::print("[0x%x-0x%x]", addr, addr+1);
+    else
+        output::print("[0x%x]", addr);
+    output::print(":0x%hx->0x%hx", prev_content, new_content);
+}
+
 static u16 read_mem(ea_mem_access_t access, bool is_wide, reg_t seg_override)
 {
     memory_access_t seg_mem = get_segment_access_for_ea(access, seg_override);
@@ -289,12 +299,7 @@ static void write_mem(ea_mem_access_t access, u16 val, bool is_wide, reg_t seg_o
 
     if (g_tracing.flags & e_trace_data_mutation) {
         u32 addr = get_full_address(seg_mem, offset);
-        output::print(" ");
-        if (is_wide)
-            output::print("[0x%x-0x%x]", addr, addr+1);
-        else
-            output::print("[0x%x]", addr);
-        output::print(":0x%hx->0x%hx", prev_content, read_mem(access, is_wide, seg_override));
+        trace_mem_write(addr, prev_content, read_mem(access, is_wide, seg_override), is_wide);
     }
 }
 
@@ -354,7 +359,12 @@ static void push_to_stack(u16 val, bool is_wide)
 {
     SP -= is_wide ? 2 : 1;
     memory_access_t stack = get_segment_access(e_reg_ss);
+
+    u16 prev_content = read_val_at(stack, SP, is_wide);
     write_val_to(stack, SP, val, is_wide);
+    
+    if (g_tracing.flags & e_trace_data_mutation)
+        trace_mem_write(stack.base + SP, prev_content, val, is_wide); 
 }
 
 static void update_common_flags(u32 res, bool is_wide)
@@ -509,7 +519,7 @@ static void uncond_jump(operand_t op, bool is_rel, bool is_far, bool save_to_sta
         u16 cs, ip;
         if (op.type == e_operand_mem) { // => is_far
             // @TODO: pull out somewhere?
-            memory_access_t seg_mem = get_segment_access_for_ea(op.data.mem, e_reg_cs);
+            memory_access_t seg_mem = get_segment_access_for_ea(op.data.mem, e_reg_max);
             u32 cs_ip = read_dword_at(seg_mem, calculate_ea(op.data.mem));
             cs = cs_ip >> 16;
             ip = cs_ip & 0xFFFF;
@@ -528,7 +538,7 @@ static void uncond_jump(operand_t op, bool is_rel, bool is_far, bool save_to_sta
     } else { // intrasegment
         u16 disp;
         if (op.type == e_operand_mem)
-            disp = read_mem(op.data.mem, true, e_reg_cs);
+            disp = read_mem(op.data.mem, true, e_reg_max);
         else
             disp = op.data.imm;
 
@@ -917,11 +927,14 @@ u32 simulate_instruction_execution(instruction_t instr)
             break;
 
         case e_op_retf:
+            IP = pop_from_stack(true);
             CS = pop_from_stack(true);
+            if (op_cnt) IP += op0_val;
+            break;
+
         case e_op_ret:
             IP = pop_from_stack(true);
-            if (op_cnt)
-                IP += read_operand(op0, w);
+            if (op_cnt) IP += op0_val;
             break;
 
         case e_op_je:

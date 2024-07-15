@@ -16,19 +16,20 @@ mov sp, 0xFFFF
 mov bp, sp
 
 ; set label here
-; jmp test_funcs
+jmp test_funcs
 ; jmp test_arithm
-jmp test_muldiv
+; jmp test_muldiv
 
 ; @TEST: function call
 ; it tests:
-;       unconditional intrasegment call & ret
+;       unconditional call & ret
 ;       unconditional intrasegment jmp
 ; also:
 ;       looping with cx
 ;       stack operations
 ;       out for logging
 ;       mov/add/sub/xor, to limited extent
+;       lahf/sahf/pushf/popf
 ;
 ; Correct result:
 ; Registers state:
@@ -51,9 +52,18 @@ jmp test_muldiv
 test_funcs:
 
 xor bx, bx
-mov cx, 5
+mov cx, 2
 lp:
 call func
+call 0x40
+mov word [bp-100], 0x40
+call [bp-100]
+
+call 4:15 ; ffunc
+mov word [bp-99], 15
+mov word [bp-97], 4
+call far [bp-99]
+
 loop lp
 
 jmp done
@@ -67,6 +77,16 @@ mov [bx], ax
 sub word [bx], 0xF
 pop dx
 ret
+
+ffunc:
+adc ax, -11111
+pushf
+mov ah, 0xFC
+sahf
+sub bx, 0xFFFE
+lahf
+popf
+retf
 
 ; @TEST: addition/subtraction arithmetics
 ; it tests:
