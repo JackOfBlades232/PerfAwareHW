@@ -2,6 +2,9 @@ bits 16
 
 ; @TODO: Verify clocks
 
+; @NOTE: these are tests for stuff not
+; covered by listings from computer_enhance
+
 ; Prep segments
 ; cs is 0 already
 mov ax, 0x1000
@@ -16,9 +19,10 @@ mov sp, 0xFFFF
 mov bp, sp
 
 ; set label here
-jmp test_funcs
+; jmp test_funcs
 ; jmp test_arithm
 ; jmp test_muldiv
+jmp test_string
 
 ; @TEST: function call
 ; it tests:
@@ -33,10 +37,10 @@ jmp test_funcs
 ;
 ; Correct result:
 ; Registers state:
-;      ax: 0xffc4 (65476)
-;      bx: 0x000a (10)
+;      ax: 0x1515 (5397)
+;      bx: 0x0014 (20)
 ;      cx: 0x0000 (0)
-;      dx: 0xffc4 (65476)
+;      dx: 0xffe2 (65506)
 ;      sp: 0xffff (65535)
 ;      bp: 0xffff (65535)
 ;      si: 0x0000 (0)
@@ -45,10 +49,10 @@ jmp test_funcs
 ;      cs: 0x0000 (0)
 ;      ss: 0x1000 (4096)
 ;      ds: 0x2000 (8192)
-;      ip: 0x0032 (50)
+;      ip: 0x00f3 (243)
 ;   flags: AS
-;
-; Total clocks: 644
+; 
+; Total clocks: 1301
 test_funcs:
 
 xor bx, bx
@@ -208,6 +212,105 @@ div bl
 out 0, ax
 mov ax, dx
 out 1, ax
+
+jmp done
+
+; @TEST: string instructions
+; it tests:
+;   scas/lods/cmps/stos/movs + rep prefix
+; also:
+;   clc/cmc/cld/std/cli/sti
+;   seg prefixes
+;   nop
+;
+; Correct result:
+; Registers state:
+;      ax: 0x0001 (1)
+;      bx: 0x0000 (0)
+;      cx: 0x0001 (1)
+;      dx: 0x0000 (0)
+;      sp: 0xffff (65535)
+;      bp: 0xffff (65535)
+;      si: 0x0003 (3)
+;      di: 0x0003 (3)
+;      es: 0x3000 (12288)
+;      cs: 0x0000 (0)
+;      ss: 0x1000 (4096)
+;      ds: 0x2000 (8192)
+;      ip: 0x0155 (341)
+;   flags:
+; 
+; Total clocks: 561
+test_string:
+
+xor ax, ax
+sub ax, 16
+clc
+cmc
+cmc
+stc
+
+std
+cld
+sti
+cli
+
+mov cx, 5
+mov di, 0
+mov al, 55
+
+
+mov word [si], 22
+mov byte [si+2], 11
+
+stosb
+lodsw
+movsb
+
+xor di, di
+scasw
+
+xor si, si
+xor di, di
+mov word [si], 1222
+mov word es:[di], 1
+cmpsw
+
+xor si, si
+xor di, di
+mov byte es:[di],   'h'
+mov byte es:[di+1], 'e'
+mov byte es:[di+2], 'l'
+mov byte es:[di+3], 'o'
+mov byte es:[di+4],  0
+
+xor ax, ax
+sahf
+
+mov cx, 6
+repnz scasb
+
+xor di, di
+add al, 1
+mov byte [si],   'w'
+mov byte [si+1], 'h'
+mov byte [si+2], 'a'
+mov byte [si+3], 't'
+
+mov cx, 4
+rep movsb
+
+xor si, si
+xor di, di
+mov byte [si],   'w'
+mov byte [si+1], 'h'
+mov byte [si+2], 'h'
+mov byte [si+3], 'h'
+
+mov cx, 4
+repz cmpsb
+
+nop
 
 jmp done
 

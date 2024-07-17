@@ -2,6 +2,11 @@
 #include "defs.hpp"
 #include "instruction.hpp"
 
+// @NOTE: simulate_instruction_execution expects correct instruction format, 
+//        and will use silent asserts/may have unplanned behaviour on invalid
+//        input. Before feeding instruction here, validate it with
+//        validate_instruction from validation.hpp
+
 enum simulation_trace_bits_t : u32 {
     e_trace_data_mutation = 1 << 1,
     e_trace_disassembly   = 1 << 2,

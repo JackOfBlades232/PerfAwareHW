@@ -1,6 +1,6 @@
 /* instruction_table.cpp.inl */
 
-#define B(_val) {e_bits_literal, sizeof(#_val)-1, 0b##_val}
+#define B(val_) {e_bits_literal, sizeof(#val_)-1, 0b##val_}
 #define W       {e_bits_w,       1                        }
 #define D       {e_bits_d,       1                        }
 #define S       {e_bits_s,       1                        }
@@ -11,26 +11,30 @@
 #define RM      {e_bits_rm,      3                        }
 #define SR      {e_bits_sr,      2                        }
 
-#define IMP_W(_val)   {e_bits_w,   0, _val}
-#define IMP_D(_val)   {e_bits_d,   0, _val}
-#define IMP_S(_val)   {e_bits_s,   0, _val}
-#define IMP_MOD(_val) {e_bits_mod, 0, _val}
-#define IMP_REG(_val) {e_bits_reg, 0, _val}
-#define IMP_RM(_val)  {e_bits_rm,  0, _val}
+#define IMP_W(val_)   {e_bits_w,   0, val_}
+#define IMP_D(val_)   {e_bits_d,   0, val_}
+#define IMP_S(val_)   {e_bits_s,   0, val_}
+#define IMP_MOD(val_) {e_bits_mod, 0, val_}
+#define IMP_REG(val_) {e_bits_reg, 0, val_}
+#define IMP_RM(val_)  {e_bits_rm,  0, val_}
 
 #define DISP      {e_bits_disp,        0, 0}
 #define ADDR      {e_bits_disp,        0, 0}, {e_bits_disp_always_w, 0, 1}
 #define DATA      {e_bits_data,        0, 0}
 #define DATA_IF_W {e_bits_data_w_if_w, 0, 1}
-#define FLAGS(_f) {_f,                 0, 1}
+#define FLAGS(f_) {f_,                 0, 1}
 
 #ifndef INST
-  #define INST(_op, ...) {e_op_##_op, ##__VA_ARGS__},
+  #define INST(op_, ...) {e_op_##op_, ##__VA_ARGS__},
 #endif
 
 #ifndef INSTALT
   #define INSTALT INST
 #endif
+
+// @NOTE: esc instruction is omitted. NASM doesn't compile it, the simulator
+//        has no use for it, and it breaks the opcode pattern by splitting
+//        an operand over byte borders.
 
 INST   (mov, {B(100010), D, W, MOD, REG, RM})
 INSTALT(mov, {B(1100011), W, MOD, B(000), RM, DATA, DATA_IF_W, IMP_D(0)})
@@ -203,6 +207,8 @@ INST   (cli,  {B(11111010)})
 INST   (sti,  {B(11111011)})
 INST   (hlt,  {B(11110100)})
 INST   (wait, {B(10011011)})
+
+INST   (nop,  {B(10010000)})
 
 #undef B
 #undef W

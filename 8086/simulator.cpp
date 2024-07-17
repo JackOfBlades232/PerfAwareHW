@@ -5,12 +5,10 @@
 #include "util.hpp"
 #include "clocks.hpp"
 #include "instruction.hpp"
+#include "validation.hpp"
 #include <cassert>
 #include <cmath>
 #include <cstdlib>
-
-// @TODO: think again if asserts are appropriate here.
-//        Where are we dealing with caller mistakes, and where with bad input?
 
 // @TODO: warning output when tracing cycles
 
@@ -30,7 +28,9 @@ enum proc_flag_t {
     e_pflag_a = 1 << 4,
     e_pflag_z = 1 << 6,
     e_pflag_s = 1 << 7,
-
+    e_pflag_d = 1 << 8,
+    e_pflag_i = 1 << 9,
+    e_pflag_t = 1 << 10,
     e_pflag_o = 1 << 11,
 };
 
@@ -112,6 +112,11 @@ void set_simulation_trace_option(u32 flags, bool set)
     set_flags(&g_tracing.flags, flags, set);
 }
 
+static u32 bytes(bool is_wide)
+{
+    return is_wide ? 2 : 1;
+}
+
 static u32 hmask(bool is_wide)
 {
     return 1 << (is_wide ? 15 : 7);
@@ -162,8 +167,17 @@ static bool get_pflag(u16 flag)
 
 static void output_flags_content(u16 flags_val)
 {
-    proc_flag_t flags[] = { e_pflag_c, e_pflag_p, e_pflag_a, e_pflag_z, e_pflag_s, e_pflag_o };
-    const char *flags_names[ARR_CNT(flags)] = { "C", "P", "A", "Z", "S", "O" };
+    proc_flag_t flags[] =
+    {
+        e_pflag_c, e_pflag_p, e_pflag_a, e_pflag_z,
+        e_pflag_s, e_pflag_t, e_pflag_i, e_pflag_d,
+        e_pflag_o
+    };
+    const char *flags_names[ARR_CNT(flags)] =
+    {
+        "C", "P", "A", "Z", "S",
+        "T", "I", "D", "O"
+    };
     for (int f = 0; f < ARR_CNT(flags); ++f) {
         if (flags_val & flags[f])
             output::print("%s", flags_names[f]);
@@ -337,11 +351,10 @@ static void write_operand(operand_t op, u16 val, bool is_wide, reg_t seg_overrid
             break;
 
         case e_operand_imm:
-            LOGERR("Can't write to immediate operand");
-            assert(0);
+            ASSERTF(0, "Can't write to immediate operand");
 
         case e_operand_cs_ip:
-            LOGERR("Operand read not implemented for these types");
+            LOGERR("Operand write not implemented for this type"); // @TODO: what type?
         case e_operand_none:
             assert(0);
     }
@@ -351,13 +364,13 @@ static u16 pop_from_stack(bool is_wide)
 {
     memory_access_t stack = get_segment_access(e_reg_ss);
     u16 val = read_val_at(stack, SP, is_wide);
-    SP += is_wide ? 2 : 1;
+    SP += bytes(is_wide);
     return val;
 }
 
 static void push_to_stack(u16 val, bool is_wide)
 {
-    SP -= is_wide ? 2 : 1;
+    SP -= bytes(is_wide);
     memory_access_t stack = get_segment_access(e_reg_ss);
 
     u16 prev_content = read_val_at(stack, SP, is_wide);
@@ -516,34 +529,37 @@ static void uncond_jump(operand_t op, bool is_rel, bool is_far, bool save_to_sta
 {
     // @TODO: this whole mess needs validation and cleaning
     if (is_far || op.type == e_operand_cs_ip) {
-        u16 cs, ip;
-        if (op.type == e_operand_mem) { // => is_far
-            // @TODO: pull out somewhere?
-            memory_access_t seg_mem = get_segment_access_for_ea(op.data.mem, e_reg_max);
-            u32 cs_ip = read_dword_at(seg_mem, calculate_ea(op.data.mem));
-            cs = cs_ip >> 16;
-            ip = cs_ip & 0xFFFF;
-        } else { // e_operand_cs_ip, @TODO: validate
-            cs = op.data.cs_ip.cs;
-            ip = op.data.cs_ip.ip;
-        }
-
         if (save_to_stack) {
             push_to_stack(CS, true);
             push_to_stack(IP, true);
         }
 
-        CS = cs;
-        IP = ip;
+        ASSERTF(!is_rel, "Wrong instr for intersegment jump, fix validation");
+
+        if (op.type == e_operand_mem) { // => is_far
+            ASSERTF(is_far, "Wrong instr for intersegment jump, fix validation");
+
+            // @TODO: pull out somewhere?
+            memory_access_t seg_mem = get_segment_access_for_ea(op.data.mem, e_reg_max);
+            u32 cs_ip = read_dword_at(seg_mem, calculate_ea(op.data.mem));
+            CS = cs_ip >> 16;
+            IP = cs_ip & 0xFFFF;
+        } else if (op.type == e_operand_cs_ip) {
+            CS = op.data.cs_ip.cs;
+            IP = op.data.cs_ip.ip;
+        } else
+            ASSERTF(0, "Wrong instr for intersegment jump, fix validation");
     } else { // intrasegment
+        if (save_to_stack)
+            push_to_stack(IP, true);
+
         u16 disp;
         if (op.type == e_operand_mem)
             disp = read_mem(op.data.mem, true, e_reg_max);
-        else
+        else if (op.type == e_operand_imm)
             disp = op.data.imm;
-
-        if (save_to_stack)
-            push_to_stack(IP, true);
+        else
+            ASSERTF(0, "Wrong instr for intrasegment jump, fix validation");
 
         if (is_rel)
             IP += disp;
@@ -559,27 +575,33 @@ static u32 string_instruction(const op_t op, const bool is_wide,
 {
     const memory_access_t src_base = get_segment_access(e_reg_ds);
     const memory_access_t dst_base = get_segment_access(e_reg_es);
-    auto execute_op = [op, is_wide, &src_base, &dst_base]() {
+
+     auto execute_op = [op, is_wide, req_zero, &src_base, &dst_base]() -> bool {
         u16 src_val   = read_val_at(src_base, SI, is_wide);
         u16 dst_val   = read_val_at(dst_base, DI, is_wide);
         u16 accum_val = is_wide ? AX : AL;
 
+        u16 increment = bytes(is_wide);
+
+        u16 written_val = 0;
+
         switch (op) {
         case e_op_movs:
             write_val_to(dst_base, DI, src_val, is_wide);
-            ++SI;
-            ++DI;
+            written_val = src_val;
+            SI += increment;
+            DI += increment;
             break;
 
         case e_op_cmps:
             update_arifm_flags(src_val, -dst_val, is_wide);
-            ++SI;
-            ++DI;
+            SI += increment;
+            DI += increment;
             break;
 
         case e_op_scas:
             update_arifm_flags(accum_val, -dst_val, is_wide);
-            ++DI;
+            DI += increment;
             break;
 
         case e_op_lods:
@@ -587,18 +609,30 @@ static u32 string_instruction(const op_t op, const bool is_wide,
                 AX = src_val;
             else
                 AL = src_val;
-            ++SI;
+            SI += increment;
             break;
 
         case e_op_stos:
             write_val_to(dst_base, DI, accum_val, is_wide);
-            ++DI;
+            written_val = accum_val;
+            DI += increment;
             break;
 
         default:
-            LOGERR("Not a valid string instruction"); // @TODO: what instruction
-            assert(0);
+            ASSERTF(0, "Not a valid string instruction, fix validation");
         }
+
+        if (g_tracing.flags & e_trace_data_mutation) {
+            if (op == e_op_stos || op == e_op_movs) {
+                trace_mem_write(
+                    dst_base.base + DI - 1, dst_val, written_val, is_wide);
+            }
+        }
+
+        if (op == e_op_scas || op == e_op_cmps)
+            return req_zero == get_pflag(e_pflag_z);
+        else
+            return true;
     };
 
     if (!rep) {
@@ -607,12 +641,12 @@ static u32 string_instruction(const op_t op, const bool is_wide,
     }
 
     // w/ rep
-    u32 repetitions;
-    for (repetitions = 0;
-         CX != 0 && get_pflag(e_pflag_z) == req_zero;
-         --CX, ++repetitions)
-    {
-        execute_op();
+    u32 repetitions = 0;
+    while (CX) {
+        bool keep_going = execute_op();
+        --CX;
+        if (!keep_going)
+            break;
     }
 
     return repetitions;
@@ -653,14 +687,15 @@ u32 simulate_instruction_execution(instruction_t instr)
     }
 
     // @TODO: s flag for add is already needed?
-    const bool w   = instr.flags & e_iflags_w;
-    const bool z   = instr.flags & e_iflags_z;
-    const bool rep = instr.flags & e_iflags_rep;
+    const bool w    = instr.flags & e_iflags_w;
+    const bool z    = instr.flags & e_iflags_z;
+    const bool rep  = instr.flags & e_iflags_rep;
+    const bool lock = instr.flags & e_iflags_lock;
 
     const bool rel_disp = instr.flags & e_iflags_imm_is_rel_disp;
     const bool far      = instr.flags & e_iflags_far;
 
-    int op_bytes = w ? 2 : 1;
+    int op_bytes = bytes(w);
     int op_bits  = op_bytes * 8;
     int op_mask  = n_bit_mask(op_bits);
 
@@ -690,9 +725,10 @@ u32 simulate_instruction_execution(instruction_t instr)
     if (g_tracing.flags & (e_trace_data_mutation | e_trace_cycles))
         output::print(" ;");
 
-    // @TODO: correct instruction format validation
-    // (as a separate module, it could be useful in decoder/main loop,
-    //  since the whole system relies on this invariant)
+    if (g_tracing.flags & e_trace_data_mutation) {
+        if (lock)
+            output::print(" <assert bus lock>");
+    }
 
     switch (instr.op) {
         case e_op_mov:
@@ -999,6 +1035,28 @@ u32 simulate_instruction_execution(instruction_t instr)
             metadata.cond_action_happened = cx_loop_jump(op0_val, 0);
             break;
 
+        case e_op_clc:
+            set_pflag(e_pflag_c, false);
+            break;
+        case e_op_stc:
+            set_pflag(e_pflag_c, true);
+            break;
+        case e_op_cmc:
+            set_pflag(e_pflag_c, !get_pflag(e_pflag_c));
+            break;
+        case e_op_cld:
+            set_pflag(e_pflag_d, false);
+            break;
+        case e_op_std:
+            set_pflag(e_pflag_d, true);
+            break;
+        case e_op_cli:
+            set_pflag(e_pflag_i, false);
+            break;
+        case e_op_sti:
+            set_pflag(e_pflag_i, true);
+            break;
+
         case e_op_in:
             // @TODO: optional keyboard (or even file?) input.
             if (g_tracing.flags & e_trace_data_mutation)
@@ -1016,10 +1074,15 @@ u32 simulate_instruction_execution(instruction_t instr)
             output::print("\n");
             return c_ip_terminate;
 
+        case e_op_nop:
+            break;
+
         default:
-            LOGERR("Instruction execution not implemented"); // @TODO: what instruction?
-            assert(0);
+            ASSERTF(0, "Instruction execution not implemented"); // @TODO: what instruction?
     }
+
+    // @NOTE: this, unlike the one in main, this is only for development
+    assert(validate_instruction_metadata(metadata));
 
     if (g_tracing.flags & e_trace_data_mutation) {
         for (int reg = 0; reg < e_reg_flags; ++reg)

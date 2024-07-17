@@ -58,69 +58,82 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     instruction_t instr = instr_data.instr;
 
     const bool w   = instr.flags & e_iflags_w;
-    const bool rep = instr.flags & e_iflags_rep;
     const bool far = instr.flags & e_iflags_far;
+
+    const bool rep          = instr.flags & e_iflags_rep;
+    const bool lock         = instr.flags & e_iflags_lock;
+    const bool seg_override = instr.flags & e_iflags_seg_override;
+
+    u32 clocks = 0;
+
+    if (rep)
+        clocks += 2;
+    if (lock)
+        clocks += 2;
+    if (seg_override)
+        clocks += 2;
 
     int op_cnt    = instr.operand_cnt;
     operand_t op0 = instr.operands[0];
     operand_t op1 = instr.operands[1];
 
     switch (instr.op) {
+    #define CASE_ADD_CLOCKS(clocks_) { clocks += (clocks_); break; }
     case e_op_mov:
         if (op0.type == e_operand_reg && op1.type == e_operand_reg)
-            return 2;
+            CASE_ADD_CLOCKS(2)
         else if (op0.type == e_operand_reg && op1.type == e_operand_imm)
-            return 4;
+            CASE_ADD_CLOCKS(4)
         // @TODO: check this, seems very sus
         else if (operands_are_acc_and_type(op0, op1, e_operand_mem))
-            return 10;
+            CASE_ADD_CLOCKS(10)
         else if (op0.type == e_operand_reg && op1.type == e_operand_mem)
-            return 8 + estimate_ea_clocks(op1.data.mem);
+            CASE_ADD_CLOCKS(8 + estimate_ea_clocks(op1.data.mem))
         else if (op0.type == e_operand_mem && op1.type == e_operand_reg)
-            return 9 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(9 + estimate_ea_clocks(op0.data.mem))
         else // imm -> mem, should be validated by now
-            return 10 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(10 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_push:
     case e_op_pushf:
         if (operand_is_seg_reg(op0) || operand_is_flags_reg(op0))
-            return 10;
+            CASE_ADD_CLOCKS(10)
         else if (op0.type == e_operand_reg)
-            return 11;
+            CASE_ADD_CLOCKS(11)
         else // mem
-            return 16 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(16 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_pop:
     case e_op_popf:
         if (op0.type == e_operand_reg)
-            return 8;
+            CASE_ADD_CLOCKS(8)
         else // mem
-            return 17 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(17 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_xchg:
         if (operands_are_acc_and_type(op0, op1, e_operand_reg) && w)
-            return 3;
+            CASE_ADD_CLOCKS(3)
         else if (op0.type == e_operand_reg && op1.type == e_operand_reg)
-            return 4;
+            CASE_ADD_CLOCKS(4)
         else // mem, reg
-            return 17 + estimate_ea_clocks(op0.type == e_operand_mem ? op0.data.mem : op1.data.mem);
+            CASE_ADD_CLOCKS(17 + estimate_ea_clocks(op0.type == e_operand_mem ? op0.data.mem : op1.data.mem))
 
     case e_op_in:
     case e_op_out:
         if (op0.type == e_operand_reg && op1.type == e_operand_reg) // acc, dx
-            return 8;
+            CASE_ADD_CLOCKS(8)
         else // acc, immed
-            return 10;
+            CASE_ADD_CLOCKS(10)
 
     case e_op_xlat:
-        return 11;
+        CASE_ADD_CLOCKS(11)
 
     case e_op_lea:
-        return 2 + estimate_ea_clocks(op1.data.mem);
+        CASE_ADD_CLOCKS(2 + estimate_ea_clocks(op1.data.mem))
 
     case e_op_lds:
     case e_op_les:
-        return 16 + estimate_ea_clocks(op1.data.mem);
+        CASE_ADD_CLOCKS(16 + estimate_ea_clocks(op1.data.mem))
 
     case e_op_lahf:
     case e_op_sahf:
@@ -128,7 +141,7 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     case e_op_daa:
     case e_op_aas:
     case e_op_das:
-        return 4;
+        CASE_ADD_CLOCKS(4)
 
     case e_op_add:
     case e_op_adc:
@@ -138,112 +151,119 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     case e_op_or:
     case e_op_xor:
         if (op0.type == e_operand_reg && op1.type == e_operand_reg)
-            return 3;
+            CASE_ADD_CLOCKS(3)
         else if (op0.type == e_operand_reg && op1.type == e_operand_imm)
-            return 4;
+            CASE_ADD_CLOCKS(4)
         else if (op0.type == e_operand_reg && op1.type == e_operand_mem)
-            return 9 + estimate_ea_clocks(op1.data.mem);
+            CASE_ADD_CLOCKS(9 + estimate_ea_clocks(op1.data.mem))
         else if (op0.type == e_operand_mem && op1.type == e_operand_reg)
-            return 16 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(16 + estimate_ea_clocks(op0.data.mem))
         else // imm -> mem, should be validated by now
-            return 17 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(17 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_cmp:
         if (op0.type == e_operand_reg && op1.type == e_operand_reg)
-            return 3;
+            CASE_ADD_CLOCKS(3)
         else if (op0.type == e_operand_reg && op1.type == e_operand_imm)
-            return 4;
+            CASE_ADD_CLOCKS(4)
         else if (op0.type == e_operand_reg && op1.type == e_operand_mem)
-            return 9 + estimate_ea_clocks(op1.data.mem);
+            CASE_ADD_CLOCKS(9 + estimate_ea_clocks(op1.data.mem))
         else if (op0.type == e_operand_mem && op1.type == e_operand_reg)
-            return 9 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(9 + estimate_ea_clocks(op0.data.mem))
         else // imm -> mem, should be validated by now
-            return 10 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(10 + estimate_ea_clocks(op0.data.mem))
 
     // @TODO: these are ranged, depict somehow? Now, I am using high estimate
     case e_op_mul:
         if (op0.type == e_operand_reg && !w)
-            return 77;
+            CASE_ADD_CLOCKS(77)
         else if (op0.type == e_operand_reg && w)
-            return 133;
+            CASE_ADD_CLOCKS(133)
         else if (op0.type == e_operand_mem && !w)
-            return 83 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(83 + estimate_ea_clocks(op0.data.mem))
         else if (op0.type == e_operand_mem && w)
-            return 139 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(139 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_imul:
         if (op0.type == e_operand_reg && !w)
-            return 98;
+            CASE_ADD_CLOCKS(98)
         else if (op0.type == e_operand_reg && w)
-            return 154;
+            CASE_ADD_CLOCKS(154)
         else if (op0.type == e_operand_mem && !w)
-            return 104 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(104 + estimate_ea_clocks(op0.data.mem))
         else if (op0.type == e_operand_mem && w)
-            return 160 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(160 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_aam:
-        return 83;
+        CASE_ADD_CLOCKS(83)
 
     // @TODO: these are ranged, depict somehow? Now, I am using high estimate
     case e_op_div:
         if (op0.type == e_operand_reg && !w)
-            return 90;
+            CASE_ADD_CLOCKS(90)
         else if (op0.type == e_operand_reg && w)
-            return 162;
+            CASE_ADD_CLOCKS(162)
         else if (op0.type == e_operand_mem && !w)
-            return 96 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(96 + estimate_ea_clocks(op0.data.mem))
         else if (op0.type == e_operand_mem && w)
-            return 168 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(168 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_idiv:
         if (op0.type == e_operand_reg && !w)
-            return 112;
+            CASE_ADD_CLOCKS(112)
         else if (op0.type == e_operand_reg && w)
-            return 184;
+            CASE_ADD_CLOCKS(184)
         else if (op0.type == e_operand_mem && !w)
-            return 118 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(118 + estimate_ea_clocks(op0.data.mem))
         else if (op0.type == e_operand_mem && w)
-            return 190 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(190 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_aad:
-        return 60;
+        CASE_ADD_CLOCKS(60)
 
     case e_op_cbw:
-        return 2;
+    case e_op_clc:
+    case e_op_stc:
+    case e_op_cmc:
+    case e_op_cld:
+    case e_op_std:
+    case e_op_cli:
+    case e_op_sti:
+        CASE_ADD_CLOCKS(2)
     case e_op_cwd:
-        return 5;
+        CASE_ADD_CLOCKS(5)
 
     case e_op_test:
         if (op0.type == e_operand_reg && op1.type == e_operand_reg)
-            return 3;
+            CASE_ADD_CLOCKS(3)
         // @TODO: check this, seems sus
         else if (operands_are_acc_and_type(op0, op1, e_operand_imm))
-            return 4;
+            CASE_ADD_CLOCKS(4)
         else if (op0.type == e_operand_reg && op1.type == e_operand_imm)
-            return 5;
+            CASE_ADD_CLOCKS(5)
         else if (op0.type == e_operand_reg && op1.type == e_operand_mem)
-            return 9 + estimate_ea_clocks(op1.data.mem);
+            CASE_ADD_CLOCKS(9 + estimate_ea_clocks(op1.data.mem))
         else // imm & mem, should be validated by now
-            return 11 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(11 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_inc:
     case e_op_dec:
         if (op0.type == e_operand_reg)
-            return 4 - op0.data.reg.size; // 2 for 16bit, 3 for 8bit
+            CASE_ADD_CLOCKS(4 - op0.data.reg.size) // 2 for 16bit, 3 for 8bit
         else // mem
-            return 15 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(15 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_neg:
         if (op0.type == e_operand_reg)
-            return 4;
+            CASE_ADD_CLOCKS(4)
         else // mem
-            return 16 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(16 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_not:
         if (op0.type == e_operand_reg)
-            return 3;
+            CASE_ADD_CLOCKS(3)
         else // mem
-            return 16 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(16 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_shl:
     case e_op_shr:
@@ -253,59 +273,59 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     case e_op_rcl:
     case e_op_rcr:
         if (op0.type == e_operand_reg && op1.type == e_operand_imm) // must be reg, 1
-            return 2;
+            CASE_ADD_CLOCKS(2)
         else if (op0.type == e_operand_reg && op1.type == e_operand_reg) // must be reg, cl
-            return 8 + 4*instr_data.op1_val;
+            CASE_ADD_CLOCKS(8 + 4*instr_data.op1_val)
         if (op0.type == e_operand_mem && op1.type == e_operand_imm) // must be mem, 1
-            return 15 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(15 + estimate_ea_clocks(op0.data.mem))
         else // must be mem, cl
-            return 20 + estimate_ea_clocks(op0.data.mem) + 4*instr_data.op1_val;
+            CASE_ADD_CLOCKS(20 + estimate_ea_clocks(op0.data.mem) + 4*instr_data.op1_val)
 
     case e_op_movs:
         if (rep)
-            return 9 + 17*instr_data.rep_count;
+            CASE_ADD_CLOCKS(9 + 17*instr_data.rep_count)
         else
-            return 18;
+            CASE_ADD_CLOCKS(18)
 
     case e_op_cmps:
-        return (rep ? 9 : 0) + 22*instr_data.rep_count;
+        CASE_ADD_CLOCKS((rep ? 9 : 0) + 22*instr_data.rep_count)
     case e_op_scas:
-        return (rep ? 9 : 0) + 15*instr_data.rep_count;
+        CASE_ADD_CLOCKS((rep ? 9 : 0) + 15*instr_data.rep_count)
 
     case e_op_lods:
         if (rep)
-            return 9 + 13*instr_data.rep_count;
+            CASE_ADD_CLOCKS(9 + 13*instr_data.rep_count)
         else
-            return 12;
+            CASE_ADD_CLOCKS(12)
 
     case e_op_stos:
         if (rep)
-            return 9 + 10*instr_data.rep_count;
+            CASE_ADD_CLOCKS(9 + 10*instr_data.rep_count)
         else
-            return 11;
+            CASE_ADD_CLOCKS(11)
 
     case e_op_call:
         if (op0.type == e_operand_reg)
-            return 16;
+            CASE_ADD_CLOCKS(16)
         else if (op0.type == e_operand_imm)
-            return 19;
+            CASE_ADD_CLOCKS(19)
         else if (op0.type == e_operand_cs_ip)
-            return 28;
+            CASE_ADD_CLOCKS(28)
         else if (op0.type == e_operand_mem)
-            return far ? 37 : 21 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(far ? 37 : 21 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_jmp:
         if (op0.type == e_operand_reg)
-            return 11;
+            CASE_ADD_CLOCKS(11)
         else if (op0.type == e_operand_imm || op0.type == e_operand_cs_ip)
-            return 15; // @TODO: this is sus
+            CASE_ADD_CLOCKS(15) // @TODO: this is sus
         else if (op0.type == e_operand_mem)
-            return far ? 24 : 18 + estimate_ea_clocks(op0.data.mem);
+            CASE_ADD_CLOCKS(far ? 24 : 18 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_ret:
-        return op_cnt ? 12 : 8;
+        CASE_ADD_CLOCKS(op_cnt ? 12 : 8)
     case e_op_retf:
-        return op_cnt ? 17 : 18; // @TODO: seems like a typo
+        CASE_ADD_CLOCKS(op_cnt ? 17 : 18) // @TODO: seems like a typo
 
     case e_op_je:
     case e_op_jl:
@@ -323,15 +343,18 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     case e_op_jnp:
     case e_op_jno:
     case e_op_jns:
-        return instr_data.cond_action_happened ? 16 : 4;
+        CASE_ADD_CLOCKS(instr_data.cond_action_happened ? 16 : 4)
 
     case e_op_loop:
-        return instr_data.cond_action_happened ? 17 : 5;
+        CASE_ADD_CLOCKS(instr_data.cond_action_happened ? 17 : 5)
     case e_op_loopnz:
-        return instr_data.cond_action_happened ? 19 : 5;
+        CASE_ADD_CLOCKS(instr_data.cond_action_happened ? 19 : 5)
     case e_op_loopz:
     case e_op_jcxz:
-        return instr_data.cond_action_happened ? 18 : 6;
+        CASE_ADD_CLOCKS(instr_data.cond_action_happened ? 18 : 6)
+
+    case e_op_nop:
+        CASE_ADD_CLOCKS(3);
 
     case e_op_lock:
     case e_op_rep:
@@ -339,8 +362,10 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
         LOGERR("Don't query cycle counts on raw prefixes");
         // Fallthrough to assert(0)
 
-    default: LOGERR("Cycle count not implemented"); assert(0);
+    default: ASSERTF(0, "Cycle count not implemented");
+
+    #undef CASE_ADD_CLOCKS
     }
 
-    return 0;
+    return clocks;
 }

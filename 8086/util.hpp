@@ -11,6 +11,16 @@
 
 #define LOGERR(fmt_, ...) fprintf(stderr, "[ERR] " fmt_ "\n", ##__VA_ARGS__)
 
+#ifndef NDEBUG
+  #define ASSERTF(e_, fmt_, ...)           \
+      do {                                 \
+          if (!e_) {                       \
+              LOGERR(fmt_, ##__VA_ARGS__); \
+              assert(0);                   \
+          }                                \
+      } while (0)
+#endif
+
 constexpr bool is_little_endian() { return std::endian::native == std::endian::little; }
 
 template <class T>

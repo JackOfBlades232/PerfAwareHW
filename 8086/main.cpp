@@ -9,6 +9,7 @@
 #include "print.hpp"
 #include "disassembler.hpp"
 #include "simulator.hpp"
+#include "validation.hpp"
 #include <cassert>
 #include <cstdio>
 
@@ -48,6 +49,11 @@ inline bool decode_and_process_instructions(memory_access_t at, u32 bytes, bool 
         instruction_t instr = decode_next_instruction(at, ip, &table, &ctx);
         if (instr.op == e_op_invalid) {
             LOGERR("Failed to decode instruction");
+            return false;
+        }
+
+        if (!validate_instruction(instr)) {
+            LOGERR("Decoded invalid instruction!");
             return false;
         }
 
