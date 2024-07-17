@@ -405,7 +405,6 @@ static void update_logic_flags(u32 res, bool is_wide)
     set_pflag(e_pflag_a, 0);
 }
 
-// @TODO: recheck
 static void update_shift_flags(bool pushed_bit, u32 res, u32 orig, bool is_wide)
 {
     set_pflag(e_pflag_c, pushed_bit);
@@ -780,7 +779,6 @@ u32 simulate_instruction_execution(instruction_t instr)
             set_pflag(e_pflag_c, AH & e_pflag_c);
         } break;
 
-        // @TODO: pull out stach operations
         case e_op_pushf:
             push_to_stack(FLAGS, true);
             break;
@@ -902,45 +900,47 @@ u32 simulate_instruction_execution(instruction_t instr)
             break;
 
         case e_op_shl: {
-            u32 res = op0_val << op1_val;
+            u32 pre_res = op0_val << (op1_val-1);
+            u32 res = pre_res << 1;
             write_operand(op0, res, w, seg_override);
-            update_shift_flags((op0_val << (op1_val-1)) & hmask(w), res, op0_val, w);
-            update_common_flags(res, w); // @TODO: verify with Casey's listing
+            update_shift_flags(pre_res & hmask(w), res, op0_val, w);
+            update_common_flags(res, w);
         } break;
 
         case e_op_shr: {
-            u32 res = op0_val >> op1_val;
+            u32 pre_res = op0_val >> (op1_val-1);
+            u32 res = pre_res >> 1;
             write_operand(op0, res, w, seg_override);
-            update_shift_flags((op0_val >> (op1_val-1)) & 0x1, res, op0_val, w);
+            update_shift_flags(pre_res & 0x1, res, op0_val, w);
             update_common_flags(res, w);
         } break;
 
         case e_op_sar: {
-            i32 res = (i32)op0_val >> op1_val;
+            u32 dec_shift = op1_val-1;
+            i32 pre_res =
+                w ? ((i16)op0_val >> dec_shift) : ((i8)op0_val >> dec_shift);
+            i32 res = (w ? (i16)pre_res : (i8)pre_res) >> 1;
             write_operand(op0, res, w, seg_override);
-            update_shift_flags(((i32)op0_val >> (op1_val-1)) & 0x1, res, op0_val, w);
+            update_shift_flags(pre_res & 0x1, res, op0_val, w);
             update_common_flags(res, w);
         } break;
 
-        // @TODO: pull out common logic
-        // @TODO: check that all rotates also use sign chage for OF.
-        //        Also, check the claim about OF being set only on count=1.
-        case e_op_rcl: // @HACK: put the CF bit into the op
-            op0_val |= get_pflag(e_pflag_o) << op_bits;
+        case e_op_rcl:
+            op0_val |= get_pflag(e_pflag_c) << op_bits;
             ++op_bits;
         case e_op_rol: {
-            int rot_bits = op1_val & op_bits; // 8 or 16 is a valid mask
+            int rot_bits = op1_val % op_bits; // Not mask cause can be 9/17
             int left_bits = op_bits - rot_bits;
             u32 res = (op0_val << rot_bits) | (op0_val >> left_bits);
             write_operand(op0, res & op_mask, w, seg_override);
             update_shift_flags(res & 1, res & op_mask, op0_val & op_mask, w);
         } break;
 
-        case e_op_rcr: // @HACK: put the CF bit into the op
-            op0_val |= get_pflag(e_pflag_o) << op_bits;
+        case e_op_rcr:
+            op0_val |= get_pflag(e_pflag_c) << op_bits;
             ++op_bits;
         case e_op_ror: {
-            int rot_bits = op1_val & op_bits; // 8 or 16 is a valid mask
+            int rot_bits = op1_val % op_bits; // Not mask cause can be 9/17
             int left_bits = op_bits - rot_bits;
             u16 res = (op0_val >> rot_bits) | (op0_val << left_bits);
             write_operand(op0, res & op_mask, w, seg_override);

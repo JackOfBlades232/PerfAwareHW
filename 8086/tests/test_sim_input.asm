@@ -22,7 +22,8 @@ mov bp, sp
 ; jmp test_funcs
 ; jmp test_arithm
 ; jmp test_muldiv
-jmp test_string
+; jmp test_string
+jmp test_logic
 
 ; @TEST: function call
 ; it tests:
@@ -311,6 +312,68 @@ mov cx, 4
 repz cmpsb
 
 nop
+
+jmp done
+
+; @TEST: logic and shifts
+; it tests:
+;   scas/lods/cmps/stos/movs + rep prefix
+; also:
+;
+; Correct result:
+; Registers state:
+;      ax: 0x00f9 (249)
+;      bx: 0x9fde (40926)
+;      cx: 0x0003 (3)
+;      dx: 0x00b8 (184)
+;      sp: 0xffff (65535)
+;      bp: 0xffff (65535)
+;      si: 0x0000 (0)
+;      di: 0x0000 (0)
+;      es: 0x3000 (12288)
+;      cs: 0x0000 (0)
+;      ss: 0x1000 (4096)
+;      ds: 0x2000 (8192)
+;      ip: 0x018a (394)
+;   flags: CPSO
+; 
+; Total clocks: 196
+test_logic:
+
+xor ax, ax
+mov bx, 0xFF
+mov cx, 0xC1
+and bx, cx
+test bx, 0x23
+not bx
+
+; @TODO: nasm seems to be smoking trees when it comes to some variations.
+;        Check it out.
+; or cx, 0xE
+; and ax, 0xE
+
+mov ax, 3
+
+shl ax, 1
+mov cl, 3
+shl al, cl
+
+shr al, 1
+not al
+dec cl
+sar al, cl
+
+mov bx, 0xECFE
+mov cl, 4
+rol bx, 1
+rcl bx, cl
+
+mov dl, 0x83
+mov cl, 3
+ror dl, cl
+
+stc
+rcr dl, 1
 
 jmp done
 
