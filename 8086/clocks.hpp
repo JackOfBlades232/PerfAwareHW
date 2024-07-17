@@ -7,6 +7,7 @@ struct instruction_metadata_t {
     u32 op0_val, op1_val;
     bool cond_action_happened;
     u32 rep_count;
+    u32 wait_n;
 };
 
 // @NOTE: also expects valid data, validate as in simulator.hpp

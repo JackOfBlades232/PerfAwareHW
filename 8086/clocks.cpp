@@ -229,6 +229,7 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     case e_op_std:
     case e_op_cli:
     case e_op_sti:
+    case e_op_hlt:
         CASE_ADD_CLOCKS(2)
     case e_op_cwd:
         CASE_ADD_CLOCKS(5)
@@ -327,6 +328,17 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     case e_op_retf:
         CASE_ADD_CLOCKS(op_cnt ? 17 : 18) // @TODO: seems like a typo
 
+    case e_op_int:
+        CASE_ADD_CLOCKS(51)
+    case e_op_int3:
+        CASE_ADD_CLOCKS(52)
+
+    case e_op_into:
+        CASE_ADD_CLOCKS(instr_data.cond_action_happened ? 53 : 4)
+
+    case e_op_iret:
+        CASE_ADD_CLOCKS(24)
+
     case e_op_je:
     case e_op_jl:
     case e_op_jle:
@@ -353,8 +365,11 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     case e_op_jcxz:
         CASE_ADD_CLOCKS(instr_data.cond_action_happened ? 18 : 6)
 
+    case e_op_wait:
+        CASE_ADD_CLOCKS(3 + 5*instr_data.wait_n)
+
     case e_op_nop:
-        CASE_ADD_CLOCKS(3);
+        CASE_ADD_CLOCKS(3)
 
     case e_op_lock:
     case e_op_rep:

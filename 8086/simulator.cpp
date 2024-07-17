@@ -9,6 +9,13 @@
 #include <cassert>
 #include <cmath>
 #include <cstdlib>
+#include <thread>
+
+using namespace std::chrono_literals;
+
+// @TODO: import from input
+extern bool interactive;
+extern void wait_for_input_line();
 
 // @TODO: warning output when tracing cycles
 
@@ -21,6 +28,7 @@
 // @TODO: clear flags that are undefined instead of ignoring them?
 
 static constexpr u32 c_seg_size = POT(16);
+static constexpr u32 c_no_exception = -1;
 
 enum proc_flag_t {
     e_pflag_c = 1 << 0,
@@ -69,8 +77,10 @@ struct tracing_state_t {
     u32 total_cycles = 0;
 };
 
-static machine_t g_machine = {};
+static machine_t g_machine       = {};
 static tracing_state_t g_tracing = {};
+
+static u32 g_thrown_exception = c_no_exception;
 
 #define W(reg_)  (reg_).word
 #define LO(reg_) (reg_).bytes[is_little_endian() ? 0 : 1]
@@ -360,6 +370,36 @@ static void write_operand(operand_t op, u16 val, bool is_wide, reg_t seg_overrid
     }
 }
 
+static void throw_exception(u8 ex)
+{
+    g_thrown_exception = ex;
+}
+
+static void process_exceptions()
+{
+    if (g_thrown_exception == c_no_exception)
+        return;
+
+    u32 saved_tracing_flags = g_tracing.flags;
+    {
+        set_flags(&g_tracing.flags, e_trace_disassembly, false);
+        instruction_t int_instr{
+            .op          = e_op_int,
+            .size        = 0, // This should not affect IP
+            .operands    = {get_imm_operand((u8)g_thrown_exception)},
+            .operand_cnt = 1
+        };
+
+        output::print("<exception interrupt of type %u generated>\n", g_thrown_exception);
+
+        // Do it before call to simulate so as not to recurse
+        g_thrown_exception = c_no_exception;
+
+        simulate_instruction_execution(int_instr);
+    }
+    g_tracing.flags = saved_tracing_flags; 
+}
+
 static u16 pop_from_stack(bool is_wide)
 {
     memory_access_t stack = get_segment_access(e_reg_ss);
@@ -476,10 +516,7 @@ static void do_division(u32 divisor, bool is_wide, TFQuotChecker &&quot_checker)
     static_assert(sizeof(TNum8)  == 1, "Pass i8 or u8 here");
 
     if (divisor == 0) {
-        // @TODO: generate int 0 instead, and log it properly
-        // And make a test that actually does something useful
-        LOGERR("Int 0 exception");
-        //exit(1);
+        throw_exception(0);
         return;
     }
 
@@ -489,9 +526,8 @@ static void do_division(u32 divisor, bool is_wide, TFQuotChecker &&quot_checker)
     TNum32 quot = base / adj_div;
     TNum32 rem  = base % adj_div;
 
-    // @TODO: as above
     if (!quot_checker(quot)) {
-        LOGERR("Int 0 exception");
+        throw_exception(0);
         return;
     }
 
@@ -524,7 +560,8 @@ static bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
     return false;
 }
 
-static void uncond_jump(operand_t op, bool is_rel, bool is_far, bool save_to_stack)
+static void uncond_jump(operand_t op, bool is_rel, bool is_far,
+                        bool save_to_stack, reg_t seg_override = e_reg_max)
 {
     // @TODO: this whole mess needs validation and cleaning
     if (is_far || op.type == e_operand_cs_ip) {
@@ -539,7 +576,7 @@ static void uncond_jump(operand_t op, bool is_rel, bool is_far, bool save_to_sta
             ASSERTF(is_far, "Wrong instr for intersegment jump, fix validation");
 
             // @TODO: pull out somewhere?
-            memory_access_t seg_mem = get_segment_access_for_ea(op.data.mem, e_reg_max);
+            memory_access_t seg_mem = get_segment_access_for_ea(op.data.mem, seg_override);
             u32 cs_ip = read_dword_at(seg_mem, calculate_ea(op.data.mem));
             CS = cs_ip >> 16;
             IP = cs_ip & 0xFFFF;
@@ -554,7 +591,7 @@ static void uncond_jump(operand_t op, bool is_rel, bool is_far, bool save_to_sta
 
         u16 disp;
         if (op.type == e_operand_mem)
-            disp = read_mem(op.data.mem, true, e_reg_max);
+            disp = read_mem(op.data.mem, true, seg_override);
         else if (op.type == e_operand_imm)
             disp = op.data.imm;
         else
@@ -973,6 +1010,30 @@ u32 simulate_instruction_execution(instruction_t instr)
             if (op_cnt) IP += op0_val;
             break;
 
+        
+        case e_op_int3:
+        case e_op_into:
+        case e_op_int: {
+            if (instr.op == e_op_int3)
+                op0_val = 3;
+            else if (instr.op == e_op_into) {
+                if (get_pflag(e_pflag_o))
+                    metadata.cond_action_happened = true;
+                else
+                    break;
+            }
+
+            push_to_stack(FLAGS, true);
+            uncond_jump(get_mem_operand(e_ea_base_direct, op0_val << 2),
+                        false, true, true, e_reg_cs);
+        } break;
+
+        case e_op_iret:
+            IP    = pop_from_stack(true);
+            CS    = pop_from_stack(true);
+            FLAGS = pop_from_stack(true);
+            break;
+
         case e_op_je:
             metadata.cond_action_happened = cond_jump(op0_val, zf);
             break;
@@ -1074,6 +1135,20 @@ u32 simulate_instruction_execution(instruction_t instr)
             output::print("\n");
             return c_ip_terminate;
 
+        case e_op_wait: // This is also for shits and giggles
+            if (::interactive) {
+                for (int i = 0; i < 6; ++i) {
+                    for (int j = 0; j < 10; ++j)
+                        std::this_thread::sleep_for(0.025s);
+
+                    metadata.wait_n += 250000;
+                    output::print("\n...");
+                }
+                wait_for_input_line();
+                output::print("\n");
+            }
+            break;
+
         case e_op_nop:
             break;
 
@@ -1107,6 +1182,8 @@ u32 simulate_instruction_execution(instruction_t instr)
 
     if (g_tracing.flags)
         output::print("\n");
+
+    process_exceptions();
 
 #undef PREV_WREG
 #undef PREV_IP

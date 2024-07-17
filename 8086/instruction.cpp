@@ -53,6 +53,11 @@ operand_t get_rm_operand(u8 mod, u8 rm, bool is_wide, i16 disp)
     return {e_operand_mem, {.mem = {ea_base_table[rm & 0x7], disp}}};
 }
 
+operand_t get_mem_operand(ea_base_t ea, i16 disp)
+{
+    return {e_operand_mem, {.mem = {ea, disp}}};
+}
+
 operand_t get_imm_operand(u16 val)
 {
     return {e_operand_imm, {.imm = val}};

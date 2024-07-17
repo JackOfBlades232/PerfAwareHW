@@ -12,7 +12,7 @@ enum simulation_trace_bits_t : u32 {
     e_trace_disassembly   = 1 << 2,
     e_trace_cycles        = 1 << 3,
 
-    e_trace_stop_on_ret   = 1 << 4
+    e_trace_stop_on_ret   = 1 << 4,
 };
 void set_simulation_trace_option(u32 flags, bool set_true);
 

@@ -16,8 +16,6 @@
 /* @TODO:
  * All instructions impl->test
  *  Impl all with handcrafted test file
- *    Interrupts
- *    Wait
  *    Test and refac xchg, cbw/cwd, lea/lds/les + xlat
  *    Fix and/or weirdness with nasm
  *    Recheck all listings
@@ -27,10 +25,21 @@
  * Finish cycles
  *   Transfer penales
  *   8088 cycles
- * Implement exceptions
  * Add missing instructions (esc)
  * Resolve TODOs and refac as if for ship
  */
+
+// @TODO: move all this to input module
+// @TODO: echo off in interactive mode
+bool interactive = false;
+void wait_for_input_line()
+{
+    char c;
+    while ((c = getchar()) != EOF) {
+        if (c == '\n')
+            return;
+    }
+}
 
 enum prog_action_t {
     e_act_simulate,
@@ -50,7 +59,7 @@ inline bool decode_and_process_instructions(memory_access_t at, u32 bytes, bool 
 
     while (bytes - ip > 0 && ip != c_ip_terminate) {
         if (interactive)
-            getchar();
+            wait_for_input_line();
 
         instruction_t instr = decode_next_instruction(at, ip, &table, &ctx);
         if (instr.op == e_op_invalid) {
@@ -79,8 +88,6 @@ int main(int argc, char **argv)
 {
     prog_action_t action;
     memory_access_t main_memory = get_main_memory_access();
-
-    bool interactive = false;
 
     const char *fn = nullptr;
     const char *mdump_fn = nullptr;

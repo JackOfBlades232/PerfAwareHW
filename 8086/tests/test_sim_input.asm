@@ -18,12 +18,56 @@ mov es, ax
 mov sp, 0xFFFF
 mov bp, sp
 
+; Prep interrupt pointer table (overwrites segment init code)
+push ds
+xor ax, ax
+mov ds, ax
+mov word [0],  0x9
+mov word [2],  0x5
+mov word [4],  0x0
+mov word [6],  0x6
+mov word [8],  0x3
+mov word [10], 0x6
+mov word [12], 0x6
+mov word [14], 0x6
+mov word [16], 0xd
+mov word [18], 0x6
+pop ds
+
 ; set label here
 ; jmp test_funcs
 ; jmp test_arithm
 ; jmp test_muldiv
 ; jmp test_string
-jmp test_logic
+; jmp test_logic
+;  mp test_interrupts
+jmp test_exceptions
+
+; "interrupt table"
+i_zero_div:
+mov ax, 666
+out 0, ax
+hlt
+iret
+
+i_in:
+in al, 0
+iret
+
+i_out:
+out 1, al
+iret
+
+i_three:
+mov ax, 3
+out 0, ax
+wait
+iret
+
+i_over:
+mov ax, 4221
+out 0, ax
+iret
 
 ; @TEST: function call
 ; it tests:
@@ -374,6 +418,58 @@ ror dl, cl
 
 stc
 rcr dl, 1
+
+jmp done
+
+; @TEST: interrupts
+; it tests:
+;   int/int3/into/iret
+;
+; Correct result:
+; Registers state:
+;      ax: 0x029a (666)
+;      bx: 0x0000 (0)
+;      cx: 0x0000 (0)
+;      dx: 0x0000 (0)
+;      sp: 0xfff9 (65529)
+;      bp: 0xffff (65535)
+;      si: 0x0000 (0)
+;      di: 0x0000 (0)
+;      es: 0x3000 (12288)
+;      cs: 0x0005 (5)
+;      ss: 0x1000 (4096)
+;      ds: 0x2000 (8192)
+;      ip: 0x000f (15)
+;   flags: ASO
+; 
+; Total clocks: 564
+test_interrupts:
+
+int 1
+int 2
+int3
+into
+mov ax, 0x7FFE
+add ax, 0xF
+into
+
+jmp done
+
+; @TEST: exceptions
+; it tests:
+;   div/idiv by 0 or too large quotient
+;
+; Correct result: not really relevant, just check for exception 0 thrown and handled
+test_exceptions:
+
+xor ax, ax
+xor bx, bx
+; div bx
+
+mov dx, -0xFFF
+mov ax, 0xEFFF
+mov bx, 2
+idiv bx
 
 jmp done
 
