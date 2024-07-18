@@ -68,14 +68,14 @@ u32 load_file_to_memory(memory_access_t dest, const char *fn)
     return bytes_read;
 }
 
-bool dump_memory_to_file(const char *fn)
+bool dump_memory_to_file(memory_access_t src, const char *fn)
 {
-    FILE *f = fopen(fn, "w");
+    FILE *f = fopen(fn, "wb");
     if (!f)
         return false;
 
-    size_t bytes_written = fwrite(g_memory, 1, sizeof(g_memory), f);
+    size_t bytes_written = fwrite(src.mem + src.base, 1, src.size, f);
 
     fclose(f);
-    return bytes_written == sizeof(g_memory);
+    return bytes_written == src.size;
 }
