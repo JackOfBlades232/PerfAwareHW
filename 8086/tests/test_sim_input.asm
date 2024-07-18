@@ -15,7 +15,7 @@ add ax, 0x1000
 mov es, ax
 
 ; Prep stack
-mov sp, 0xFFFF
+mov sp, 0xFFFE
 mov bp, sp
 
 ; Prep interrupt pointer table (overwrites segment init code)
@@ -40,8 +40,9 @@ pop ds
 ; jmp test_muldiv
 ; jmp test_string
 ; jmp test_logic
-;  mp test_interrupts
-jmp test_exceptions
+; jmp test_interrupts
+; jmp test_exceptions
+jmp test_misc
 
 ; "interrupt table"
 i_zero_div:
@@ -470,6 +471,60 @@ mov dx, -0xFFF
 mov ax, 0xEFFF
 mov bx, 2
 idiv bx
+
+jmp done
+
+; @TEST: misc
+; it tests:
+;   xchg lea/lds/les cbw/cwd xlat
+;
+; Correct result:
+; Registers state:
+;      ax: 0x08a5 (2213)
+;      bx: 0x0000 (0)
+;      cx: 0x0000 (0)
+;      dx: 0x0026 (38)
+;      sp: 0xfffe (65534)
+;      bp: 0xfffe (65534)
+;      si: 0x014d (333)
+;      di: 0x000c (12)
+;      es: 0x0002 (2)
+;      cs: 0x0000 (0)
+;      ss: 0x1000 (4096)
+;      ds: 0x04c5 (1221)
+;      ip: 0x024b (587)
+;   flags: PZ
+; 
+; Total clocks: 495
+test_misc:
+
+mov ax, 3
+mov bx, 8
+xchg ax, bx
+mov word [bp], 9
+xchg [bp], bl
+
+mov al, -33
+cbw
+cwd
+
+xor bx, bx
+mov byte [bx+36], 'a'
+mov al, 36
+xlat
+
+mov di, 12
+mov si, 333
+
+lea dx, [bp+di+12]
+
+mov word [bx+si-7], 38
+mov word [bx+si-5], 1221
+mov word [bx+di+1420], 2213
+mov word [bx+di+1422], 2
+
+les ax, [bx+di+1420]
+lds dx, [bx+si-7]
 
 jmp done
 

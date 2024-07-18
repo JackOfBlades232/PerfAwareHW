@@ -23,8 +23,6 @@ extern void wait_for_input_line();
 
 // @TODO: get rid of convoluted access calls, further
 
-// @TODO: nop instr?
-
 // @TODO: clear flags that are undefined instead of ignoring them?
 
 static constexpr u32 c_seg_size = POT(16);
@@ -41,8 +39,6 @@ enum proc_flag_t {
     e_pflag_t = 1 << 10,
     e_pflag_o = 1 << 11,
 };
-
-// @TODO: global endian checks and macros for h/l regs
 
 union reg_mem_t {
     u16 word;
@@ -254,8 +250,8 @@ static u16 calculate_ea(ea_mem_access_t access)
 
     reg_t r1 = ops[access.base][0];
     reg_t r2 = ops[access.base][1];
-    u16 op1 = r1 == c_null_reg ? 0 : read_reg(get_word_reg_access(r1));
-    u16 op2 = r2 == c_null_reg ? 0 : read_reg(get_word_reg_access(r2));
+    u16 op1 = r1 == c_null_reg ? 0 : WREG(r1);
+    u16 op2 = r2 == c_null_reg ? 0 : WREG(r2);
     return op1 + op2 + access.disp;
 }
 
@@ -563,7 +559,6 @@ static bool cx_loop_jump(u16 disp, i16 delta_cx, bool cond = true)
 static void uncond_jump(operand_t op, bool is_rel, bool is_far,
                         bool save_to_stack, reg_t seg_override = e_reg_max)
 {
-    // @TODO: this whole mess needs validation and cleaning
     if (is_far || op.type == e_operand_cs_ip) {
         if (save_to_stack) {
             push_to_stack(CS, true);
@@ -776,7 +771,6 @@ u32 simulate_instruction_execution(instruction_t instr)
             break;
 
         case e_op_pop:
-           // @TODO: restrict popping cs
             write_operand(op0, pop_from_stack(w), w);
             break;
 
@@ -890,7 +884,7 @@ u32 simulate_instruction_execution(instruction_t instr)
             break;
 
         case e_op_cwd:
-            DX = sgn(AX);
+            DX = sgn<i16>(AX);
             break;
 
         case e_op_and: {
