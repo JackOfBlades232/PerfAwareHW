@@ -42,7 +42,8 @@ pop ds
 ; jmp test_logic
 ; jmp test_interrupts
 ; jmp test_exceptions
-jmp test_misc
+; jmp test_misc
+jmp test_jumps
 
 ; "interrupt table"
 i_zero_div:
@@ -525,6 +526,49 @@ mov word [bx+di+1422], 2
 
 les ax, [bx+di+1420]
 lds dx, [bx+si-7]
+
+jmp done
+
+; @TEST: jumps (not complete)
+; it tests:
+;   cond jumps, jmp, loopX
+;
+; Correct result:
+; Registers state:
+;      ax: 0x0003 (3)
+;      bx: 0x00ff (255)
+;      cx: 0x0004 (4)
+;      dx: 0x0000 (0)
+;      sp: 0xfffe (65534)
+;      bp: 0xfffe (65534)
+;      si: 0x0000 (0)
+;      di: 0x0000 (0)
+;      es: 0x3000 (12288)
+;      cs: 0x0000 (0)
+;      ss: 0x1000 (4096)
+;      ds: 0x2000 (8192)
+;      ip: 0x0268 (616)
+;   flags: CPAS
+; 
+; Total clocks: 379
+test_jumps:
+
+mov dx, 2
+.p1:
+dec dx
+jnz .p1
+mov bl, 3
+.p2:
+dec bl
+js .p3
+jmp .p2
+.p3:
+mov ax, 3
+mov cx, 4
+cmp ax, cx
+jae done
+
+out 0, ax
 
 jmp done
 

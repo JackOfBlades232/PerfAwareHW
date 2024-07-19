@@ -695,19 +695,19 @@ u32 get_simulation_ip()
 
 u32 simulate_instruction_execution(instruction_t instr)
 {
-    machine_t prev_machine = g_machine;
-#define PREV_WREG(reg_id_) prev_machine.regs[reg_id_].word
-#define PREV_IP            prev_machine.ip.word
-#define PREV_FLAGS         prev_machine.flags.word
-
-    IP += instr.size;
-
     if ((instr.op == e_op_ret || instr.op == e_op_retf) &&
         (g_tracing.flags & e_trace_stop_on_ret))
     {
         output::print("STOPONRET: Return encountered at address %u\n", get_full_ip());
         return c_ip_terminate; // exits loop
     }
+
+    machine_t prev_machine = g_machine;
+#define PREV_WREG(reg_id_) prev_machine.regs[reg_id_].word
+#define PREV_IP            prev_machine.ip.word
+#define PREV_FLAGS         prev_machine.flags.word
+
+    IP += instr.size;
 
     if (instr.op == e_op_lock || instr.op == e_op_rep || instr.op == e_op_segment) {
         g_tracing.ip_offset_from_prefixes += instr.size;

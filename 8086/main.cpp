@@ -14,12 +14,7 @@
 #include <cstdio>
 
 /* @TODO:
- * All instructions impl->test
- *  Impl all with handcrafted test file
- *    Fix and/or weirdness with nasm
- *    Test loop/cond jumps
- *    Recheck all listings
- *
+ * Fix and/or weirdness with nasm
  * Implement validation
  * Finish cycles
  *   Transfer penalties
