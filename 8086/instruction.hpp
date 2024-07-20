@@ -63,7 +63,9 @@ enum instr_flags_t : u32 {
 
     e_iflags_imm_is_rel_disp = 1 << 6,
 
-    e_iflags_far = 1 << 7
+    e_iflags_far = 1 << 7,
+
+    e_iflags_rm_is_always_w = 1 << 8
 };
 
 struct reg_access_t {
@@ -130,4 +132,9 @@ inline reg_access_t get_high_byte_reg_access(reg_t reg)
 {
     assert(reg <= e_reg_d);
     return {reg, 1, 1};
+}
+
+inline bool instr_is_prefix(op_t op)
+{
+    return op == e_op_invalid || op == e_op_lock || op == e_op_rep || op == e_op_segment;
 }

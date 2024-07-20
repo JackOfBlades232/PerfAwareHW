@@ -1,4 +1,5 @@
 #include "print.hpp"
+#include "instruction.hpp"
 #include "util.hpp"
 #include <cassert>
 #include <cstdio>
@@ -91,13 +92,8 @@ static void print_cs_ip(cs_ip_pair_t cs_ip)
     print("%hu:%hu", cs_ip.cs, cs_ip.ip);
 }
 
-void print_operation(op_t op)
-{
-}
-
 void print_instruction(instruction_t instr)
 {
-
     // We print prefix as part of instruction
     if (instr.op == e_op_lock || instr.op == e_op_rep || instr.op == e_op_segment)
         return;
@@ -126,7 +122,6 @@ void print_instruction(instruction_t instr)
         swap(&instr.operands[0], &instr.operands[1]);
     }
 
-    // @TODO: clean up
     if (instr.operand_cnt != 0) {
         print(" ");
 
@@ -164,8 +159,7 @@ void print_instruction(instruction_t instr)
 
 bool instruction_is_printable(instruction_t instr)
 {
-    return instr.op < e_op_max && instr.op != e_op_lock &&
-           instr.op != e_op_rep && instr.op != e_op_segment;
+    return instr.op != e_op_max && instr.op != e_op_invalid && !instr_is_prefix(instr.op);
 }
 
 const char *get_op_mnemonic(op_t op)

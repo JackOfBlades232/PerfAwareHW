@@ -6,6 +6,9 @@
 
 bool validate_instruction(instruction_t instr)
 {
+    if (instr_is_prefix(instr.op))
+        return true; 
+
     VERIFY(instr.op != e_op_invalid);
     VERIFY(instr.op != e_op_max);
 
@@ -24,9 +27,12 @@ bool validate_instruction(instruction_t instr)
     for (int i = instr.operand_cnt; i < 2; ++i)
         VERIFY(instr.operands[i].type == e_operand_none);
 
-    if (instr.flags & e_iflags_seg_override) 
-        VERIFY(instr.segment_override == e_reg_ds || instr.segment_override == e_reg_ss || instr.segment_override == e_reg_es);
-    else
+    if (instr.flags & e_iflags_seg_override) {
+        VERIFY(instr.segment_override == e_reg_ds ||
+               instr.segment_override == e_reg_ss ||
+               instr.segment_override == e_reg_es ||
+               instr.segment_override == e_reg_cs);
+    } else
         VERIFY(instr.segment_override == e_reg_max);
 
     const u32 op_cnt = instr.operand_cnt;
@@ -42,34 +48,35 @@ bool validate_instruction(instruction_t instr)
     const bool lock     = flags & e_iflags_lock;
     const bool rel_disp = flags & e_iflags_imm_is_rel_disp;
     const bool far      = flags & e_iflags_far;
+    const bool rm_is_w  = flags & e_iflags_rm_is_always_w;
 
     switch (instr.op) {
     case e_op_mov:
         VERIFY(op_cnt == 2);
         VERIFY(op0.type == e_operand_mem || op0.type == e_operand_reg);
         VERIFY(op1.type != e_operand_cs_ip);
-        VERIFY(!s && !z && !rep && !rel_disp && !far);
+        VERIFY(!s && !z && !rep && !rel_disp && !far && !rm_is_w);
         break;
 
     case e_op_push:
         VERIFY(op_cnt == 1);
         VERIFY(op0.type != e_operand_cs_ip);
         VERIFY(w);
-        VERIFY(!s && !z && !rep && !rel_disp && !far);
+        VERIFY(!s && !z && !rep && !rel_disp && !far && !rm_is_w);
         break;
 
     case e_op_pop:
         VERIFY(op_cnt == 1);
         VERIFY(op0.type == e_operand_mem || op0.type == e_operand_reg);
         VERIFY(w);
-        VERIFY(!s && !z && !rep && !rel_disp && !far);
+        VERIFY(!s && !z && !rep && !rel_disp && !far && !rm_is_w);
         break;
 
     case e_op_xchg:
         VERIFY(op_cnt == 2);
         VERIFY(op0.type == e_operand_mem || op0.type == e_operand_reg);
         VERIFY(op1.type == e_operand_mem || op1.type == e_operand_reg);
-        VERIFY(!s && !z && !rep && !rel_disp && !far);
+        VERIFY(!s && !z && !rep && !rel_disp && !far && !rm_is_w);
         break;
 
 
@@ -79,7 +86,8 @@ bool validate_instruction(instruction_t instr)
         VERIFY(op_cnt == 2);
         VERIFY(op0.type == e_operand_mem || op0.type == e_operand_reg);
         VERIFY(op1.type == e_operand_mem);
-        VERIFY(flags == 0);
+        VERIFY(w);
+        VERIFY(!s && !z && !rep && !rel_disp && !far && !rm_is_w);
         break;
 
     case e_op_adc:
@@ -94,7 +102,7 @@ bool validate_instruction(instruction_t instr)
         VERIFY(op_cnt == 2);
         VERIFY(op0.type == e_operand_mem || op0.type == e_operand_reg);
         VERIFY(op1.type != e_operand_cs_ip);
-        VERIFY(!z && !rep && !rel_disp && !far);
+        VERIFY(!z && !rep && !rel_disp && !far && !rm_is_w);
         break;
 
     case e_op_mul:
@@ -103,7 +111,7 @@ bool validate_instruction(instruction_t instr)
     case e_op_idiv:
         VERIFY(op_cnt == 1);
         VERIFY(op0.type != e_operand_cs_ip);
-        VERIFY(!s && !z && !rep && !rel_disp && !far);
+        VERIFY(!s && !z && !rep && !rel_disp && !far && !rm_is_w);
         break;
 
     case e_op_inc:
@@ -112,7 +120,7 @@ bool validate_instruction(instruction_t instr)
     case e_op_not:
         VERIFY(op_cnt == 1);
         VERIFY(op0.type == e_operand_mem || op0.type == e_operand_reg);
-        VERIFY(!s && !z && !rep && !rel_disp && !far);
+        VERIFY(!s && !z && !rep && !rel_disp && !far && !rm_is_w);
         break;
 
     case e_op_shl:
@@ -129,7 +137,7 @@ bool validate_instruction(instruction_t instr)
             VERIFY(op1.data.imm == 1);
         else
             VERIFY(op1.data.reg.reg == e_reg_c && op1.data.reg.offset == 0 && op1.data.reg.size == 1);
-        VERIFY(!s && !z && !rep && !rel_disp && !far);
+        VERIFY(!s && !z && !rep && !rel_disp && !far && !rm_is_w);
         break;
 
     case e_op_movs:
@@ -138,17 +146,16 @@ bool validate_instruction(instruction_t instr)
     case e_op_lods:
     case e_op_stos:
         VERIFY(op_cnt == 0);
-        VERIFY(!s && !z && !rel_disp && !far);
+        VERIFY(!s && !rel_disp && !far && !rm_is_w);
         break;
 
     case e_op_call:
     case e_op_jmp:
         VERIFY(op_cnt == 1);
-        VERIFY(w || instr.op == e_op_jmp);
         if (op0.type == e_operand_imm)
             VERIFY(rel_disp);
 
-        VERIFY(!s && !z && !rep);
+        VERIFY(!s && !z && !rep && !rm_is_w);
         break;
 
     case e_op_ret:
@@ -156,6 +163,7 @@ bool validate_instruction(instruction_t instr)
         VERIFY(op_cnt <= 1);
         if (op_cnt)
             VERIFY(op0.type == e_operand_imm);
+        VERIFY(!rm_is_w);
         break;
 
     case e_op_je:
@@ -181,19 +189,23 @@ bool validate_instruction(instruction_t instr)
     case e_op_int:
         VERIFY(op_cnt == 1);
         VERIFY(op0.type == e_operand_imm);
-        VERIFY(flags == 0);
+        VERIFY(!w && !s && !z && !rep && !far && !rm_is_w);
         break;
 
     case e_op_in:
         VERIFY(op_cnt == 2);
         VERIFY(op0.type == e_operand_reg && op0.data.reg.reg == e_reg_a);
-        VERIFY(op1.type == e_operand_imm);
+        VERIFY(op1.type == e_operand_imm ||
+               (op1.type == e_operand_reg && op1.data.reg.reg == e_reg_d &&
+                op1.data.reg.offset == 0));
         VERIFY(!s && !z && !rep && !rel_disp && !far);
         break;
         
     case e_op_out:
         VERIFY(op_cnt == 2);
-        VERIFY(op0.type == e_operand_imm);
+        VERIFY(op0.type == e_operand_imm ||
+               (op0.type == e_operand_reg && op0.data.reg.reg == e_reg_d &&
+                op0.data.reg.offset == 0));
         VERIFY(op1.type == e_operand_reg && op1.data.reg.reg == e_reg_a);
         VERIFY(!s && !z && !rep && !rel_disp && !far);
         break;
@@ -202,7 +214,9 @@ bool validate_instruction(instruction_t instr)
         VERIFY(op_cnt == 2);
         VERIFY(op0.type == e_operand_imm && op0.data.imm < (1 << 6));
         VERIFY(op1.type == e_operand_reg && op1.type == e_operand_mem);
+        VERIFY(flags == 0);
         break;
+
 
     case e_op_xlat:
     case e_op_lahf:
@@ -237,74 +251,6 @@ bool validate_instruction(instruction_t instr)
     default:
         VERIFY(0);
     }
-
-    return true;
-}
-
-bool validate_instruction_metadata(instruction_metadata_t instr_data)
-{
-    assert(validate_instruction(instr_data.instr));
-    const bool w        = instr_data.instr.flags & e_iflags_w;
-    const bool s        = instr_data.instr.flags & e_iflags_s;
-    const bool z        = instr_data.instr.flags & e_iflags_z;
-    const bool rep      = instr_data.instr.flags & e_iflags_rep;
-    const bool lock     = instr_data.instr.flags & e_iflags_lock;
-    const bool rel_disp = instr_data.instr.flags & e_iflags_imm_is_rel_disp;
-    const bool far      = instr_data.instr.flags & e_iflags_far;
-
-    if (instr_data.instr.operands[0].type != e_operand_cs_ip)
-        VERIFY(instr_data.op0_val < (1 << (w ? 16 : 8)));
-    if (instr_data.instr.operands[1].type != e_operand_cs_ip)
-        VERIFY(instr_data.op1_val < (1 << (w ? 16 : 8)));
-
-    switch (instr_data.instr.op) {
-    case e_op_je:
-    case e_op_jl:
-    case e_op_jle:
-    case e_op_jb:
-    case e_op_jbe:
-    case e_op_jp:
-    case e_op_jo:
-    case e_op_js:
-    case e_op_jne:
-    case e_op_jge:
-    case e_op_jg:
-    case e_op_jae:
-    case e_op_ja:
-    case e_op_jnp:
-    case e_op_jno:
-    case e_op_jns:
-    case e_op_loop:
-    case e_op_loopz:
-    case e_op_loopnz:
-    case e_op_jcxz:
-    case e_op_into:
-        VERIFY(instr_data.rep_count == 0);
-        VERIFY(instr_data.wait_n == 0);
-        break;
-
-    case e_op_movs:
-    case e_op_cmps:
-    case e_op_scas:
-    case e_op_lods:
-    case e_op_stos:
-        VERIFY(!instr_data.cond_action_happened);
-        VERIFY(instr_data.rep_count > 0);
-        VERIFY(instr_data.wait_n == 0);
-        break;
-
-    case e_op_wait:
-        VERIFY(!instr_data.cond_action_happened);
-        VERIFY(instr_data.rep_count == 0);
-        break;
-
-    default:
-        VERIFY(!instr_data.cond_action_happened);
-        VERIFY(instr_data.rep_count == 0);
-        VERIFY(instr_data.wait_n == 0);
-    }
-
-    VERIFY(instr_data.wide_odd_transfer_cnt <= instr_data.wide_transfer_cnt);
 
     return true;
 }

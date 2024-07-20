@@ -7,11 +7,12 @@
 #include "clocks.hpp"
 #include "instruction.hpp"
 #include "input.hpp"
-#include "validation.hpp"
 #include <cassert>
 #include <cmath>
 #include <cstdlib>
 #include <thread>
+
+// @SPEED: check if making as much stuff as possible const will speed things up
 
 using namespace std::chrono_literals;
 
@@ -122,7 +123,7 @@ void output_simulation_disclaimer()
     if (g_tracing.flags & e_trace_cycles) {
         output::print(
             "The cycles estimations also follow the manual rather than real benchmarks. Also, for instructions with ranged estimation the high limit is used.\n"
-            "They can only be used for relative comparisons in some cases.\n\n");
+            "And, the manual definitely has typos, thus the estimations can only be used for relative comparisons in some cases.\n\n");
     }
 }
 
@@ -637,10 +638,8 @@ static void uncond_jump(operand_t op, bool is_rel, bool is_far,
     }
 }
 
-// @TODO: consts in other places? This here can enable optimizations, I think.
-//        check disassembly of this func
-static u32 string_instruction(const op_t op, const bool is_wide,
-                              const bool rep, const bool req_zero)
+static u32 string_instruction(op_t op, bool is_wide,
+                              bool rep, bool req_zero)
 {
     const memory_access_t src_base = get_segment_access(e_reg_ds);
     const memory_access_t dst_base = get_segment_access(e_reg_es);
@@ -814,404 +813,401 @@ u32 simulate_instruction_execution(instruction_t instr)
     }
 
     switch (instr.op) {
-        case e_op_mov:
-            write_operand(op0, op1_val, w, seg_override);
-            break;
+    case e_op_mov:
+        write_operand(op0, op1_val, w, seg_override);
+        break;
 
-        case e_op_push:
-            push_to_stack(op0_val, w);
-            break;
+    case e_op_push:
+        push_to_stack(op0_val, w);
+        break;
 
-        case e_op_pop:
-            write_operand(op0, pop_from_stack(w), w);
-            break;
+    case e_op_pop:
+        write_operand(op0, pop_from_stack(w), w);
+        break;
 
-        case e_op_xchg:
-            write_operand(op0, op1_val, w, seg_override);
-            write_operand(op1, op0_val, w, seg_override);
-            break;
+    case e_op_xchg:
+        write_operand(op0, op1_val, w, seg_override);
+        write_operand(op1, op0_val, w, seg_override);
+        break;
 
-        case e_op_xlat: {
-            ea_mem_access_t access = {e_ea_base_bx, AL};
-            AL = read_mem(access, false, e_reg_max);
-        } break;
+    case e_op_xlat: {
+        ea_mem_access_t access = {e_ea_base_bx, AL};
+        AL = read_mem(access, false, e_reg_max);
+    } break;
 
-        case e_op_lea:
-            write_operand(op0, calculate_ea(op1.data.mem), true);
-            break;
+    case e_op_lea:
+        write_operand(op0, calculate_ea(op1.data.mem), true);
+        break;
 
-        case e_op_lds:
-        case e_op_les: {
-            ea_mem_access_t base_mem = op1.data.mem;
-            base_mem.disp += 2; // high 16bits
-            u16 base = read_mem(base_mem, w, seg_override);
-            write_operand(op0, op1_val, w);
-            (instr.op == e_op_lds ? DS : ES) = base;
-        } break;
+    case e_op_lds:
+    case e_op_les: {
+        ea_mem_access_t base_mem = op1.data.mem;
+        base_mem.disp += 2; // high 16bits
+        u16 base = read_mem(base_mem, w, seg_override);
+        write_operand(op0, op1_val, w);
+        (instr.op == e_op_lds ? DS : ES) = base;
+    } break;
 
-        case e_op_lahf:
-            write_reg(get_high_byte_reg_access(e_reg_a),
-                      FLAGS & (e_pflag_s | e_pflag_z | e_pflag_a | e_pflag_p | e_pflag_c));
-            break;
+    case e_op_lahf:
+        write_reg(get_high_byte_reg_access(e_reg_a),
+                  FLAGS & (e_pflag_s | e_pflag_z | e_pflag_a | e_pflag_p | e_pflag_c));
+        break;
 
-        case e_op_sahf: {
-            set_pflag(e_pflag_s, AH & e_pflag_s);
-            set_pflag(e_pflag_z, AH & e_pflag_z);
-            set_pflag(e_pflag_a, AH & e_pflag_a);
-            set_pflag(e_pflag_p, AH & e_pflag_p);
-            set_pflag(e_pflag_c, AH & e_pflag_c);
-        } break;
+    case e_op_sahf: {
+        set_pflag(e_pflag_s, AH & e_pflag_s);
+        set_pflag(e_pflag_z, AH & e_pflag_z);
+        set_pflag(e_pflag_a, AH & e_pflag_a);
+        set_pflag(e_pflag_p, AH & e_pflag_p);
+        set_pflag(e_pflag_c, AH & e_pflag_c);
+    } break;
 
-        case e_op_pushf:
-            push_to_stack(FLAGS, true);
-            break;
+    case e_op_pushf:
+        push_to_stack(FLAGS, true);
+        break;
 
-        case e_op_popf:
-            FLAGS = pop_from_stack(true);
-            break;
+    case e_op_popf:
+        FLAGS = pop_from_stack(true);
+        break;
 
-        case e_op_adc:
-            if (get_pflag(e_pflag_c))
-                ++op1_val;
-        case e_op_add:
-            update_arifm_flags(op0_val, op1_val, w);
-            write_operand(op0, op0_val + op1_val, w, seg_override);
-            break;
+    case e_op_adc:
+        if (get_pflag(e_pflag_c))
+            ++op1_val;
+    case e_op_add:
+        update_arifm_flags(op0_val, op1_val, w);
+        write_operand(op0, op0_val + op1_val, w, seg_override);
+        break;
 
-        case e_op_aaa:
-            ascii_adjust_addsub(6, 1);
-            break;
-        case e_op_aas:
-            ascii_adjust_addsub(-6, -1);
-            break;
+    case e_op_aaa:
+        ascii_adjust_addsub(6, 1);
+        break;
+    case e_op_aas:
+        ascii_adjust_addsub(-6, -1);
+        break;
 
-        case e_op_daa:
-            decimal_adjust_addsub(6, 0x60);
-            break;
-        case e_op_das:
-            decimal_adjust_addsub(-6, -0x60);
-            break;
+    case e_op_daa:
+        decimal_adjust_addsub(6, 0x60);
+        break;
+    case e_op_das:
+        decimal_adjust_addsub(-6, -0x60);
+        break;
 
-        case e_op_sbb:
-            if (get_pflag(e_pflag_c))
-                --op1_val;
-        case e_op_sub:
-            update_arifm_flags(op0_val, -op1_val, w);
-            write_operand(op0, op0_val - op1_val, w, seg_override);
-            break;
+    case e_op_sbb:
+        if (get_pflag(e_pflag_c))
+            --op1_val;
+    case e_op_sub:
+        update_arifm_flags(op0_val, -op1_val, w);
+        write_operand(op0, op0_val - op1_val, w, seg_override);
+        break;
 
-        case e_op_cmp:
-            update_arifm_flags(op0_val, -op1_val, w);
-            break;
+    case e_op_cmp:
+        update_arifm_flags(op0_val, -op1_val, w);
+        break;
 
-        case e_op_mul:
-            do_multiplication<u32, u16, u8>(op0_val, w);
-            break;
-        case e_op_imul:
-            do_multiplication<i32, i16, i8>(op0_val, w);
-            break;
+    case e_op_mul:
+        do_multiplication<u32, u16, u8>(op0_val, w);
+        break;
+    case e_op_imul:
+        do_multiplication<i32, i16, i8>(op0_val, w);
+        break;
 
-        case e_op_div:
-            do_division<u32, u16, u8>(
-                op0_val, w, [w](u32 quot) { return quot <= max_val(w); });
-            break;
-        case e_op_idiv:
-            do_division<i32, i16, i8>(
-                op0_val, w, [w](u32 quot) { return (i32)quot <= max_ival(w) && (i32)quot >= -max_ival(w); });
-            break;
+    case e_op_div:
+        do_division<u32, u16, u8>(
+            op0_val, w, [w](u32 quot) { return quot <= max_val(w); });
+        break;
+    case e_op_idiv:
+        do_division<i32, i16, i8>(
+            op0_val, w, [w](u32 quot) { return (i32)quot <= max_ival(w) && (i32)quot >= -max_ival(w); });
+        break;
 
-        case e_op_aam:
-            AH = AL / 10;
-            AL -= AH * 10;
-            update_common_flags(AL, false);
-            clear_undefined_flags(e_pflag_o | e_pflag_a | e_pflag_c);
-            break;
+    case e_op_aam:
+        AH = AL / 10;
+        AL -= AH * 10;
+        update_common_flags(AL, false);
+        clear_undefined_flags(e_pflag_o | e_pflag_a | e_pflag_c);
+        break;
 
-        case e_op_aad:
-            AX = (AH*10 + AL) & 0xFF;
-            update_common_flags(AL, false);
-            clear_undefined_flags(e_pflag_o | e_pflag_a | e_pflag_c);
-            break;
+    case e_op_aad:
+        AX = (AH*10 + AL) & 0xFF;
+        update_common_flags(AL, false);
+        clear_undefined_flags(e_pflag_o | e_pflag_a | e_pflag_c);
+        break;
 
-        case e_op_cbw:
-            AX = (i8)AL;
-            break;
+    case e_op_cbw:
+        AX = (i8)AL;
+        break;
 
-        case e_op_cwd:
-            DX = sgn<i16>(AX);
-            break;
+    case e_op_cwd:
+        DX = sgn<i16>(AX);
+        break;
 
-        case e_op_and: {
-            u32 res = op0_val & op1_val;
-            write_operand(op0, res, w, seg_override);
-            update_logic_flags(res, w);
-        } break;
+    case e_op_and: {
+        u32 res = op0_val & op1_val;
+        write_operand(op0, res, w, seg_override);
+        update_logic_flags(res, w);
+    } break;
 
-        case e_op_test: {
-            u32 res = op0_val & op1_val;
-            update_logic_flags(res, w);
-        } break;
+    case e_op_test: {
+        u32 res = op0_val & op1_val;
+        update_logic_flags(res, w);
+    } break;
 
-        case e_op_or: {
-            u32 res = op0_val | op1_val;
-            write_operand(op0, res, w, seg_override);
-            update_logic_flags(res, w);
-        } break;
+    case e_op_or: {
+        u32 res = op0_val | op1_val;
+        write_operand(op0, res, w, seg_override);
+        update_logic_flags(res, w);
+    } break;
 
-        case e_op_xor: {
-            u32 res = op0_val ^ op1_val;
-            update_logic_flags(res, w);
-            write_operand(op0, res, w, seg_override);
-        } break;
+    case e_op_xor: {
+        u32 res = op0_val ^ op1_val;
+        update_logic_flags(res, w);
+        write_operand(op0, res, w, seg_override);
+    } break;
 
-        case e_op_inc: {
-            u32 res = op0_val + 1;
-            update_arifm_flags(op0_val, 1, w);
-            write_operand(op0, res, w, seg_override);
-        } break;
+    case e_op_inc: {
+        u32 res = op0_val + 1;
+        update_arifm_flags(op0_val, 1, w);
+        write_operand(op0, res, w, seg_override);
+    } break;
 
-        case e_op_dec: {
-            u32 res = op0_val - 1;
-            update_arifm_flags(op0_val, -1, w);
-            write_operand(op0, res, w, seg_override);
-        } break;
+    case e_op_dec: {
+        u32 res = op0_val - 1;
+        update_arifm_flags(op0_val, -1, w);
+        write_operand(op0, res, w, seg_override);
+    } break;
 
-        case e_op_neg:
-            write_operand(op0, -op0_val, w, seg_override);
-            break;
+    case e_op_neg:
+        write_operand(op0, -op0_val, w, seg_override);
+        break;
 
-        case e_op_not:
-            write_operand(op0, ~op0_val, w, seg_override);
-            break;
+    case e_op_not:
+        write_operand(op0, ~op0_val, w, seg_override);
+        break;
 
-        case e_op_shl: {
-            u32 pre_res = op0_val << (op1_val-1);
-            u32 res = pre_res << 1;
-            write_operand(op0, res, w, seg_override);
-            update_shift_flags(pre_res & hmask(w), res, op0_val, w);
-            update_common_flags(res, w);
-        } break;
+    case e_op_shl: {
+        u32 pre_res = op0_val << (op1_val-1);
+        u32 res = pre_res << 1;
+        write_operand(op0, res, w, seg_override);
+        update_shift_flags(pre_res & hmask(w), res, op0_val, w);
+        update_common_flags(res, w);
+    } break;
 
-        case e_op_shr: {
-            u32 pre_res = op0_val >> (op1_val-1);
-            u32 res = pre_res >> 1;
-            write_operand(op0, res, w, seg_override);
-            update_shift_flags(pre_res & 0x1, res, op0_val, w);
-            update_common_flags(res, w);
-        } break;
+    case e_op_shr: {
+        u32 pre_res = op0_val >> (op1_val-1);
+        u32 res = pre_res >> 1;
+        write_operand(op0, res, w, seg_override);
+        update_shift_flags(pre_res & 0x1, res, op0_val, w);
+        update_common_flags(res, w);
+    } break;
 
-        case e_op_sar: {
-            u32 dec_shift = op1_val-1;
-            i32 pre_res =
-                w ? ((i16)op0_val >> dec_shift) : ((i8)op0_val >> dec_shift);
-            i32 res = (w ? (i16)pre_res : (i8)pre_res) >> 1;
-            write_operand(op0, res, w, seg_override);
-            update_shift_flags(pre_res & 0x1, res, op0_val, w);
-            update_common_flags(res, w);
-        } break;
+    case e_op_sar: {
+        u32 dec_shift = op1_val-1;
+        i32 pre_res =
+            w ? ((i16)op0_val >> dec_shift) : ((i8)op0_val >> dec_shift);
+        i32 res = (w ? (i16)pre_res : (i8)pre_res) >> 1;
+        write_operand(op0, res, w, seg_override);
+        update_shift_flags(pre_res & 0x1, res, op0_val, w);
+        update_common_flags(res, w);
+    } break;
 
-        case e_op_rcl:
-            op0_val |= get_pflag(e_pflag_c) << op_bits;
-            ++op_bits;
-        case e_op_rol: {
-            int rot_bits = op1_val % op_bits; // Not mask cause can be 9/17
-            int left_bits = op_bits - rot_bits;
-            u32 res = (op0_val << rot_bits) | (op0_val >> left_bits);
-            write_operand(op0, res & op_mask, w, seg_override);
-            update_shift_flags(res & 1, res & op_mask, op0_val & op_mask, w);
-        } break;
+    case e_op_rcl:
+        op0_val |= get_pflag(e_pflag_c) << op_bits;
+        ++op_bits;
+    case e_op_rol: {
+        int rot_bits = op1_val % op_bits; // Not mask cause can be 9/17
+        int left_bits = op_bits - rot_bits;
+        u32 res = (op0_val << rot_bits) | (op0_val >> left_bits);
+        write_operand(op0, res & op_mask, w, seg_override);
+        update_shift_flags(res & 1, res & op_mask, op0_val & op_mask, w);
+    } break;
 
-        case e_op_rcr:
-            op0_val |= get_pflag(e_pflag_c) << op_bits;
-            ++op_bits;
-        case e_op_ror: {
-            int rot_bits = op1_val % op_bits; // Not mask cause can be 9/17
-            int left_bits = op_bits - rot_bits;
-            u16 res = (op0_val >> rot_bits) | (op0_val << left_bits);
-            write_operand(op0, res & op_mask, w, seg_override);
-            update_shift_flags(res & hmask(w), res & op_mask, op0_val & op_mask, w);
-        } break;
+    case e_op_rcr:
+        op0_val |= get_pflag(e_pflag_c) << op_bits;
+        ++op_bits;
+    case e_op_ror: {
+        int rot_bits = op1_val % op_bits; // Not mask cause can be 9/17
+        int left_bits = op_bits - rot_bits;
+        u16 res = (op0_val >> rot_bits) | (op0_val << left_bits);
+        write_operand(op0, res & op_mask, w, seg_override);
+        update_shift_flags(res & hmask(w), res & op_mask, op0_val & op_mask, w);
+    } break;
 
-        case e_op_movs:
-        case e_op_cmps:
-        case e_op_scas:
-        case e_op_lods:
-        case e_op_stos:
-            metadata.rep_count = string_instruction(instr.op, w, rep, z);
-            break;
+    case e_op_movs:
+    case e_op_cmps:
+    case e_op_scas:
+    case e_op_lods:
+    case e_op_stos:
+        metadata.rep_count = string_instruction(instr.op, w, rep, z);
+        break;
 
-        case e_op_call:
-            uncond_jump(op0, rel_disp, far, true);
-            break;
-        case e_op_jmp:
-            uncond_jump(op0, rel_disp, far, false);
-            break;
+    case e_op_call:
+        uncond_jump(op0, rel_disp, far, true);
+        break;
+    case e_op_jmp:
+        uncond_jump(op0, rel_disp, far, false);
+        break;
 
-        case e_op_retf:
-            IP = pop_from_stack(true);
-            CS = pop_from_stack(true);
-            if (op_cnt) IP += op0_val;
-            break;
+    case e_op_retf:
+        IP = pop_from_stack(true);
+        CS = pop_from_stack(true);
+        if (op_cnt) IP += op0_val;
+        break;
 
-        case e_op_ret:
-            IP = pop_from_stack(true);
-            if (op_cnt) IP += op0_val;
-            break;
+    case e_op_ret:
+        IP = pop_from_stack(true);
+        if (op_cnt) IP += op0_val;
+        break;
 
-        
-        case e_op_int3:
-        case e_op_into:
-        case e_op_int: {
-            if (instr.op == e_op_int3)
-                op0_val = 3;
-            else if (instr.op == e_op_into) {
-                if (get_pflag(e_pflag_o))
-                    metadata.cond_action_happened = true;
-                else
-                    break;
-            }
-
-            push_to_stack(FLAGS, true);
-            uncond_jump(get_mem_operand(e_ea_base_direct, op0_val << 2),
-                        false, true, true, e_reg_cs);
-        } break;
-
-        case e_op_iret:
-            IP    = pop_from_stack(true);
-            CS    = pop_from_stack(true);
-            FLAGS = pop_from_stack(true);
-            break;
-
-        case e_op_je:
-            metadata.cond_action_happened = cond_jump(op0_val, zf);
-            break;
-        case e_op_jl:
-            metadata.cond_action_happened = cond_jump(op0_val, sf && !zf);
-            break;
-        case e_op_jle:
-            metadata.cond_action_happened = cond_jump(op0_val, sf || zf);
-            break;
-        case e_op_jb:
-            metadata.cond_action_happened = cond_jump(op0_val, cf && !zf);
-            break;
-        case e_op_jbe:
-            metadata.cond_action_happened = cond_jump(op0_val, cf || zf);
-            break;
-        case e_op_jp:
-            metadata.cond_action_happened = cond_jump(op0_val, pf);
-            break;
-        case e_op_jo:
-            metadata.cond_action_happened = cond_jump(op0_val, of);
-            break;
-        case e_op_js:
-            metadata.cond_action_happened = cond_jump(op0_val, sf);
-            break;
-        case e_op_jne:
-            metadata.cond_action_happened = cond_jump(op0_val, !zf);
-            break;
-        case e_op_jge:
-            metadata.cond_action_happened = cond_jump(op0_val, !sf || zf);
-            break;
-        case e_op_jg:
-            metadata.cond_action_happened = cond_jump(op0_val, !sf && !zf);
-            break;
-        case e_op_jae:
-            metadata.cond_action_happened = cond_jump(op0_val, !cf || zf);
-            break;
-        case e_op_ja:
-            metadata.cond_action_happened = cond_jump(op0_val, !cf && !zf);
-            break;
-        case e_op_jnp:
-            metadata.cond_action_happened = cond_jump(op0_val, !pf);
-            break;
-        case e_op_jno:
-            metadata.cond_action_happened = cond_jump(op0_val, !of);
-            break;
-        case e_op_jns:
-            metadata.cond_action_happened = cond_jump(op0_val, !sf);
-            break;
-
-        case e_op_loop:
-            metadata.cond_action_happened = cx_loop_jump(op0_val, -1);
-            break;
-        case e_op_loopz:
-            metadata.cond_action_happened = cx_loop_jump(op0_val, -1, zf);
-            break;
-        case e_op_loopnz:
-            metadata.cond_action_happened = cx_loop_jump(op0_val, -1, !zf);
-            break;
-        case e_op_jcxz:
-            metadata.cond_action_happened = cx_loop_jump(op0_val, 0);
-            break;
-
-        case e_op_clc:
-            set_pflag(e_pflag_c, false);
-            break;
-        case e_op_stc:
-            set_pflag(e_pflag_c, true);
-            break;
-        case e_op_cmc:
-            set_pflag(e_pflag_c, !get_pflag(e_pflag_c));
-            break;
-        case e_op_cld:
-            set_pflag(e_pflag_d, false);
-            break;
-        case e_op_std:
-            set_pflag(e_pflag_d, true);
-            break;
-        case e_op_cli:
-            set_pflag(e_pflag_i, false);
-            break;
-        case e_op_sti:
-            set_pflag(e_pflag_i, true);
-            break;
-
-        case e_op_in:
-            // @FEAT: could be done from keyboard in interactive mode
-            if (g_tracing.flags & e_trace_data_mutation)
-                output::print(" <read %s from port %u>", w ? "word" : "byte", op1_val);
-            write_operand(op0, 0, w); // @TEMP
-            break;
-            
-        case e_op_out:
-            if (g_tracing.flags & e_trace_data_mutation)
-                output::print(" <write %s 0x%hx to port %hu>", w ? "word" : "byte", op1_val, op0_val);
-            break;
-
-        // @NOTE: this is not really accurate, but suffices for our simulation
-        case e_op_hlt:
-            output::print("\n");
-            return c_ip_terminate;
-
-        case e_op_wait: // This is also for shits and giggles
-            if (input::interactivity_enabled()) {
-                for (int i = 0; i < 6; ++i) {
-                    for (int j = 0; j < 10; ++j)
-                        std::this_thread::sleep_for(0.025s);
-
-                    metadata.wait_n += 250000;
-                    output::print("\n...");
-                }
-                input::wait_for_lf();
-                output::print("\n");
-            }
-            break;
-
-        case e_op_esc:
-            if (g_tracing.flags & e_trace_data_mutation)
-                output::print(" <escape to ext processor w/ opcode 0x%hx and operand 0x%hx>", op0_val, op1_val);
-            break;
-
-        case e_op_nop:
-            break;
-
-        default:
-            ASSERTF(0, "Instruction %s execution not implemented",
-                    output::get_op_mnemonic(instr.op));
+    
+    case e_op_int3:
+    case e_op_into:
+    case e_op_int: {
+        if (instr.op == e_op_int3)
+            op0_val = 3;
+        else if (instr.op == e_op_into) {
+            if (get_pflag(e_pflag_o))
+                metadata.cond_action_happened = true;
+            else
+                break;
         }
 
-    // @NOTE: this, unlike the one in main, this is only for development
-    assert(validate_instruction_metadata(metadata));
+        push_to_stack(FLAGS, true);
+        uncond_jump(get_mem_operand(e_ea_base_direct, op0_val << 2),
+                    false, true, true, e_reg_cs);
+    } break;
+
+    case e_op_iret:
+        IP    = pop_from_stack(true);
+        CS    = pop_from_stack(true);
+        FLAGS = pop_from_stack(true);
+        break;
+
+    case e_op_je:
+        metadata.cond_action_happened = cond_jump(op0_val, zf);
+        break;
+    case e_op_jl:
+        metadata.cond_action_happened = cond_jump(op0_val, sf && !zf);
+        break;
+    case e_op_jle:
+        metadata.cond_action_happened = cond_jump(op0_val, sf || zf);
+        break;
+    case e_op_jb:
+        metadata.cond_action_happened = cond_jump(op0_val, cf && !zf);
+        break;
+    case e_op_jbe:
+        metadata.cond_action_happened = cond_jump(op0_val, cf || zf);
+        break;
+    case e_op_jp:
+        metadata.cond_action_happened = cond_jump(op0_val, pf);
+        break;
+    case e_op_jo:
+        metadata.cond_action_happened = cond_jump(op0_val, of);
+        break;
+    case e_op_js:
+        metadata.cond_action_happened = cond_jump(op0_val, sf);
+        break;
+    case e_op_jne:
+        metadata.cond_action_happened = cond_jump(op0_val, !zf);
+        break;
+    case e_op_jge:
+        metadata.cond_action_happened = cond_jump(op0_val, !sf || zf);
+        break;
+    case e_op_jg:
+        metadata.cond_action_happened = cond_jump(op0_val, !sf && !zf);
+        break;
+    case e_op_jae:
+        metadata.cond_action_happened = cond_jump(op0_val, !cf || zf);
+        break;
+    case e_op_ja:
+        metadata.cond_action_happened = cond_jump(op0_val, !cf && !zf);
+        break;
+    case e_op_jnp:
+        metadata.cond_action_happened = cond_jump(op0_val, !pf);
+        break;
+    case e_op_jno:
+        metadata.cond_action_happened = cond_jump(op0_val, !of);
+        break;
+    case e_op_jns:
+        metadata.cond_action_happened = cond_jump(op0_val, !sf);
+        break;
+
+    case e_op_loop:
+        metadata.cond_action_happened = cx_loop_jump(op0_val, -1);
+        break;
+    case e_op_loopz:
+        metadata.cond_action_happened = cx_loop_jump(op0_val, -1, zf);
+        break;
+    case e_op_loopnz:
+        metadata.cond_action_happened = cx_loop_jump(op0_val, -1, !zf);
+        break;
+    case e_op_jcxz:
+        metadata.cond_action_happened = cx_loop_jump(op0_val, 0);
+        break;
+
+    case e_op_clc:
+        set_pflag(e_pflag_c, false);
+        break;
+    case e_op_stc:
+        set_pflag(e_pflag_c, true);
+        break;
+    case e_op_cmc:
+        set_pflag(e_pflag_c, !get_pflag(e_pflag_c));
+        break;
+    case e_op_cld:
+        set_pflag(e_pflag_d, false);
+        break;
+    case e_op_std:
+        set_pflag(e_pflag_d, true);
+        break;
+    case e_op_cli:
+        set_pflag(e_pflag_i, false);
+        break;
+    case e_op_sti:
+        set_pflag(e_pflag_i, true);
+        break;
+
+    case e_op_in:
+        // @FEAT: could be done from keyboard in interactive mode
+        if (g_tracing.flags & e_trace_data_mutation)
+            output::print(" <read %s from port %u>", w ? "word" : "byte", op1_val);
+        write_operand(op0, 0, w);
+        break;
+        
+    case e_op_out:
+        if (g_tracing.flags & e_trace_data_mutation)
+            output::print(" <write %s 0x%hx to port %hu>", w ? "word" : "byte", op1_val, op0_val);
+        break;
+
+    // @NOTE: this is not really accurate, but suffices for our simulation
+    case e_op_hlt:
+        output::print("\n");
+        return c_ip_terminate;
+
+    case e_op_wait: // This is also for shits and giggles
+        if (input::interactivity_enabled()) {
+            for (int i = 0; i < 6; ++i) {
+                for (int j = 0; j < 10; ++j)
+                    std::this_thread::sleep_for(0.025s);
+
+                metadata.wait_n += 250000;
+                output::print("\n...");
+            }
+            input::wait_for_lf();
+            output::print("\n");
+        }
+        break;
+
+    case e_op_esc:
+        if (g_tracing.flags & e_trace_data_mutation)
+            output::print(" <escape to ext processor w/ opcode 0x%hx and operand 0x%hx>", op0_val, op1_val);
+        break;
+
+    case e_op_nop:
+        break;
+
+    default:
+        ASSERTF(0, "Instruction %s execution not implemented",
+                output::get_op_mnemonic(instr.op));
+    }
 
     if (g_tracing.flags & e_trace_data_mutation) {
         for (int reg = 0; reg < e_reg_flags; ++reg)

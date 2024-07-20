@@ -103,7 +103,6 @@ instruction_t decode_next_instruction(memory_access_t at, u32 offset,
     if (has[e_bits_rm])
         *rm_op = get_rm_operand(mod, rm, w || fields[e_bits_rm_always_w], disp);
 
-    // @TODO: refactor this
     operand_t *last_op = &instr.operands[instr.operands[1].type ? 2 : (instr.operands[0].type ? 1 : 0)];
     operand_t *free_op = !instr.operands[0].type ? &instr.operands[0] :
                          !instr.operands[1].type ? &instr.operands[1] :
@@ -137,6 +136,7 @@ instruction_t decode_next_instruction(memory_access_t at, u32 offset,
         instr.flags |= e_iflags_z;
     instr.flags |= fields[e_bits_jmp_rel_disp] ? e_iflags_imm_is_rel_disp : 0;
     instr.flags |= fields[e_bits_far] ? e_iflags_far : 0;
+    instr.flags |= fields[e_bits_rm_always_w] ? e_iflags_rm_is_always_w : 0;
 
     instr.flags |= ctx->last_pref;
     instr.segment_override = ctx->segment_override;
@@ -159,6 +159,8 @@ void update_decoder_ctx(instruction_t instr, decoder_context_t *ctx)
     else if (instr.op == e_op_segment) {
         ctx->last_pref |= e_iflags_seg_override;
         ctx->segment_override = instr.operands[0].data.reg.reg;
-    } else
+    } else {
       ctx->last_pref = 0;
+      ctx->segment_override = e_reg_max;
+    }
 }

@@ -14,13 +14,6 @@
 #include <cassert>
 #include <cstdio>
 
-/* @TODO:
- * Implement validation
- * Resolve TODOs and refac as if for ship
- *
- * Test all once again
- */
-
 enum prog_action_t {
     e_act_simulate,
     e_act_disassemble,

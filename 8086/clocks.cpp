@@ -86,7 +86,6 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data, proc_type_t p
             CASE_ADD_CLOCKS(2)
         else if (op0.type == e_operand_reg && op1.type == e_operand_imm)
             CASE_ADD_CLOCKS(4)
-        // @TODO: check this, seems very sus
         else if (operands_are_acc_and_type(op0, op1, e_operand_mem))
             CASE_ADD_CLOCKS(10)
         else if (op0.type == e_operand_reg && op1.type == e_operand_mem)
@@ -239,7 +238,6 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data, proc_type_t p
     case e_op_test:
         if (op0.type == e_operand_reg && op1.type == e_operand_reg)
             CASE_ADD_CLOCKS(3)
-        // @TODO: check this, seems sus
         else if (operands_are_acc_and_type(op0, op1, e_operand_imm))
             CASE_ADD_CLOCKS(4)
         else if (op0.type == e_operand_reg && op1.type == e_operand_imm)
@@ -321,14 +319,14 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data, proc_type_t p
         if (op0.type == e_operand_reg)
             CASE_ADD_CLOCKS(11)
         else if (op0.type == e_operand_imm || op0.type == e_operand_cs_ip)
-            CASE_ADD_CLOCKS(15) // @TODO: this is sus
+            CASE_ADD_CLOCKS(15)
         else if (op0.type == e_operand_mem)
             CASE_ADD_CLOCKS(far ? 24 : 18 + estimate_ea_clocks(op0.data.mem))
 
     case e_op_ret:
         CASE_ADD_CLOCKS(op_cnt ? 12 : 8)
     case e_op_retf:
-        CASE_ADD_CLOCKS(op_cnt ? 17 : 18) // @TODO: seems like a typo
+        CASE_ADD_CLOCKS(op_cnt ? 17 : 18)
 
     case e_op_int:
         CASE_ADD_CLOCKS(51)

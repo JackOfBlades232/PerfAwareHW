@@ -10,6 +10,26 @@ static const instruction_encoding_t instruction_encoding_list[] =
 
 instruction_table_t build_instruction_table()
 {
+    /* The idea of the algorithm is as follows:
+       1) I collect all literal bit fields, and make a mask for the union of
+          all bits that are in at least one literal. Let n be the 1-s cnt in the mask.
+       2) I create a table of size 2^(n+1), so that all literal bits of an instruction
+          pressed together can be used as a index into this table.
+       3) For each instruction i take it's literal bits. The instruction may have less
+          bits than the union, and other bits may be parameters, so I fill all the slots
+          that satisfy the mask of the literal bits of this instruction with it's addres.
+
+       The output is a mask and a jump table. First, I take 2 bytes from the input stream
+       (2 is hardcoded). I mask out the bits using the collected literal bits' mask.
+       I press down the masked-out bits to obtain an index into the jump table. I take
+       the pointer at this index from the table, which points to the full entry in the
+       initial verbose table.
+
+       The max size of the table is 65536*8bytes = 512kb. However, there are less
+       instructions, so it would be wise to minimize the intersection of literal bit
+       fields. In practice, the best we can get is 12kb (all bits of byte 1, bits 2-4 of byte 2). */
+
+    // @TODO: measure, optimize and clean up
     instruction_table_t table = {};
     for (const instruction_encoding_t *encp = instruction_encoding_list;
          encp != instruction_encoding_list + ARR_CNT(instruction_encoding_list);
@@ -26,8 +46,6 @@ instruction_table_t build_instruction_table()
         }
     }
 
-    // @TODO: clean up the bit chaos here
-
     // Now bits are read as if they are lo -> hi, but in reality they are hi -> lo. So, reverse.
     // @SPEED: this is straightforwardly dumb.
     table.mask = reverse_bits_in_bytes(table.mask, 2);
@@ -38,7 +56,6 @@ instruction_table_t build_instruction_table()
         (const instruction_encoding_t **)malloc(table.size * sizeof(instruction_encoding_t *));
     memset(table.table, 0, table.size * sizeof(instruction_encoding_t *));
 
-    // @TODO: maybe I can merge the two loops?
     for (const instruction_encoding_t *encp = instruction_encoding_list;
          encp != instruction_encoding_list + ARR_CNT(instruction_encoding_list);
          ++encp)
@@ -49,7 +66,7 @@ instruction_table_t build_instruction_table()
              f != encp->fields + ARR_CNT(encp->fields) && f->type != e_bits_end;
              ++f)
         {
-            if (f->type == e_bits_literal) { // @TODO: check, this does promote to u32, doesnt it?
+            if (f->type == e_bits_literal) {
                 lit_mask |= n_bit_mask(f->bit_count) << shift;
                 lit_vals |= (reverse_bits_in_bytes(f->val, 2) >> (8 - f->bit_count)) << shift;
             }
@@ -77,7 +94,7 @@ instruction_table_t build_instruction_table()
             }
         }
 
-        // @TODO @SPEED: this is really lazy and suboptimal. Should be refactored for all purposes.
+        // @SPEED: this is really lazy and suboptimal. Should be refactored for all purposes.
         for (u16 offset = 0; offset < 1 << free_bit_cnt; ++offset) {
             u16 bits = offset;
             u16 id = id_val;
