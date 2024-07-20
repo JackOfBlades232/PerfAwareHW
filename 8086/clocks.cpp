@@ -4,11 +4,6 @@
 #include "util.hpp"
 #include <cassert>
 
-// @TODO: add unaligned access penalty for 8086 (4 cycles per unaligned access)
-//        and the same penalty for all on 8088
-
-// @TODO: better digest for logs? More hidden patterns to decompose cycles?
-
 static u32 estimate_ea_clocks(ea_mem_access_t ea)
 {
     assert(ea.base < e_ea_base_max);
@@ -51,10 +46,8 @@ static bool operands_are_acc_and_type(operand_t op0, operand_t op1, operand_type
            op1.type == op1_req_type;
 }
 
-u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
+u32 estimate_instruction_clocks(instruction_metadata_t instr_data, proc_type_t proc_type)
 {
-    // @TODO: additional cycles for prefixes
-
     instruction_t instr = instr_data.instr;
 
     const bool w   = instr.flags & e_iflags_w;
@@ -72,6 +65,15 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
         clocks += 2;
     if (seg_override)
         clocks += 2;
+    
+    switch (proc_type) {
+    case e_proc8086:
+        clocks += 4 * instr_data.wide_odd_transfer_cnt;
+        break;
+    case e_proc8088:
+        clocks += 4 * instr_data.wide_transfer_cnt;
+        break;
+    }
 
     int op_cnt    = instr.operand_cnt;
     operand_t op0 = instr.operands[0];
@@ -197,7 +199,7 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     case e_op_aam:
         CASE_ADD_CLOCKS(83)
 
-    // @TODO: these are ranged, depict somehow? Now, I am using high estimate
+    // @NOTE: these are ranged, I am using the high estimate.
     case e_op_div:
         if (op0.type == e_operand_reg && !w)
             CASE_ADD_CLOCKS(90)
@@ -375,7 +377,7 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data)
     case e_op_rep:
     case e_op_segment:
         LOGERR("Don't query cycle counts on raw prefixes");
-        // Fallthrough to assert(0)
+        // Fallthrough to ASSERTF(0)
 
     default: ASSERTF(0, "Cycle count not implemented");
 

@@ -1,9 +1,7 @@
 bits 16
 
-; @TODO: Verify clocks
-
-; @NOTE: these are tests for stuff not
-; covered by listings from computer_enhance
+; @NOTE: these are tests for stuff not covered by listings from computer_enhance,
+;        and these don't check clocks.
 
 ; Prep segments
 ; cs is 0 already
@@ -98,8 +96,6 @@ iret
 ;      ds: 0x2000 (8192)
 ;      ip: 0x00f3 (243)
 ;   flags: AS
-; 
-; Total clocks: 1301
 test_funcs:
 
 xor bx, bx
@@ -164,8 +160,6 @@ retf
 ;      ds: 0x2000 (8192)
 ;      ip: 0x0070 (112)
 ;   flags: CS
-;
-; Total clocks: 204
 test_arithm:
 
 xor ax, ax
@@ -228,8 +222,6 @@ jmp done
 ;      ds: 0x2000 (8192)
 ;      ip: 0x009f (159)
 ;   flags: CO
-; 
-; Total clocks: 931
 test_muldiv:
 
 mov ax, 123
@@ -286,8 +278,6 @@ jmp done
 ;      ds: 0x2000 (8192)
 ;      ip: 0x0155 (341)
 ;   flags:
-; 
-; Total clocks: 561
 test_string:
 
 xor ax, ax
@@ -382,8 +372,6 @@ jmp done
 ;      ds: 0x2000 (8192)
 ;      ip: 0x027d (637)
 ;   flags: CPSO
-; 
-; Total clocks: 464
 test_logic:
 
 xor ax, ax
@@ -446,8 +434,6 @@ jmp done
 ;      ds: 0x2000 (8192)
 ;      ip: 0x000f (15)
 ;   flags: ASO
-; 
-; Total clocks: 564
 test_interrupts:
 
 int 1
@@ -498,8 +484,6 @@ jmp done
 ;      ds: 0x04c5 (1221)
 ;      ip: 0x024b (587)
 ;   flags: PZ
-; 
-; Total clocks: 495
 test_misc:
 
 mov ax, 3
@@ -552,8 +536,6 @@ jmp done
 ;      ds: 0x2000 (8192)
 ;      ip: 0x0268 (616)
 ;   flags: CPAS
-; 
-; Total clocks: 379
 test_jumps:
 
 mov dx, 2

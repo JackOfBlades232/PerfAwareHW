@@ -15,9 +15,6 @@
 
 /* @TODO:
  * Implement validation
- * Finish cycles
- *   Transfer penalties
- *   8088 cycles
  * Add missing instructions (esc) *
  * Resolve TODOs and refac as if for ship
  */
@@ -142,6 +139,21 @@ int main(int argc, char **argv)
             }
 
             set_simulation_trace_option(e_trace_stop_on_ret, true);
+        } else if (strncmp(argv[i], "-arch=", 6) == 0) {
+            if (action != e_act_simulate) {
+                LOGERR("Architecture choice [-arch=...] only valid for simulation");
+                return 1;
+            }
+
+            const char *p = argv[i] + 6; // skip -arch=
+            if (streq(p, "8086"))
+                ; // default
+            else if (streq(p, "8088"))
+                set_simulation_trace_option(e_trace_8088cycles, true);
+            else {
+                LOGERR("Architectures: [-arch=(8086|8088)]");
+                return 1;
+            }
         } else if (streq(argv[i], "-dump")) {
             ++i;
             if (i >= argc) {
@@ -172,6 +184,7 @@ int main(int argc, char **argv)
             main_memory, code_bytes, interactive);
     } else {
         output::print("--- %s execution ---\n", fn);
+        output_simulation_disclaimer();
         res = decode_and_process_instructions<simulate_instruction_execution, get_simulation_ip>(
             main_memory, code_bytes, interactive);
         output_simulation_results();

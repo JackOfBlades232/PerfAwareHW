@@ -116,3 +116,14 @@ inline bool streq(const char *s1, const char *s2)
 {
     return strcmp(s1, s2) == 0;
 }
+
+template <class TFAction>
+class DeferredAction__ {
+    TFAction m_action;
+
+public:
+    DeferredAction__(TFAction &&action) : m_action(action) {}
+    ~DeferredAction__() { m_action(); }
+};
+
+#define DEFER(action_) DeferredAction__ deferred_##__LINE__(std::move(action_));

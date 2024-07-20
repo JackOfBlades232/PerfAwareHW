@@ -21,8 +21,6 @@ extern void wait_for_input_line();
 
 // @TODO: in-out ports side effect tracing?
 
-// @TODO: get rid of convoluted access calls, further
-
 // @TODO: clear flags that are undefined instead of ignoring them?
 
 static constexpr u32 c_seg_size = POT(16);
@@ -67,16 +65,20 @@ struct machine_t {
     };
 };
 
+struct simulation_context_t {
+    instruction_metadata_t *rec_metadata;
+    u32 thrown_exception = c_no_exception;
+};
+
 struct tracing_state_t {
     u32 flags = 0;
     u32 ip_offset_from_prefixes = 0;
     u32 total_cycles = 0;
 };
 
-static machine_t g_machine       = {};
-static tracing_state_t g_tracing = {};
-
-static u32 g_thrown_exception = c_no_exception;
+static machine_t g_machine        = {};
+static simulation_context_t g_ctx = {};
+static tracing_state_t g_tracing  = {};
 
 #define W(reg_)  (reg_).word
 #define LO(reg_) (reg_).bytes[is_little_endian() ? 0 : 1]
@@ -116,6 +118,20 @@ static u32 g_thrown_exception = c_no_exception;
 void set_simulation_trace_option(u32 flags, bool set)
 {
     set_flags(&g_tracing.flags, flags, set);
+}
+
+void output_simulation_disclaimer()
+{
+    output::print(
+        "\nDISCLAIMER: this is not a professional-grade simulator.\n"
+        "            The simulator follows the published manual, thus results may differ from actual 8086/8088, or from 16bit mode on modern processors.\n"
+        "            Furthermore, some instructions are not simulated correctly on purpose, namely all the ones that interact with external hardware.\n\n");
+
+    if (g_tracing.flags & e_trace_cycles) {
+        output::print(
+            "The cycles estimations also follow the manual rather than real benchmarks. Also, for instructions with ranged estimation the high limit is used.\n"
+            "They can only be used for relative comparisons in some cases.\n\n");
+    }
 }
 
 static u32 bytes(bool is_wide)
@@ -190,7 +206,15 @@ static void output_flags_content(u16 flags_val)
     }
 }
 
-static u16 read_val_at(memory_access_t at, u32 offset, bool is_wide)
+static void record_wide_access(memory_access_t at, u32 offset)
+{
+    ++g_ctx.rec_metadata->wide_transfer_cnt;
+    if ((at.base + offset) & 0x1) // odd
+        ++g_ctx.rec_metadata->wide_odd_transfer_cnt;
+}
+
+// @NOTE: used as a helper function to get a value, without being a machine read
+static u16 read_val_at_non_simulated(memory_access_t at, u32 offset, bool is_wide)
 {
     if (is_wide)
         return read_word_at(at, offset);
@@ -198,11 +222,21 @@ static u16 read_val_at(memory_access_t at, u32 offset, bool is_wide)
         return read_byte_at(at, offset);
 }
 
+static u16 read_val_at(memory_access_t at, u32 offset, bool is_wide)
+{
+    if (is_wide) {
+        record_wide_access(at, offset);
+        return read_word_at(at, offset);
+    } else
+        return read_byte_at(at, offset);
+}
+
 static void write_val_to(memory_access_t to, u32 offset, u32 val, bool is_wide)
 {
-    if (is_wide)
+    if (is_wide) {
+        record_wide_access(to, offset);
         write_word_to(to, offset, val);
-    else
+    } else
         write_byte_to(to, offset, val);
 }
 
@@ -313,13 +347,13 @@ static void write_mem(ea_mem_access_t access, u16 val, bool is_wide, reg_t seg_o
     memory_access_t seg_mem = get_segment_access_for_ea(access, seg_override);
     u16 offset = calculate_ea(access);
 
-    u16 prev_content = read_mem(access, is_wide, seg_override);
+    u16 prev_content = read_val_at_non_simulated(seg_mem, offset, is_wide);
 
     write_val_to(seg_mem, offset, val, is_wide);
 
     if (g_tracing.flags & e_trace_data_mutation) {
         u32 addr = get_full_address(seg_mem, offset);
-        trace_mem_write(addr, prev_content, read_mem(access, is_wide, seg_override), is_wide);
+        trace_mem_write(addr, prev_content, val, is_wide);
     }
 }
 
@@ -368,12 +402,12 @@ static void write_operand(operand_t op, u16 val, bool is_wide, reg_t seg_overrid
 
 static void throw_exception(u8 ex)
 {
-    g_thrown_exception = ex;
+    g_ctx.thrown_exception = ex;
 }
 
 static void process_exceptions()
 {
-    if (g_thrown_exception == c_no_exception)
+    if (g_ctx.thrown_exception == c_no_exception)
         return;
 
     u32 saved_tracing_flags = g_tracing.flags;
@@ -382,14 +416,14 @@ static void process_exceptions()
         instruction_t int_instr{
             .op          = e_op_int,
             .size        = 0, // This should not affect IP
-            .operands    = {get_imm_operand((u8)g_thrown_exception)},
+            .operands    = {get_imm_operand((u8)g_ctx.thrown_exception)},
             .operand_cnt = 1
         };
 
-        output::print("<exception interrupt of type %u generated>\n", g_thrown_exception);
+        output::print("<exception interrupt of type %u generated>\n", g_ctx.thrown_exception);
 
         // Do it before call to simulate so as not to recurse
-        g_thrown_exception = c_no_exception;
+        g_ctx.thrown_exception = c_no_exception;
 
         simulate_instruction_execution(int_instr);
     }
@@ -409,7 +443,7 @@ static void push_to_stack(u16 val, bool is_wide)
     SP -= bytes(is_wide);
     memory_access_t stack = get_segment_access(e_reg_ss);
 
-    u16 prev_content = read_val_at(stack, SP, is_wide);
+    u16 prev_content = read_val_at_non_simulated(stack, SP, is_wide);
     write_val_to(stack, SP, val, is_wide);
     
     if (g_tracing.flags & e_trace_data_mutation)
@@ -608,40 +642,44 @@ static u32 string_instruction(const op_t op, const bool is_wide,
     const memory_access_t dst_base = get_segment_access(e_reg_es);
 
      auto execute_op = [op, is_wide, req_zero, &src_base, &dst_base]() -> bool {
-        u16 src_val   = read_val_at(src_base, SI, is_wide);
-        u16 dst_val   = read_val_at(dst_base, DI, is_wide);
-        u16 accum_val = is_wide ? AX : AL;
-
         u16 increment = bytes(is_wide);
 
-        u16 written_val = 0;
+        u16 pre_write_val = read_val_at_non_simulated(dst_base, DI, is_wide);
+        u16 written_val   = 0;
+
+        u16 accum_val = is_wide ? AX : AL;
 
         switch (op) {
-        case e_op_movs:
+        case e_op_movs: {
+            u16 src_val = read_val_at(src_base, SI, is_wide);
             write_val_to(dst_base, DI, src_val, is_wide);
             written_val = src_val;
             SI += increment;
             DI += increment;
-            break;
+        } break;
 
-        case e_op_cmps:
+        case e_op_cmps: {
+            u16 src_val = read_val_at(src_base, SI, is_wide);
+            u16 dst_val = read_val_at(dst_base, DI, is_wide);
             update_arifm_flags(src_val, -dst_val, is_wide);
             SI += increment;
             DI += increment;
-            break;
+        } break;
 
-        case e_op_scas:
+        case e_op_scas: {
+            u16 dst_val = read_val_at(dst_base, DI, is_wide);
             update_arifm_flags(accum_val, -dst_val, is_wide);
             DI += increment;
-            break;
+        } break;
 
-        case e_op_lods:
+        case e_op_lods: {
+            u16 src_val = read_val_at(src_base, SI, is_wide);
             if (is_wide)
                 AX = src_val;
             else
                 AL = src_val;
             SI += increment;
-            break;
+        } break;
 
         case e_op_stos:
             write_val_to(dst_base, DI, accum_val, is_wide);
@@ -655,8 +693,10 @@ static u32 string_instruction(const op_t op, const bool is_wide,
 
         if (g_tracing.flags & e_trace_data_mutation) {
             if (op == e_op_stos || op == e_op_movs) {
-                trace_mem_write(
-                    dst_base.base + DI - 1, dst_val, written_val, is_wide);
+                trace_mem_write(dst_base.base + DI - 1,
+                                pre_write_val,
+                                written_val,
+                                is_wide);
             }
         }
 
@@ -707,6 +747,12 @@ u32 simulate_instruction_execution(instruction_t instr)
 #define PREV_IP            prev_machine.ip.word
 #define PREV_FLAGS         prev_machine.flags.word
 
+    instruction_metadata_t metadata = {};
+    metadata.instr = instr;
+    
+    g_ctx.rec_metadata = &metadata;
+    DEFER([]() { g_ctx.rec_metadata = nullptr; });
+
     IP += instr.size;
 
     if (instr.op == e_op_lock || instr.op == e_op_rep || instr.op == e_op_segment) {
@@ -736,11 +782,14 @@ u32 simulate_instruction_execution(instruction_t instr)
     int op_cnt    = instr.operand_cnt;
     operand_t op0 = instr.operands[0];
     operand_t op1 = instr.operands[1];
-    u32 op0_val = op0.type == e_operand_none ? 0 : read_operand(op0, w, seg_override);
-    u32 op1_val = op1.type == e_operand_none ? 0 : read_operand(op1, w, seg_override);
 
-    instruction_metadata_t metadata = {};
-    metadata.instr = instr;
+    // @NOTE: in mov don't read the first operand so as not to record access
+    u32 op0_val =
+        (op0.type == e_operand_none || instr.op == e_op_mov) ? 0 : read_operand(op0, w, seg_override);
+    // @NOTE: for lea, don't read the ea operand so as not to record an access
+    u32 op1_val =
+        (op1.type == e_operand_none || instr.op == e_op_lea) ? 0 : read_operand(op1, w, seg_override);
+
     metadata.op0_val = op0_val;
     metadata.op1_val = op1_val;
 
@@ -1169,7 +1218,10 @@ u32 simulate_instruction_execution(instruction_t instr)
         }
     }
     if (g_tracing.flags & e_trace_cycles) {
-        u32 elapsed_cycles = estimate_instruction_clocks(metadata);
+        proc_type_t proc =
+            (g_tracing.flags & e_trace_8088cycles) ? e_proc8088 : e_proc8086;
+
+        u32 elapsed_cycles = estimate_instruction_clocks(metadata, proc);
         g_tracing.total_cycles += elapsed_cycles;
         output::print(" | Clocks: +%u=%u", elapsed_cycles, g_tracing.total_cycles);
     }
@@ -1199,7 +1251,10 @@ void output_simulation_results()
     }
     output::print("   flags: ");
     output_flags_content(FLAGS);
-    if (g_tracing.flags & e_trace_cycles)
-        output::print("\n\nTotal clocks: %d", g_tracing.total_cycles);
+    if (g_tracing.flags & e_trace_cycles) {
+        const char *proc_name =
+            (g_tracing.flags & e_trace_8088cycles) ? "8088" : "8086";
+        output::print("\n\nTotal clocks (%s): %d", proc_name, g_tracing.total_cycles);
+    }
     output::print("\n");
 }
