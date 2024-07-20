@@ -39,11 +39,11 @@ pop ds
 ; jmp test_arithm
 ; jmp test_muldiv
 ; jmp test_string
-; jmp test_logic
+jmp test_logic
 ; jmp test_interrupts
 ; jmp test_exceptions
 ; jmp test_misc
-jmp test_jumps
+; jmp test_jumps
 
 ; "interrupt table"
 i_zero_div:
@@ -372,31 +372,34 @@ jmp done
 ;      bx: 0x9fde (40926)
 ;      cx: 0x0003 (3)
 ;      dx: 0x00b8 (184)
-;      sp: 0xffff (65535)
-;      bp: 0xffff (65535)
+;      sp: 0xfffe (65534)
+;      bp: 0xfffe (65534)
 ;      si: 0x0000 (0)
 ;      di: 0x0000 (0)
 ;      es: 0x3000 (12288)
 ;      cs: 0x0000 (0)
 ;      ss: 0x1000 (4096)
 ;      ds: 0x2000 (8192)
-;      ip: 0x018a (394)
+;      ip: 0x027d (637)
 ;   flags: CPSO
 ; 
-; Total clocks: 196
+; Total clocks: 464
 test_logic:
 
 xor ax, ax
 mov bx, 0xFF
 mov cx, 0xC1
 and bx, cx
+or cl, bl
 test bx, 0x23
 not bx
 
-; @TODO: nasm seems to be smoking trees when it comes to some variations.
-;        Check it out.
-; or cx, 0xE
-; and ax, 0xE
+or cx, 0xE
+and ax, 0xE
+xor dx, 0xE
+or word [bx], 0xE
+and byte [bp+13], 0xE
+xor word [di], 0xE
 
 mov ax, 3
 

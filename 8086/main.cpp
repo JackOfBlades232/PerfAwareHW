@@ -14,7 +14,6 @@
 #include <cstdio>
 
 /* @TODO:
- * Fix and/or weirdness with nasm
  * Implement validation
  * Finish cycles
  *   Transfer penalties
