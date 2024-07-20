@@ -5,7 +5,7 @@
 
 struct decoder_context_t {
     u32 last_pref;
-    reg_t segment_override;
+    reg_t segment_override = e_reg_max;
 };
 
 instruction_t decode_next_instruction(memory_access_t at, u32 offset,
