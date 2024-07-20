@@ -13,6 +13,8 @@ inline void print_word_reg(reg_t reg) { print_reg(get_word_reg_access(reg)); }
 void print_instruction(instruction_t instr);
 bool instruction_is_printable(instruction_t instr);
 
+const char *get_op_mnemonic(op_t op);
+
 void set_out_file(FILE *f); 
 
 }

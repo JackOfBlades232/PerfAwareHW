@@ -5,6 +5,7 @@
 #include "util.hpp"
 #include "clocks.hpp"
 #include "instruction.hpp"
+#include "input.hpp"
 #include "validation.hpp"
 #include <cassert>
 #include <cmath>
@@ -12,14 +13,6 @@
 #include <thread>
 
 using namespace std::chrono_literals;
-
-// @TODO: import from input
-extern bool interactive;
-extern void wait_for_input_line();
-
-// @TODO: warning output when tracing cycles
-
-// @TODO: in-out ports side effect tracing?
 
 // @TODO: clear flags that are undefined instead of ignoring them?
 
@@ -392,9 +385,9 @@ static void write_operand(operand_t op, u16 val, bool is_wide, reg_t seg_overrid
 
         case e_operand_imm:
             ASSERTF(0, "Can't write to immediate operand");
-
         case e_operand_cs_ip:
-            LOGERR("Operand write not implemented for this type"); // @TODO: what type?
+            ASSERTF(0, "Can't write to cs/ip operand");
+
         case e_operand_none:
             assert(0);
     }
@@ -604,7 +597,6 @@ static void uncond_jump(operand_t op, bool is_rel, bool is_far,
         if (op.type == e_operand_mem) { // => is_far
             ASSERTF(is_far, "Wrong instr for intersegment jump, fix validation");
 
-            // @TODO: pull out somewhere?
             memory_access_t seg_mem = get_segment_access_for_ea(op.data.mem, seg_override);
             u32 cs_ip = read_dword_at(seg_mem, calculate_ea(op.data.mem));
             CS = cs_ip >> 16;
@@ -763,7 +755,6 @@ u32 simulate_instruction_execution(instruction_t instr)
         g_tracing.ip_offset_from_prefixes = 0;
     }
 
-    // @TODO: s flag for add is already needed?
     const bool w    = instr.flags & e_iflags_w;
     const bool z    = instr.flags & e_iflags_z;
     const bool rep  = instr.flags & e_iflags_rep;
@@ -1179,7 +1170,7 @@ u32 simulate_instruction_execution(instruction_t instr)
             return c_ip_terminate;
 
         case e_op_wait: // This is also for shits and giggles
-            if (::interactive) {
+            if (input::interactivity_enabled()) {
                 for (int i = 0; i < 6; ++i) {
                     for (int j = 0; j < 10; ++j)
                         std::this_thread::sleep_for(0.025s);
@@ -1187,7 +1178,7 @@ u32 simulate_instruction_execution(instruction_t instr)
                     metadata.wait_n += 250000;
                     output::print("\n...");
                 }
-                wait_for_input_line();
+                input::wait_for_lf();
                 output::print("\n");
             }
             break;
@@ -1196,8 +1187,9 @@ u32 simulate_instruction_execution(instruction_t instr)
             break;
 
         default:
-            ASSERTF(0, "Instruction execution not implemented"); // @TODO: what instruction?
-    }
+            ASSERTF(0, "Instruction %s execution not implemented",
+                    output::get_op_mnemonic(instr.op));
+        }
 
     // @NOTE: this, unlike the one in main, this is only for development
     assert(validate_instruction_metadata(metadata));

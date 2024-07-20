@@ -9,6 +9,7 @@
 #include "print.hpp"
 #include "disassembler.hpp"
 #include "simulator.hpp"
+#include "input.hpp"
 #include "validation.hpp"
 #include <cassert>
 #include <cstdio>
@@ -19,18 +20,6 @@
  * Resolve TODOs and refac as if for ship
  */
 
-// @TODO: move all this to input module
-// @TODO: echo off in interactive mode
-bool interactive = false;
-void wait_for_input_line()
-{
-    char c;
-    while ((c = getchar()) != EOF) {
-        if (c == '\n')
-            return;
-    }
-}
-
 enum prog_action_t {
     e_act_simulate,
     e_act_disassemble,
@@ -40,7 +29,7 @@ typedef u32 (*instruction_processor_t)(instruction_t);
 typedef u32 (*ip_initializer_t)();
 
 template <instruction_processor_t t_process_instr, ip_initializer_t t_init_ip>
-inline bool decode_and_process_instructions(memory_access_t at, u32 bytes, bool interactive = false)
+inline bool decode_and_process_instructions(memory_access_t at, u32 bytes)
 {
     instruction_table_t table = build_instruction_table();
     decoder_context_t ctx = {};
@@ -48,8 +37,8 @@ inline bool decode_and_process_instructions(memory_access_t at, u32 bytes, bool 
     u32 ip = t_init_ip();
 
     while (bytes - ip > 0 && ip != c_ip_terminate) {
-        if (interactive)
-            wait_for_input_line();
+        if (input::interactivity_enabled())
+            input::wait_for_lf();
 
         instruction_t instr = decode_next_instruction(at, ip, &table, &ctx);
         if (instr.op == e_op_invalid) {
@@ -97,7 +86,6 @@ int main(int argc, char **argv)
 
     fn = argv[2];
 
-    // @TODO: stop on ret flag
     for (int i = 3; i < argc; ++i) {
         if (streq(argv[i], "-o")) {
             ++i;
@@ -163,7 +151,7 @@ int main(int argc, char **argv)
 
             mdump_fn = argv[i];
         } else if (streq(argv[i], "-interactive"))
-            interactive = true;
+            input::enable();
         else {
             LOGERR("Encountered unknown arg [%s]", argv[i]);
             return 1;
@@ -181,12 +169,12 @@ int main(int argc, char **argv)
         output::print(";; %s disassembly ;;\n", fn);
         output::print("bits 16\n");
         res = decode_and_process_instructions<output_instrunction_disassembly, get_disassembly_ip>(
-            main_memory, code_bytes, interactive);
+            main_memory, code_bytes);
     } else {
         output::print("--- %s execution ---\n", fn);
         output_simulation_disclaimer();
         res = decode_and_process_instructions<simulate_instruction_execution, get_simulation_ip>(
-            main_memory, code_bytes, interactive);
+            main_memory, code_bytes);
         output_simulation_results();
     }
 

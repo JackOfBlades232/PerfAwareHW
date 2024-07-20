@@ -175,7 +175,7 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data, proc_type_t p
         else // imm -> mem, should be validated by now
             CASE_ADD_CLOCKS(10 + estimate_ea_clocks(op0.data.mem))
 
-    // @TODO: these are ranged, depict somehow? Now, I am using high estimate
+    // @NOTE: these are ranged, I am using the high estimate.
     case e_op_mul:
         if (op0.type == e_operand_reg && !w)
             CASE_ADD_CLOCKS(77)

@@ -53,7 +53,6 @@ u32 get_full_address(memory_access_t at, u32 offset)
     return (at.base + offset) & c_mem_mask;
 }
 
-// @TODO: now I just load to the beginning of the memory, it would be better to change that
 u32 load_file_to_memory(memory_access_t dest, const char *fn)
 {
     FILE *f = fopen(fn, "rb");

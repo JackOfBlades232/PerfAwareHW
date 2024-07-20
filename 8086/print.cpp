@@ -6,6 +6,16 @@
 
 static FILE *g_outf = stdout;
 
+const char *op_mnemonics[e_op_max] =
+{
+    "<invalid>",
+
+#define INST(_op, ...) #_op,
+#define INSTALT(...)
+
+#include "instruction_table.cpp.inl"
+};
+
 namespace output
 {
 
@@ -81,17 +91,12 @@ static void print_cs_ip(cs_ip_pair_t cs_ip)
     print("%hu:%hu", cs_ip.cs, cs_ip.ip);
 }
 
+void print_operation(op_t op)
+{
+}
+
 void print_instruction(instruction_t instr)
 {
-    const char *op_mnemonics[e_op_max] =
-    {
-        "<invalid>",
-
-#define INST(_op, ...) #_op,
-#define INSTALT(...)
-
-#include "instruction_table.cpp.inl"
-    };
 
     // We print prefix as part of instruction
     if (instr.op == e_op_lock || instr.op == e_op_rep || instr.op == e_op_segment)
@@ -161,6 +166,11 @@ bool instruction_is_printable(instruction_t instr)
 {
     return instr.op < e_op_max && instr.op != e_op_lock &&
            instr.op != e_op_rep && instr.op != e_op_segment;
+}
+
+const char *get_op_mnemonic(op_t op)
+{
+    return op_mnemonics[op];
 }
 
 void set_out_file(FILE *f)
