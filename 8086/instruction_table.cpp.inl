@@ -1,15 +1,17 @@
 /* instruction_table.cpp.inl */
 
-#define B(val_) {e_bits_literal, sizeof(#val_)-1, 0b##val_}
-#define W       {e_bits_w,       1                        }
-#define D       {e_bits_d,       1                        }
-#define S       {e_bits_s,       1                        }
-#define Z       {e_bits_z,       1                        }
-#define V       {e_bits_v,       1                        }
-#define MOD     {e_bits_mod,     2                        }
-#define REG     {e_bits_reg,     3                        }
-#define RM      {e_bits_rm,      3                        }
-#define SR      {e_bits_sr,      2                        }
+#define B(val_) {e_bits_literal,       sizeof(#val_)-1, 0b##val_}
+#define W       {e_bits_w,             1                        }
+#define D       {e_bits_d,             1                        }
+#define S       {e_bits_s,             1                        }
+#define Z       {e_bits_z,             1                        }
+#define V       {e_bits_v,             1                        }
+#define MOD     {e_bits_mod,           2                        }
+#define REG     {e_bits_reg,           3                        }
+#define RM      {e_bits_rm,            3                        }
+#define SR      {e_bits_sr,            2                        }
+#define XXX     {e_bits_ext_opcode_lo, 3                        }
+#define YYY     {e_bits_ext_opcode_hi, 3                        }
 
 #define IMP_W(val_)   {e_bits_w,   0, val_}
 #define IMP_D(val_)   {e_bits_d,   0, val_}
@@ -207,6 +209,8 @@ INST   (cli,  {B(11111010)})
 INST   (sti,  {B(11111011)})
 INST   (hlt,  {B(11110100)})
 INST   (wait, {B(10011011)})
+
+INST   (esc, {B(11011), XXX, MOD, YYY, RM, DISP, IMP_D(1)})
 
 INST   (nop,  {B(10010000)})
 

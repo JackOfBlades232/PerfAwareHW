@@ -16,8 +16,9 @@
 
 /* @TODO:
  * Implement validation
- * Add missing instructions (esc) *
  * Resolve TODOs and refac as if for ship
+ *
+ * Test all once again
  */
 
 enum prog_action_t {

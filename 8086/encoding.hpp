@@ -26,6 +26,9 @@ enum instr_bits_t {
     e_bits_jmp_rel_disp,
     e_bits_far,
 
+    e_bits_ext_opcode_lo,
+    e_bits_ext_opcode_hi,
+
     e_bits_max
 };
 

@@ -370,6 +370,12 @@ u32 estimate_instruction_clocks(instruction_metadata_t instr_data, proc_type_t p
     case e_op_wait:
         CASE_ADD_CLOCKS(3 + 5*instr_data.wait_n)
 
+    case e_op_esc:
+        if (op1.type == e_operand_mem)
+            CASE_ADD_CLOCKS(8 + estimate_ea_clocks(op1.data.mem))
+        else // reg
+            CASE_ADD_CLOCKS(2)
+
     case e_op_nop:
         CASE_ADD_CLOCKS(3)
 

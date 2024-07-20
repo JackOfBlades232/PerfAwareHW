@@ -14,7 +14,7 @@
 #ifndef NDEBUG
   #define ASSERTF(e_, fmt_, ...)           \
       do {                                 \
-          if (!e_) {                       \
+          if (!(e_)) {                     \
               LOGERR(fmt_, ##__VA_ARGS__); \
               assert(0);                   \
           }                                \

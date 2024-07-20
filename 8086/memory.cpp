@@ -13,9 +13,9 @@ memory_access_t get_main_memory_access()
     return {g_memory, 0, c_mem_size};
 }
 
-// @TODO: disallow access beyond size
 u8 read_byte_at(memory_access_t at, u32 offset)
 {
+    ASSERTF(offset < at.size, "Trying to read at off=%d beyond access size=%d", at.size, offset);
     u32 id = (at.base + offset) & c_mem_mask;
     return at.mem[id];
 }

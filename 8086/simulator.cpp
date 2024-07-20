@@ -1,5 +1,6 @@
 #include "simulator.hpp"
 #include "consts.hpp"
+#include "defs.hpp"
 #include "memory.hpp"
 #include "print.hpp"
 #include "util.hpp"
@@ -13,8 +14,6 @@
 #include <thread>
 
 using namespace std::chrono_literals;
-
-// @TODO: clear flags that are undefined instead of ignoring them?
 
 static constexpr u32 c_seg_size = POT(16);
 static constexpr u32 c_no_exception = -1;
@@ -180,6 +179,11 @@ static bool get_pflag(u16 flag)
     return FLAGS & flag;
 }
 
+static void clear_undefined_flags(u16 flags)
+{
+    set_pflag(flags, false);
+}
+
 static void output_flags_content(u16 flags_val)
 {
     proc_flag_t flags[] =
@@ -295,7 +299,6 @@ static memory_access_t get_segment_access(reg_t seg_reg)
     return seg;
 }
 
-// @TODO: double check manual for segment tricks
 static memory_access_t get_segment_access_for_ea(ea_mem_access_t access, reg_t seg_override)
 {
     if (seg_override != e_reg_max) {
@@ -306,8 +309,6 @@ static memory_access_t get_segment_access_for_ea(ea_mem_access_t access, reg_t s
         return get_segment_access(seg_override);
     }
 
-    // @TODO: check in the manual, es for string instructions?
-    //        Seems that es only pops up in the *s instructions themselves.
     if (access.base == e_ea_base_bp ||
         access.base == e_ea_base_bp_di ||
         access.base == e_ea_base_bp_si)
@@ -466,6 +467,8 @@ static void update_logic_flags(u32 res, bool is_wide)
     set_pflag(e_pflag_c, 0);
     set_pflag(e_pflag_o, 0);
     set_pflag(e_pflag_a, 0);
+
+    clear_undefined_flags(e_pflag_a);
 }
 
 static void update_shift_flags(bool pushed_bit, u32 res, u32 orig, bool is_wide)
@@ -485,6 +488,8 @@ static void ascii_adjust_addsub(u8 al_adjust, u8 ah_carry_adjust)
         set_pflag(e_pflag_c, false);
         set_pflag(e_pflag_a, false);
     }
+
+    clear_undefined_flags(e_pflag_o | e_pflag_s | e_pflag_z | e_pflag_p);
     
     AL &= 0xF;
 }
@@ -504,6 +509,7 @@ static void decimal_adjust_addsub(u8 al_adjust, u8 al_hi_adjust)
         set_pflag(e_pflag_c, false);
 
     update_common_flags(AL, false);
+    clear_undefined_flags(e_pflag_o);
 }
 
 template <class TNum32, class TNum16, class TNum8>
@@ -526,9 +532,12 @@ static void do_multiplication(u32 mult, bool is_wide)
         AX = res;
         lo = AL;
     }
+
     bool carry_overflow = res == lo;
     set_pflag(e_pflag_c, carry_overflow);
     set_pflag(e_pflag_o, carry_overflow);
+
+    clear_undefined_flags(e_pflag_s | e_pflag_z | e_pflag_a | e_pflag_p);
 }
 
 template <class TNum32, class TNum16, class TNum8, class TFQuotChecker>
@@ -561,6 +570,9 @@ static void do_division(u32 divisor, bool is_wide, TFQuotChecker &&quot_checker)
         AH = rem;
         AL = quot;
     }
+
+    clear_undefined_flags(e_pflag_o | e_pflag_s | e_pflag_z |
+                          e_pflag_a | e_pflag_p | e_pflag_c);
 }
 
 static bool cond_jump(u16 disp, bool cond)
@@ -912,11 +924,13 @@ u32 simulate_instruction_execution(instruction_t instr)
             AH = AL / 10;
             AL -= AH * 10;
             update_common_flags(AL, false);
+            clear_undefined_flags(e_pflag_o | e_pflag_a | e_pflag_c);
             break;
 
         case e_op_aad:
             AX = (AH*10 + AL) & 0xFF;
             update_common_flags(AL, false);
+            clear_undefined_flags(e_pflag_o | e_pflag_a | e_pflag_c);
             break;
 
         case e_op_cbw:
@@ -1153,7 +1167,7 @@ u32 simulate_instruction_execution(instruction_t instr)
             break;
 
         case e_op_in:
-            // @TODO: optional keyboard (or even file?) input.
+            // @FEAT: could be done from keyboard in interactive mode
             if (g_tracing.flags & e_trace_data_mutation)
                 output::print(" <read %s from port %u>", w ? "word" : "byte", op1_val);
             write_operand(op0, 0, w); // @TEMP
@@ -1181,6 +1195,11 @@ u32 simulate_instruction_execution(instruction_t instr)
                 input::wait_for_lf();
                 output::print("\n");
             }
+            break;
+
+        case e_op_esc:
+            if (g_tracing.flags & e_trace_data_mutation)
+                output::print(" <escape to ext processor w/ opcode 0x%hx and operand 0x%hx>", op0_val, op1_val);
             break;
 
         case e_op_nop:

@@ -1,4 +1,5 @@
-﻿#include "instruction.hpp"
+﻿#include "encoding.hpp"
+#include "instruction.hpp"
 #include "util.hpp"
 #include "decoder.hpp"
 #include "memory.hpp"
@@ -96,6 +97,8 @@ instruction_t decode_next_instruction(memory_access_t at, u32 offset,
         *reg_op = get_reg_operand(fields[e_bits_reg], w);
     if (has[e_bits_sr])
         *reg_op = get_segreg_operand(fields[e_bits_sr]);
+    if (has[e_bits_ext_opcode_lo] && has[e_bits_ext_opcode_hi])
+        *reg_op = get_imm_operand((fields[e_bits_ext_opcode_hi] << 3) | fields[e_bits_ext_opcode_lo]);
 
     if (has[e_bits_rm])
         *rm_op = get_rm_operand(mod, rm, w || fields[e_bits_rm_always_w], disp);
