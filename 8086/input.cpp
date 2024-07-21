@@ -26,6 +26,9 @@ bool interactivity_enabled()
 
 void wait_for_lf()
 {
+    if (!interactivity_enabled())
+        return;
+
     char c;
     while ((c = getchar()) != EOF) {
         if (c == '\n')

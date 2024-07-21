@@ -24,7 +24,7 @@ static u16 parse_data_value(memory_access_t at, u32 *offset,
 }
 
 instruction_t decode_next_instruction(memory_access_t at, u32 offset,
-                                      instruction_table_t *table,
+                                      const instruction_table_t *table,
                                       const decoder_context_t *ctx)
 {
     u32 init_offset = offset;

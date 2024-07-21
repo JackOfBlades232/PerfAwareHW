@@ -37,11 +37,11 @@ pop ds
 ; jmp test_arithm
 ; jmp test_muldiv
 ; jmp test_string
-jmp test_logic
+; jmp test_logic
 ; jmp test_interrupts
 ; jmp test_exceptions
 ; jmp test_misc
-; jmp test_jumps
+jmp test_jumps
 
 ; "interrupt table"
 i_zero_div:
@@ -82,33 +82,36 @@ iret
 ;
 ; Correct result:
 ; Registers state:
-;      ax: 0x1515 (5397)
-;      bx: 0x0014 (20)
-;      cx: 0x0000 (0)
-;      dx: 0xffe2 (65506)
-;      sp: 0xffff (65535)
-;      bp: 0xffff (65535)
-;      si: 0x0000 (0)
-;      di: 0x0000 (0)
-;      es: 0x3000 (12288)
-;      cs: 0x0000 (0)
-;      ss: 0x1000 (4096)
-;      ds: 0x2000 (8192)
-;      ip: 0x00f3 (243)
-;   flags: AS
+;       ax: 0x1515 (5397)
+;       bx: 0x0014 (20)
+;       cx: 0x0000 (0)
+;       dx: 0xffe2 (65506)
+;       sp: 0xfffe (65534)
+;       bp: 0xfffe (65534)
+;       si: 0x0000 (0)
+;       di: 0x0000 (0)
+;       es: 0x3000 (12288)
+;       cs: 0x0000 (0)
+;       ss: 0x1000 (4096)
+;       ds: 0x2000 (8192)
+;       ip: 0x027c (636)
+;    flags: AS
+;  
+; Total clocks (8086): 1508
+; Total clocks (8088): 1868
 test_funcs:
 
 xor bx, bx
 mov cx, 2
 lp:
 call func
-call 0x40
-mov word [bp-100], 0x40
+call 0x9c
+mov word [bp-100], 0x9c
 call [bp-100]
 
-call 4:15 ; ffunc
-mov word [bp-99], 15
-mov word [bp-97], 4
+call 10:11 ; ffunc
+mov word [bp-99], 11
+mov word [bp-97], 10
 call far [bp-99]
 
 loop lp
@@ -146,20 +149,23 @@ retf
 ;
 ; Correct result:
 ; Registers state:
-;      ax: 0x0015 (21)
-;      bx: 0x0009 (9)
-;      cx: 0xffff (65535)
-;      dx: 0xff98 (65432)
-;      sp: 0xffff (65535)
-;      bp: 0xffff (65535)
-;      si: 0x0000 (0)
-;      di: 0x0000 (0)
-;      es: 0x3000 (12288)
-;      cs: 0x0000 (0)
-;      ss: 0x1000 (4096)
-;      ds: 0x2000 (8192)
-;      ip: 0x0070 (112)
-;   flags: CS
+;       ax: 0x0015 (21)
+;       bx: 0x0009 (9)
+;       cx: 0xffff (65535)
+;       dx: 0xff98 (65432)
+;       sp: 0xfffe (65534)
+;       bp: 0xfffe (65534)
+;       si: 0x0000 (0)
+;       di: 0x0000 (0)
+;       es: 0x3000 (12288)
+;       cs: 0x0000 (0)
+;       ss: 0x1000 (4096)
+;       ds: 0x2000 (8192)
+;       ip: 0x027c (636)
+;    flags: CS
+;  
+; Total clocks (8086): 387
+; Total clocks (8088): 435
 test_arithm:
 
 xor ax, ax
@@ -208,20 +214,23 @@ jmp done
 ;
 ; Correct result:
 ; Registers state:
-;      ax: 0x0125 (293)
-;      bx: 0xde08 (56840)
-;      cx: 0xf4fb (62715)
-;      dx: 0x0125 (293)
-;      sp: 0xffff (65535)
-;      bp: 0xffff (65535)
-;      si: 0x0000 (0)
-;      di: 0x0000 (0)
-;      es: 0x3000 (12288)
-;      cs: 0x0000 (0)
-;      ss: 0x1000 (4096)
-;      ds: 0x2000 (8192)
-;      ip: 0x009f (159)
-;   flags: CO
+;       ax: 0x0125 (293)
+;       bx: 0xde08 (56840)
+;       cx: 0xf4fb (62715)
+;       dx: 0x0125 (293)
+;       sp: 0xfffe (65534)
+;       bp: 0xfffe (65534)
+;       si: 0x0000 (0)
+;       di: 0x0000 (0)
+;       es: 0x3000 (12288)
+;       cs: 0x0000 (0)
+;       ss: 0x1000 (4096)
+;       ds: 0x2000 (8192)
+;       ip: 0x027d (637)
+;    flags:
+;  
+; Total clocks (8086): 1114
+; Total clocks (8088): 1162
 test_muldiv:
 
 mov ax, 123
@@ -264,20 +273,23 @@ jmp done
 ;
 ; Correct result:
 ; Registers state:
-;      ax: 0x0001 (1)
-;      bx: 0x0000 (0)
-;      cx: 0x0001 (1)
-;      dx: 0x0000 (0)
-;      sp: 0xffff (65535)
-;      bp: 0xffff (65535)
-;      si: 0x0003 (3)
-;      di: 0x0003 (3)
-;      es: 0x3000 (12288)
-;      cs: 0x0000 (0)
-;      ss: 0x1000 (4096)
-;      ds: 0x2000 (8192)
-;      ip: 0x0155 (341)
-;   flags:
+;       ax: 0x0001 (1)
+;       bx: 0x0000 (0)
+;       cx: 0x0001 (1)
+;       dx: 0x0000 (0)
+;       sp: 0xfffe (65534)
+;       bp: 0xfffe (65534)
+;       si: 0x0003 (3)
+;       di: 0x0003 (3)
+;       es: 0x3000 (12288)
+;       cs: 0x0000 (0)
+;       ss: 0x1000 (4096)
+;       ds: 0x2000 (8192)
+;       ip: 0x027d (637)
+;    flags:
+;  
+; Total clocks (8086): 744
+; Total clocks (8088): 820
 test_string:
 
 xor ax, ax
@@ -358,20 +370,23 @@ jmp done
 ;
 ; Correct result:
 ; Registers state:
-;      ax: 0x00f9 (249)
-;      bx: 0x9fde (40926)
-;      cx: 0x0003 (3)
-;      dx: 0x00b8 (184)
-;      sp: 0xfffe (65534)
-;      bp: 0xfffe (65534)
-;      si: 0x0000 (0)
-;      di: 0x0000 (0)
-;      es: 0x3000 (12288)
-;      cs: 0x0000 (0)
-;      ss: 0x1000 (4096)
-;      ds: 0x2000 (8192)
-;      ip: 0x027d (637)
-;   flags: CPSO
+;       ax: 0x00f9 (249)
+;       bx: 0x9fde (40926)
+;       cx: 0x0003 (3)
+;       dx: 0x00b8 (184)
+;       sp: 0xfffe (65534)
+;       bp: 0xfffe (65534)
+;       si: 0x0000 (0)
+;       di: 0x0000 (0)
+;       es: 0x3000 (12288)
+;       cs: 0x0000 (0)
+;       ss: 0x1000 (4096)
+;       ds: 0x2000 (8192)
+;       ip: 0x027d (637)
+;    flags: CPSO
+;  
+; Total clocks (8086): 464
+; Total clocks (8088): 528
 test_logic:
 
 xor ax, ax
@@ -420,20 +435,23 @@ jmp done
 ;
 ; Correct result:
 ; Registers state:
-;      ax: 0x029a (666)
-;      bx: 0x0000 (0)
-;      cx: 0x0000 (0)
-;      dx: 0x0000 (0)
-;      sp: 0xfff9 (65529)
-;      bp: 0xffff (65535)
-;      si: 0x0000 (0)
-;      di: 0x0000 (0)
-;      es: 0x3000 (12288)
-;      cs: 0x0005 (5)
-;      ss: 0x1000 (4096)
-;      ds: 0x2000 (8192)
-;      ip: 0x000f (15)
-;   flags: ASO
+;       ax: 0x029a (666)
+;       bx: 0x0000 (0)
+;       cx: 0x0000 (0)
+;       dx: 0x0000 (0)
+;       sp: 0xfff8 (65528)
+;       bp: 0xfffe (65534)
+;       si: 0x0000 (0)
+;       di: 0x0000 (0)
+;       es: 0x3000 (12288)
+;       cs: 0x0005 (5)
+;       ss: 0x1000 (4096)
+;       ds: 0x2000 (8192)
+;       ip: 0x000f (15)
+;    flags: ASO
+;  
+; Total clocks (8086): 564
+; Total clocks (8088): 696
 test_interrupts:
 
 int 1
@@ -470,20 +488,23 @@ jmp done
 ;
 ; Correct result:
 ; Registers state:
-;      ax: 0x08a5 (2213)
-;      bx: 0x0000 (0)
-;      cx: 0x0000 (0)
-;      dx: 0x0026 (38)
-;      sp: 0xfffe (65534)
-;      bp: 0xfffe (65534)
-;      si: 0x014d (333)
-;      di: 0x000c (12)
-;      es: 0x0002 (2)
-;      cs: 0x0000 (0)
-;      ss: 0x1000 (4096)
-;      ds: 0x04c5 (1221)
-;      ip: 0x024b (587)
-;   flags: PZ
+;       ax: 0x08a5 (2213)
+;       bx: 0x0000 (0)
+;       cx: 0x0000 (0)
+;       dx: 0x0026 (38)
+;       sp: 0xfffe (65534)
+;       bp: 0xfffe (65534)
+;       si: 0x014d (333)
+;       di: 0x000c (12)
+;       es: 0x0002 (2)
+;       cs: 0x0000 (0)
+;       ss: 0x1000 (4096)
+;       ds: 0x04c5 (1221)
+;       ip: 0x027d (637)
+;    flags: PZ
+;  
+; Total clocks (8086): 495
+; Total clocks (8088): 579
 test_misc:
 
 mov ax, 3
@@ -522,20 +543,22 @@ jmp done
 ;
 ; Correct result:
 ; Registers state:
-;      ax: 0x0003 (3)
-;      bx: 0x00ff (255)
-;      cx: 0x0004 (4)
-;      dx: 0x0000 (0)
-;      sp: 0xfffe (65534)
-;      bp: 0xfffe (65534)
-;      si: 0x0000 (0)
-;      di: 0x0000 (0)
-;      es: 0x3000 (12288)
-;      cs: 0x0000 (0)
-;      ss: 0x1000 (4096)
-;      ds: 0x2000 (8192)
-;      ip: 0x0268 (616)
-;   flags: CPAS
+;       ax: 0x0003 (3)
+;       bx: 0x00ff (255)
+;       cx: 0x0004 (4)
+;       dx: 0x0000 (0)
+;       sp: 0xfffe (65534)
+;       bp: 0xfffe (65534)
+;       si: 0x0000 (0)
+;       di: 0x0000 (0)
+;       es: 0x3000 (12288)
+;       cs: 0x0000 (0)
+;       ss: 0x1000 (4096)
+;       ds: 0x2000 (8192)
+;       ip: 0x027d (637)
+;    flags: CPAS
+;  
+; Total clocks (8086): 379
 test_jumps:
 
 mov dx, 2

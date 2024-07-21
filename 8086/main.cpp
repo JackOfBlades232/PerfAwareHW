@@ -39,14 +39,12 @@ inline bool decode_and_process_instructions(memory_access_t at, u32 bytes)
             LOGERR("Failed to decode instruction");
             return false;
         }
-
-        if (!validate_instruction(instr)) {
-            LOGERR("Decoded invalid instruction!");
-            return false;
-        }
-
         if (ip + instr.size > bytes) {
             LOGERR("Trying to decode outside the instructions mem, the instruction is invalid");
+            return false;
+        }
+        if (!validate_instruction(instr)) {
+            LOGERR("Decoded instruction has invalid format!");
             return false;
         }
 

@@ -117,13 +117,17 @@ void output_simulation_disclaimer()
 {
     output::print(
         "\nDISCLAIMER: this is not a professional-grade simulator.\n"
-        "            The simulator follows the published manual, thus results may differ from actual 8086/8088, or from 16bit mode on modern processors.\n"
-        "            Furthermore, some instructions are not simulated correctly on purpose, namely all the ones that interact with external hardware.\n\n");
+        "            The simulator follows the published manual, thus results may"
+        "differ from actual 8086/8088, or from 16bit mode on modern processors.\n"
+        "            Furthermore, some instructions are not simulated correctly on"
+        "purpose, namely all the ones that interact with external hardware.\n\n");
 
     if (g_tracing.flags & e_trace_cycles) {
         output::print(
-            "The cycles estimations also follow the manual rather than real benchmarks. Also, for instructions with ranged estimation the high limit is used.\n"
-            "And, the manual definitely has typos, thus the estimations can only be used for relative comparisons in some cases.\n\n");
+            "The cycles estimations also follow the manual rather than real benchmarks."
+            "Also, for instructions with ranged estimation the high limit is used.\n"
+            "And, the manual definitely has typos, thus the estimations can only be"
+            "used for relative comparisons in some cases.\n\n");
     }
 }
 

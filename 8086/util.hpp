@@ -126,4 +126,4 @@ public:
     ~DeferredAction__() { m_action(); }
 };
 
-#define DEFER(action_) DeferredAction__ deferred_##__LINE__(std::move(action_));
+#define DEFER(action_) DeferredAction__ deferred##__LINE__##__(std::move(action_));

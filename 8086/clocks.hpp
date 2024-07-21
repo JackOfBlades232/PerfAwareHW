@@ -16,5 +16,4 @@ struct instruction_metadata_t {
     u32 wide_transfer_cnt, wide_odd_transfer_cnt;
 };
 
-// @NOTE: also expects valid data, validate as in simulator.hpp
 u32 estimate_instruction_clocks(instruction_metadata_t instr_data, proc_type_t proc_type);
