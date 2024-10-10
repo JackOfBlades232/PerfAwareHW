@@ -8,6 +8,8 @@
 // @TODO: pull out to some utils, and complete features when needed
 // Idea: HpString, StString, DynString, TmpString, etc
 
+// @TODO: make normal and test
+
 class HpString {
     char *m_data = nullptr;
     uint32_t m_len = 0;
@@ -16,10 +18,10 @@ public:
     HpString() = default;
     HpString(const char *ptr, uint32_t len) : m_len(len) {
         assert(ptr);
-        assert(strlen(ptr) == len);
 
         m_data = new char[m_len + 1];
-        strncpy(m_data, ptr, m_len);
+        memcpy(m_data, ptr, m_len);
+        m_data[m_len] = '\0';
     }
     explicit HpString(const char *ptr) : HpString(ptr, strlen(ptr)) {}
 
@@ -42,11 +44,12 @@ public:
             delete[] m_data;
     }
 
-    operator const char *() const { return m_data; }
-
     uint32_t Length() const { return m_len; }
     const char *Begin() const { return m_data; }
     const char *End() const { return m_data + m_len; }
+
+    // @TODO: correct implicit cast?
+    const char *CStr() const { return Begin(); }
 
 private:
     void CopyFrom(const HpString &other) {
@@ -55,7 +58,8 @@ private:
         char *old_data = m_data;
         if (other.m_data) {
             m_data = new char[m_len + 1];
-            strncpy(m_data, other.m_data, m_len);
+            memcpy(m_data, other.m_data, m_len);
+            m_data[m_len] = '\0';
         } else
             m_data = nullptr;
 

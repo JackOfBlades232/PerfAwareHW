@@ -8,10 +8,21 @@
 
 #define FOR(arr_) for (decltype(arr_[0]) it = arr_.Begin(); it != arr_.End(); ++it)
 
+// @TODO: pull out
+template <typename T>
+static T max(T a, T b)
+{
+    return a > b ? a : b;
+}
+
+// @TODO: make normal w/ inplace news, and test
+
 template <typename T>
 class DynArray {
     T *m_data = nullptr;
     uint32_t m_len = 0, m_cap = 0;
+
+    static constexpr uint32_t c_min_cap = 8;
 
 public:
     DynArray() = default;
@@ -36,12 +47,20 @@ public:
 
     void Add(const T &elem) {
         if (m_len == m_cap)
-            Grow(2 * m_cap);
+            Grow(max(2 * m_cap, c_min_cap));
 
         m_data[m_len++] = elem;
     }
 
+    void Clear() {
+        if (m_data)
+            delete[] m_data;
+        m_data = nullptr;
+        m_len = m_cap = 0;
+    }
+
     uint32_t Length() const { return m_len; }
+    uint32_t Empty() const { return m_len == 0; }
 
     T &At(uint32_t idx) {
         assert(idx < m_len);
