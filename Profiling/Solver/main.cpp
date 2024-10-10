@@ -1,10 +1,13 @@
 #include "string.hpp"
 #include "array.hpp"
+#include "defer.hpp"
 
 #include <cstdio>
 #include <cstdlib>
 #include <cerrno>
 #include <cmath>
+
+// @TODO brush up
 
 #define LOGERR(fmt_, ...) fprintf(stderr, "[ERR] " fmt_ "\n", ##__VA_ARGS__)
 
@@ -21,6 +24,9 @@ enum token_type_t {
     tt_eof,        // eof
     tt_string,     // string literal
     tt_numeric,    // numeric literal
+    tt_true,       // literal true
+    tt_false,      // literal false
+    tt_null,       // literal null
     tt_lbrace,     // {
     tt_rbrace,     // }
     tt_lsqbracket, // [
@@ -79,9 +85,17 @@ static token_t get_next_token(FILE *f)
                 // If there was an identifier, return sep to stream and yield
                 if (!id.Empty() || token_had_string) {
                     ungetc(c, f);
-                    tok.type = token_had_string ? tt_string : tt_numeric;
-
-                    if (tok.type == tt_numeric) {
+                    if (token_had_string) {
+                        tok.type = tt_string;
+                        tok.str = HpString(id.Begin(), id.Length());
+                    } else if (strncmp(id.Begin(), "null", 4) == 0)
+                        tok.type = tt_null;
+                    else if (strncmp(id.Begin(), "true", 4) == 0)
+                        tok.type = tt_true;
+                    else if (strncmp(id.Begin(), "false", 5) == 0)
+                        tok.type = tt_false;
+                    else {
+                        tok.type = tt_numeric;
                         HpString literal(id.Begin(), id.Length());
                         char *end = nullptr;
                         tok.number = strtold(literal.CStr(), &end);
@@ -91,8 +105,6 @@ static token_t get_next_token(FILE *f)
                         {
                             tok.type = tt_error;
                         }
-                    } else {
-                        tok.str = HpString(id.Begin(), id.Length());
                     }
 
                     goto yield;
@@ -145,49 +157,217 @@ yield:
     return tok;
 }
 
-struct IJsonElement {
-    // @TODO
+static FILE *g_inf = stdin;
+#define GET_TOK() get_next_token(g_inf)
+
+#define OUTPUT(fmt_, ...) printf(fmt_, ##__VA_ARGS__)
+
+static void output_indent(int depth)
+{
+    for (int i = 0; i < depth; ++i)
+        OUTPUT("  ");
+}
+
+#define OUTPUT_IND(depth_, fmt_, ...) \
+    do {                              \
+        output_indent(depth_);        \
+        OUTPUT(fmt_, ##__VA_ARGS__);  \
+    } while (0)
+
+struct IJsonEntity {
+    virtual ~IJsonEntity() {}
+    virtual void PrettyPrint(int depth) const = 0;
 };
 
 struct json_field_t {
     HpString name;
-    IJsonElement *val;
+    IJsonEntity *val;
 };
 
-class JsonObject : IJsonElement {
-    DynArray<json_field_t> fields;
+class JsonObject : public IJsonEntity {
+    DynArray<json_field_t> m_fields;
 
-    // @TODO
+public:
+    JsonObject() = default;
+    ~JsonObject() override {
+        FOR (m_fields)
+            delete it->val;
+    }
+
+    void AddField(const json_field_t &field) { m_fields.Add(field); }
+
+    void PrettyPrint(int depth) const override {
+        OUTPUT_IND(depth, "{\n");
+        FOR (m_fields) {
+            OUTPUT_IND(depth + 1, "\"%s\":\n", it->name.CStr());
+            it->val->PrettyPrint(depth + 1);
+        }
+        OUTPUT_IND(depth, "},\n");
+    }
 };
 
-class JsonArray : IJsonElement {
-    DynArray<IJsonElement *> m_elements;
+class JsonArray : public IJsonEntity {
+    DynArray<IJsonEntity *> m_elements;
 
-    // @TODO
+public:
+    JsonArray() = default;
+    ~JsonArray() override {
+        FOR (m_elements)
+            delete *it;
+    }
+
+    void Add(IJsonEntity *elem) { m_elements.Add(elem); }
+
+    void PrettyPrint(int depth) const override {
+        OUTPUT_IND(depth, "[\n");
+        FOR (m_elements)
+            (*it)->PrettyPrint(depth + 1);
+        OUTPUT_IND(depth, "],\n");
+    }
 };
 
-class JsonString : IJsonElement {
+class JsonString : public IJsonEntity {
     HpString m_content;
 
-    // @TODO
+public:
+    JsonString(const HpString &str) : m_content(str) {}
+
+    void PrettyPrint(int depth) const override {
+        OUTPUT_IND(depth, "\"%s\",\n", m_content.CStr());
+    }
 };
 
-class JsonNumber : IJsonElement {
+class JsonNumber : public IJsonEntity {
     long double m_val;
 
-    // @TODO
+public:
+    JsonNumber(long double val) : m_val(val) {}
+    operator long double() const { return m_val; }
+
+    void PrettyPrint(int depth) const override { OUTPUT_IND(depth, "%Lf,\n", m_val); }
 };
 
-class JsonBool : IJsonElement {
+class JsonBool : public IJsonEntity {
     bool m_val;
 
-    // @TODO
+public:
+    JsonBool(bool val) : m_val(val) {}
+    operator bool() const { return m_val; }
+
+    void PrettyPrint(int depth) const override {
+        OUTPUT_IND(depth, "%s,\n", m_val ? "true" : "false");
+    }
 };
 
-class JsonNull : IJsonElement {
-    // @TODO
+class JsonNull : public IJsonEntity {
+public:
+    void PrettyPrint(int depth) const override { OUTPUT_IND(depth, "null,\n"); }
 };
 
+#define PARSE_ERR(obj_, fmt_, ...)                                      \
+    do {                                                                \
+        delete obj_;                                                    \
+        LOGERR("While parsing object=%p : " fmt_, obj_, ##__VA_ARGS__); \
+        return nullptr;                                                 \
+    } while (0)
+
+static IJsonEntity *parse_json_entity(const token_t *first_token = nullptr);
+
+// @TODO: logerr messages & logic
+// @TODO: refac
+
+static JsonObject *parse_json_object()
+{
+    JsonObject *obj = new JsonObject;
+
+    for (;;) {
+        token_t tok = GET_TOK();
+        if (tok.IsFinal())
+            PARSE_ERR(obj, "Unexpected EOF/error");
+
+        if (tok.type == tt_rbrace)
+            break;
+
+        if (tok.type != tt_string)
+            PARSE_ERR(obj, "Invalid token");
+
+        json_field_t field = {tok.str, nullptr};
+
+        tok = GET_TOK();
+        if (tok.type != tt_colon)
+            PARSE_ERR(obj, "Invalid token");
+
+        field.val = parse_json_entity();
+        if (!field.val)
+            PARSE_ERR(obj, "Invalid token");
+
+        obj->AddField(field);
+
+        tok = GET_TOK();
+        if (tok.type == tt_comma)
+            continue;
+        else if (tok.type == tt_rbrace)
+            break;
+
+        PARSE_ERR(obj, "Invalid token");
+    }
+
+    return obj;
+}
+
+static JsonArray *parse_json_array()
+{
+    JsonArray *arr = new JsonArray;
+
+    for (;;) {
+        token_t tok = GET_TOK();
+        if (tok.IsFinal())
+            PARSE_ERR(arr, "Unexpected EOF/error");
+
+        if (tok.type == tt_rsqbracket)
+            break;
+
+        IJsonEntity *elem = parse_json_entity(&tok);
+        if (!elem)
+            PARSE_ERR(arr, "Invalid token");
+
+        arr->Add(elem);
+
+        tok = GET_TOK();
+        if (tok.type == tt_comma)
+            continue;
+        else if (tok.type == tt_rsqbracket)
+            break;
+
+        PARSE_ERR(arr, "Invalid token");
+    }
+
+    return arr;
+}
+
+static IJsonEntity *parse_json_entity(const token_t *first_token)
+{
+    token_t tok = first_token ? *first_token : GET_TOK();
+    switch (tok.type) {
+    case tt_lbrace:
+        return parse_json_object();
+    case tt_lsqbracket:
+        return parse_json_array();
+    case tt_null:
+        return new JsonNull;
+    case tt_true:
+        return new JsonBool(true);
+    case tt_false:
+        return new JsonBool(false);
+    case tt_numeric:
+        return new JsonNumber(tok.number);
+    case tt_string:
+        return new JsonString(tok.str);
+
+    default:
+        return nullptr;
+    }
+}
 
 // @TODO: verify
 static float reference_haversine_dist(float x0, float y0, float x1, float y1)
@@ -211,11 +391,6 @@ static float reference_haversine_dist(float x0, float y0, float x1, float y1)
     return rad2deg(rad_of_diff);
 }
 
-static FILE *g_inf = stdin;
-#define GET_TOK() get_next_token(g_inf)
-
-#define OUTPUT(fmt_, ...) printf(fmt_, ##__VA_ARGS__)
-
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; ++i) {
@@ -236,6 +411,7 @@ int main(int argc, char **argv)
         }
     }
 
+    /*
     printf("TEST: Tokenization\n");
     token_t tok;
     while (!(tok = GET_TOK()).IsFinal()) {
@@ -276,8 +452,34 @@ int main(int argc, char **argv)
         LOGERR("Tokenization test failed!");
         return 2;
     }
+    */
 
-    OUTPUT("TODO: parse input json!\n");
+    printf("TEST: Parsing\n");
+
+    JsonObject *root = nullptr;
+    token_t first_token = GET_TOK();
+    if (first_token.type == tt_eof) {
+        LOGERR("Provide a non-emty json!");
+        return 2;
+    }
+
+    if (!first_token.IsFinal()) {
+        if (first_token.type != tt_lbrace) {
+            LOGERR("Invalid json format: must be a root object");
+            return 2;
+        }
+
+        root = parse_json_object();
+    }
+
+    if (root == nullptr) {
+        LOGERR("Json parsing error");
+        return 2;
+    }
+
+    root->PrettyPrint(0);
+    delete root;
+
     OUTPUT("TODO: Calc haversine!\n");
     OUTPUT("TODO: Make it not dogshit slow!\n");
     OUTPUT("TODO: Brush up and save the utils!\n");

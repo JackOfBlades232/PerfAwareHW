@@ -3,10 +3,31 @@
 #include <cassert>
 #include <cstdint>
 
+// @TODO: move somewhere
+namespace util
+{
+
+template <typename T>
+struct RemoveReference {
+    using Type = T;
+};
+template <typename T>
+struct RemoveReference<T &> {
+    using Type = T;
+};
+
+template <typename T>
+using remove_reference_t = typename RemoveReference<T>::Type;
+
+}
+
 // @TODO: pull out to some utils, and complete features when needed
 // Idea: HpArray, StArray, DynArray, TmpArray, etc
 
-#define FOR(arr_) for (decltype(arr_[0]) it = arr_.Begin(); it != arr_.End(); ++it)
+#define FOR(arr_)                                                        \
+    for (util::remove_reference_t<decltype(arr_[0])> *it = arr_.Begin(); \
+         it != arr_.End();                                               \
+         ++it)
 
 // @TODO: pull out
 template <typename T>
