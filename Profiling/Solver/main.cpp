@@ -703,7 +703,7 @@ int main(int argc, char **argv)
         distances.Append(dist);
     }
 
-    float sum;
+    float sum = 0.f;
     FOR(distances) sum += *it;
 
     const float avg = sum / point_cnt;

@@ -1,14 +1,34 @@
 #pragma once
 
+#include <cstdint>
+
 #if _WIN32
 
-// @TODO: win32
+#include <intrin.h>
+#include <windows.h>
+
+inline uint64_t get_os_timer_freq()
+{
+    LARGE_INTEGER freq;
+    BOOL res = QueryPerformanceFrequency(&freq);
+    if (!res)
+        return uint64_t(-1);
+    return freq.QuadPart;
+}
+
+inline uint64_t read_os_timer()
+{
+    LARGE_INTEGER ticks;
+    BOOL res = QueryPerformanceCounter(&ticks);
+    if (!res)
+        return uint64_t(-1);
+    return ticks.QuadPart;
+}
 
 #else
 
 #include <x86intrin.h>
 #include <ctime>
-#include <cstdint>
 
 inline uint64_t get_os_timer_freq()
 {
