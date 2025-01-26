@@ -3,6 +3,8 @@
 #include "util.hpp"
 #include "defer.hpp"
 
+#include "profiling.hpp"
+
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -552,6 +554,11 @@ static float haversine_dist(float x0, float y0, float x1, float y1)
 
 int main(int argc, char **argv)
 {
+    uint64_t cpu_freq = measure_cpu_timer_freq(0.1l);
+    uint64_t ref_ticks;
+
+    ref_ticks = read_cpu_timer();
+
     bool only_tokenize = false;
     bool only_reprint_json = false;
     const char *json_fname = nullptr;
@@ -591,8 +598,12 @@ int main(int argc, char **argv)
         }
     }
 
+    long double argparse_sec = get_cpu_sec_from(ref_ticks, cpu_freq);
+
     if (only_tokenize)
         return tokenize_and_print_main();
+
+    ref_ticks = read_cpu_timer();
 
     JsonObject *root = nullptr;
     token_t first_token = GET_TOK();
@@ -617,8 +628,12 @@ int main(int argc, char **argv)
 
     DEFER([root] { delete root; });
 
+    long double jsonparse_sec = get_cpu_sec_from(ref_ticks, cpu_freq);
+
     if (only_reprint_json)
         return reprint_json_main(root);
+
+    ref_ticks = read_cpu_timer();
 
     if (root->ElemCnt() != 1 ||
         !streq(root->FieldAt(0).name.CStr(), "points") ||
@@ -633,6 +648,10 @@ int main(int argc, char **argv)
         snprintf(checksum_fname, sizeof(checksum_fname), "%s.check.bin", json_fname);
         checksum_f = fopen(checksum_fname, "rb");
     }
+
+    long double prep_sec = get_cpu_sec_from(ref_ticks, cpu_freq);
+
+    ref_ticks = read_cpu_timer();
 
     DynArray<float> distances{};
 
@@ -689,6 +708,8 @@ int main(int argc, char **argv)
 
     const float avg = sum / point_cnt;
 
+    long double calc_sec = get_cpu_sec_from(ref_ticks, cpu_freq);
+
     OUTPUT("Point count: %u\n", point_cnt);
     OUTPUT("Avg dist: %f\n\n", avg);
 
@@ -700,11 +721,20 @@ int main(int argc, char **argv)
                    avg, valid);
             return 2;
         } else
-            OUTPUT("Validation: %f", valid);
+            OUTPUT("Validation: %f\n", valid);
     } else
         OUTPUT("Validation file not found\n");
 
-    OUTPUT("\n\nTODO: Make it not dogshit slow\n");
+    long double total_sec = argparse_sec + jsonparse_sec + prep_sec + calc_sec;
+
+    OUTPUT("\nProfile:\n");
+    OUTPUT("Arg parsing: %Lfs (%.2Lf%%)\n", argparse_sec, 100.l * (argparse_sec / total_sec));
+    OUTPUT("Json parsing: %Lfs (%.2Lf%%)\n", jsonparse_sec, 100.l * (jsonparse_sec / total_sec));
+    OUTPUT("Misc prep: %Lfs (%.2Lf%%)\n", prep_sec, 100.l * (prep_sec / total_sec));
+    OUTPUT("Calculation: %Lfs (%.2Lf%%)\n", calc_sec, 100.l * (calc_sec / total_sec));
+    OUTPUT("Total: %Lfs\n", total_sec);
+
+    OUTPUT("\nTODO: Make it not dogshit slow\n");
     OUTPUT("TODO: Sort out and save the utils\n");
 
     if (checksum_f)
