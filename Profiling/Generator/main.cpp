@@ -98,10 +98,11 @@ static point_pair_t generate_random_point_pair()
 
 static void output_point_pair(const point_pair_t &pair, bool last)
 {
-    OUTPUT("    {\"x0\": %f, \"y0\": %f, \"x1\": %f, \"y1\": %f}%s\n",
+    OUTPUT("    {\"x0\": %.8f, \"y0\": %.8f, \"x1\": %.8f, \"y1\": %.8f}%s\n",
            pair.x0, pair.y0, pair.x1, pair.y1, last ? "" : ",");
 }
 
+// @TODO: verify the algorithm
 static float reference_haversine_dist(const point_pair_t &pair)
 {
     constexpr float c_pi = 3.14159265359f;
@@ -163,8 +164,8 @@ int main(int argc, char **argv)
             char checksum_fname[256];
             snprintf(checksum_fname, sizeof(checksum_fname), "%s.check.bin", argv[i]);
 
-            g_outf     = open_file_or_err(argv[i], "w");
-            checksum_f = open_file_or_err(checksum_fname, "wb");
+            g_outf     = open_file_or_err(argv[i], "w+");
+            checksum_f = open_file_or_err(checksum_fname, "wb+");
         } else if (const char *p = argpref(argv[i], "-seed=")) {
             rand_seed = atoi(p);
             if (rand_seed <= 0) {
@@ -219,14 +220,14 @@ int main(int argc, char **argv)
         if (checksum_f)
             fwrite(&dist, sizeof(dist), 1, checksum_f);
         else
-            OUTPUT("    // dist=%f\n", dist);
+            OUTPUT("    // dist=%.8f\n", dist);
     }
 
     float avg = sum / point_count;
     if (checksum_f)
         fwrite(&avg, sizeof(avg), 1, checksum_f);
     else
-        OUTPUT("  // avg=%f\n", avg);
+        OUTPUT("  // avg=%.8f\n", avg);
 
     OUTPUT("  ]\n");
     OUTPUT("}\n");

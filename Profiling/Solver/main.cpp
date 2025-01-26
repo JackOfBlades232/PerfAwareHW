@@ -4,6 +4,7 @@
 #include "defer.hpp"
 
 #include <cassert>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cerrno>
@@ -52,7 +53,7 @@ static int is_whitespace(int c)
 static token_t get_next_token(FILE *f)
 {
     token_t tok = {tt_error};
-    DynArray<char> id;
+    DynArray<char> id{};
     bool is_in_string = false;
     bool token_had_string = false; // for "" tokens
     int c;
@@ -190,8 +191,7 @@ class JsonObject : public IJsonEntity {
 public:
     JsonObject() = default;
     ~JsonObject() override {
-        FOR (m_fields)
-            delete it->val;
+        FOR(m_fields) delete it->val;
     }
 
     void AddField(json_field_t &&field) { m_fields.Append(mv(field)); }
@@ -224,12 +224,10 @@ class JsonArray : public IJsonEntity {
 public:
     JsonArray() = default;
     ~JsonArray() override {
-        FOR (m_elements)
-            delete *it;
+        FOR(m_elements) delete *it;
     }
 
-    // @TODO: this mv is stupid, sort out
-    void Add(IJsonEntity *elem) { m_elements.Append(mv(elem)); }
+    void Add(IJsonEntity *elem) { m_elements.Append(elem); }
 
     bool IsArray() const override { return true; }
     IS_STUB(IsObject)
@@ -531,8 +529,7 @@ static int reprint_json_main(JsonObject *root)
     return 0;
 }
 
-// @TODO: verify
-static float reference_haversine_dist(float x0, float y0, float x1, float y1)
+static float haversine_dist(float x0, float y0, float x1, float y1)
 {
     constexpr float c_pi = 3.14159265359f;
 
@@ -557,6 +554,9 @@ int main(int argc, char **argv)
 {
     bool only_tokenize = false;
     bool only_reprint_json = false;
+    const char *json_fname = nullptr;
+    FILE *checksum_f = nullptr;
+
     for (int i = 1; i < argc; ++i) {
         if (streq(argv[i], "-f")) {
             ++i;
@@ -565,10 +565,12 @@ int main(int argc, char **argv)
                 return 1;
             }
 
-            g_inf = fopen(argv[i], "r");
+            json_fname = argv[i];
+
+            g_inf = fopen(json_fname, "r");
             if (!g_inf) {
                 LOGERR("Failed to open %s to read, error: %s",
-                       argv[i], strerror(errno));
+                       json_fname, strerror(errno));
                 return 1;
             }
         } else if (streq(argv[i], "-tokenize")) {
@@ -618,8 +620,97 @@ int main(int argc, char **argv)
     if (only_reprint_json)
         return reprint_json_main(root);
 
-    OUTPUT("TODO: Calc haversine\n");
-    OUTPUT("TODO: Make it not dogshit slow\n");
+    if (root->ElemCnt() != 1 ||
+        !streq(root->FieldAt(0).name.CStr(), "points") ||
+        !root->FieldAt(0).val->IsArray())
+    {
+        LOGERR("Invalid format: correct is { \"points\": [ ... ] }");
+        return 2;
+    }
+
+    if (json_fname) {
+        char checksum_fname[256];
+        snprintf(checksum_fname, sizeof(checksum_fname), "%s.check.bin", json_fname);
+        checksum_f = fopen(checksum_fname, "rb");
+    }
+
+    DynArray<float> distances{};
+
+    IJsonEntity *points = root->FieldAt(0).val;
+    const uint32_t point_cnt = points->ElemCnt();
+
+    for (uint32_t i = 0; i < point_cnt; ++i) {
+        IJsonEntity *elem = points->ArrayAt(i);
+        auto print_point_format_error = [] {
+            LOGERR("Invalid point format: correct is "
+                   "{ \"x0\": .f, \"y0\": .f, \"x1\": .f, \"y1\": .f }");
+        };
+        auto read_float = [elem](const char *name, float &out) {
+            if (IJsonEntity *d = elem->ObjectQuery(name)) {
+                if (d->IsNumber()) {
+                    out = (float)d->Number();
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        if (!elem->IsObject() || elem->ElemCnt() != 4) {
+            print_point_format_error();
+            return 2;
+        }
+        float x0, y0, x1, y1;
+        if (!read_float("x0", x0) ||
+            !read_float("y0", y0) ||
+            !read_float("x1", x1) ||
+            !read_float("y1", y1))
+        {
+            print_point_format_error();
+            return 2;
+        }
+
+        const float dist = haversine_dist(x0, y0, x1, y1);
+
+        if (checksum_f) {
+            float valid;
+            fread(&valid, sizeof(valid), 1, checksum_f);
+            if (dist != valid) {
+                LOGERR("Validation failed: dist #%u mismatch, claculated %f, required %f",
+                       i, dist, valid);
+                return 2;
+            }
+        }
+
+        distances.Append(dist);
+    }
+
+    float sum;
+    FOR(distances) sum += *it;
+
+    const float avg = sum / point_cnt;
+
+    OUTPUT("Point count: %u\n", point_cnt);
+    OUTPUT("Avg dist: %f\n\n", avg);
+
+    if (checksum_f) {
+        float valid;
+        fread(&valid, sizeof(valid), 1, checksum_f);
+        if (avg != valid) {
+            LOGERR("Validation failed: avg dist mismatch, claculated %f, required %f",
+                   avg, valid);
+            return 2;
+        } else
+            OUTPUT("Validation: %f", valid);
+    } else
+        OUTPUT("Validation file not found\n");
+
+    OUTPUT("\n\nTODO: Make it not dogshit slow\n");
     OUTPUT("TODO: Sort out and save the utils\n");
+
+    if (checksum_f)
+        fclose(checksum_f);
+    if (g_inf)
+        fclose(g_inf);
+
     return 0;
 }

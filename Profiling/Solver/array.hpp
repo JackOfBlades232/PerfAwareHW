@@ -38,7 +38,7 @@ public:
             delete[] m_data;
     }
 
-    void Append(T &&elem) {
+    void Append(T elem) {
         if (m_len == m_cap)
             Grow(max(2 * m_cap, c_min_cap));
 
