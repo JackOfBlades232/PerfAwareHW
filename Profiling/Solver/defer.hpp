@@ -1,5 +1,7 @@
 #pragma once
 
+#include "util.hpp"
+
 namespace detail
 {
 
@@ -15,4 +17,4 @@ private:
 
 } // namespace detail
 
-#define DEFER(func_) detail::Defer defer__##__COUNTER__(func_)
+#define DEFER(func_) detail::Defer CAT(defer__, __COUNTER__)(func_)

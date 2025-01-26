@@ -98,7 +98,7 @@ static point_pair_t generate_random_point_pair()
 
 static void output_point_pair(const point_pair_t &pair, bool last)
 {
-    OUTPUT("    {\"x0\": %.8f, \"y0\": %.8f, \"x1\": %.8f, \"y1\": %.8f}%s\n",
+    OUTPUT("    {\"x0\": %.13f, \"y0\": %.13f, \"x1\": %.13f, \"y1\": %.13f}%s\n",
            pair.x0, pair.y0, pair.x1, pair.y1, last ? "" : ",");
 }
 
@@ -220,14 +220,14 @@ int main(int argc, char **argv)
         if (checksum_f)
             fwrite(&dist, sizeof(dist), 1, checksum_f);
         else
-            OUTPUT("    // dist=%.8f\n", dist);
+            OUTPUT("    // dist=%.13f\n", dist);
     }
 
     float avg = sum / point_count;
     if (checksum_f)
         fwrite(&avg, sizeof(avg), 1, checksum_f);
     else
-        OUTPUT("  // avg=%.8f\n", avg);
+        OUTPUT("  // avg=%.13f\n", avg);
 
     OUTPUT("  ]\n");
     OUTPUT("}\n");

@@ -441,6 +441,32 @@ static IJsonEntity *parse_json_entity()
     return parse_json_entity(tok);
 }
 
+static JsonObject *parse_json_input()
+{
+    PROFILED_FUNCTION;
+
+    JsonObject *root = nullptr;
+    token_t first_token = GET_TOK();
+    if (first_token.type == tt_eof) {
+        LOGERR("Provide a non-emty json!");
+        return nullptr;
+    }
+
+    if (!first_token.IsFinal()) {
+        if (first_token.type != tt_lbrace) {
+            LOGERR("Invalid json format: must be a root object");
+            return nullptr;
+        }
+
+        root = parse_json_object();
+    }
+
+    if (root == nullptr)
+        LOGERR("Json parsing error");
+
+    return root;
+}
+
 static void print_json(IJsonEntity *ent, int depth, bool indent, bool put_comma)
 {
     auto output_indent = [](int depth) {
@@ -482,6 +508,8 @@ static void print_json(IJsonEntity *ent, int depth, bool indent, bool put_comma)
 
 static int tokenize_and_print_main()
 {
+    PROFILED_FUNCTION;
+
     token_t tok;
     while (!(tok = GET_TOK()).IsFinal()) {
         switch (tok.type) {
@@ -527,6 +555,8 @@ static int tokenize_and_print_main()
 
 static int reprint_json_main(JsonObject *root)
 {
+    PROFILED_FUNCTION;
+
     print_json(root, 0, true, false);
     return 0;
 }
@@ -554,193 +584,171 @@ static float haversine_dist(float x0, float y0, float x1, float y1)
 
 int main(int argc, char **argv)
 {
-    uint64_t cpu_freq = measure_cpu_timer_freq(0.1l);
-    uint64_t ref_ticks;
-
-    ref_ticks = read_cpu_timer();
+    init_profiler();
+    DEFER([] { finish_profiling_and_dump_stats(printf); });
 
     bool only_tokenize = false;
     bool only_reprint_json = false;
     const char *json_fname = nullptr;
     FILE *checksum_f = nullptr;
 
-    for (int i = 1; i < argc; ++i) {
-        if (streq(argv[i], "-f")) {
-            ++i;
-            if (i >= argc) {
-                LOGERR("Invalid arg, specify file name after -f");
-                return 1;
-            }
+    {
+        PROFILED_BLOCK("Argument parsing");
 
-            json_fname = argv[i];
+        for (int i = 1; i < argc; ++i) {
+            if (streq(argv[i], "-f")) {
+                ++i;
+                if (i >= argc) {
+                    LOGERR("Invalid arg, specify file name after -f");
+                    return 1;
+                }
 
-            g_inf = fopen(json_fname, "r");
-            if (!g_inf) {
-                LOGERR("Failed to open %s to read, error: %s",
-                       json_fname, strerror(errno));
+                json_fname = argv[i];
+
+                g_inf = fopen(json_fname, "r");
+                if (!g_inf) {
+                    LOGERR("Failed to open %s to read, error: %s",
+                           json_fname, strerror(errno));
+                    return 1;
+                }
+            } else if (streq(argv[i], "-tokenize")) {
+                if (only_reprint_json) {
+                    LOGERR("Invalid usage: -tokenize and -print are incompatible");
+                    return 1;
+                }
+                only_tokenize = true;
+            } else if (streq(argv[i], "-reprint")) {
+                if (only_tokenize) {
+                    LOGERR("Invalid usage: -tokenize and -print are incompatible");
+                    return 1;
+                }
+                only_reprint_json = true;
+            } else {
+                LOGERR("Invalid arg: %s", argv[i]);
                 return 1;
             }
-        } else if (streq(argv[i], "-tokenize")) {
-            if (only_reprint_json) {
-                LOGERR("Invalid usage: -tokenize and -print are incompatible");
-                return 1;
-            }
-            only_tokenize = true;
-        } else if (streq(argv[i], "-reprint")) {
-            if (only_tokenize) {
-                LOGERR("Invalid usage: -tokenize and -print are incompatible");
-                return 1;
-            }
-            only_reprint_json = true;
-        } else {
-            LOGERR("Invalid arg: %s", argv[i]);
-            return 1;
         }
     }
-
-    long double argparse_sec = get_cpu_sec_from(ref_ticks, cpu_freq);
 
     if (only_tokenize)
         return tokenize_and_print_main();
 
-    ref_ticks = read_cpu_timer();
-
-    JsonObject *root = nullptr;
-    token_t first_token = GET_TOK();
-    if (first_token.type == tt_eof) {
-        LOGERR("Provide a non-emty json!");
+    JsonObject *root = parse_json_input();
+    if (!root)
         return 2;
-    }
-
-    if (!first_token.IsFinal()) {
-        if (first_token.type != tt_lbrace) {
-            LOGERR("Invalid json format: must be a root object");
-            return 2;
-        }
-
-        root = parse_json_object();
-    }
-
-    if (root == nullptr) {
-        LOGERR("Json parsing error");
-        return 2;
-    }
 
     DEFER([root] { delete root; });
-
-    long double jsonparse_sec = get_cpu_sec_from(ref_ticks, cpu_freq);
 
     if (only_reprint_json)
         return reprint_json_main(root);
 
-    ref_ticks = read_cpu_timer();
-
-    if (root->ElemCnt() != 1 ||
-        !streq(root->FieldAt(0).name.CStr(), "points") ||
-        !root->FieldAt(0).val->IsArray())
     {
-        LOGERR("Invalid format: correct is { \"points\": [ ... ] }");
-        return 2;
+        PROFILED_BLOCK("Misc preparation");
+
+        if (root->ElemCnt() != 1 ||
+            !streq(root->FieldAt(0).name.CStr(), "points") ||
+            !root->FieldAt(0).val->IsArray())
+        {
+            LOGERR("Invalid format: correct is { \"points\": [ ... ] }");
+            return 2;
+        }
+
+        if (json_fname) {
+            char checksum_fname[256];
+            snprintf(checksum_fname, sizeof(checksum_fname), "%s.check.bin", json_fname);
+            checksum_f = fopen(checksum_fname, "rb");
+        }
     }
 
-    if (json_fname) {
-        char checksum_fname[256];
-        snprintf(checksum_fname, sizeof(checksum_fname), "%s.check.bin", json_fname);
-        checksum_f = fopen(checksum_fname, "rb");
-    }
+    float sum;
+    float avg;
+    uint32_t point_cnt;
 
-    long double prep_sec = get_cpu_sec_from(ref_ticks, cpu_freq);
+    {
+        PROFILED_BLOCK("Haversine claculation");
 
-    ref_ticks = read_cpu_timer();
+        DynArray<float> distances{};
 
-    DynArray<float> distances{};
+        IJsonEntity *points = root->FieldAt(0).val;
+        point_cnt = points->ElemCnt();
 
-    IJsonEntity *points = root->FieldAt(0).val;
-    const uint32_t point_cnt = points->ElemCnt();
+        for (uint32_t i = 0; i < point_cnt; ++i) {
+            IJsonEntity *elem = points->ArrayAt(i);
+            auto print_point_format_error = [] {
+                LOGERR("Invalid point format: correct is "
+                       "{ \"x0\": .f, \"y0\": .f, \"x1\": .f, \"y1\": .f }");
+            };
+            auto read_float = [elem](const char *name, float &out) {
+                if (IJsonEntity *d = elem->ObjectQuery(name)) {
+                    if (d->IsNumber()) {
+                        out = (float)d->Number();
+                        return true;
+                    }
+                }
+                return false;
+            };
 
-    for (uint32_t i = 0; i < point_cnt; ++i) {
-        IJsonEntity *elem = points->ArrayAt(i);
-        auto print_point_format_error = [] {
-            LOGERR("Invalid point format: correct is "
-                   "{ \"x0\": .f, \"y0\": .f, \"x1\": .f, \"y1\": .f }");
-        };
-        auto read_float = [elem](const char *name, float &out) {
-            if (IJsonEntity *d = elem->ObjectQuery(name)) {
-                if (d->IsNumber()) {
-                    out = (float)d->Number();
-                    return true;
+            if (!elem->IsObject() || elem->ElemCnt() != 4) {
+                print_point_format_error();
+                return 2;
+            }
+            float x0, y0, x1, y1;
+            if (!read_float("x0", x0) ||
+                !read_float("y0", y0) ||
+                !read_float("x1", x1) ||
+                !read_float("y1", y1))
+            {
+                print_point_format_error();
+                return 2;
+            }
+
+            const float dist = haversine_dist(x0, y0, x1, y1);
+
+            if (checksum_f) {
+                float valid;
+                fread(&valid, sizeof(valid), 1, checksum_f);
+                if (dist != valid) {
+                    LOGERR("Validation failed: dist #%u mismatch, claculated %f, required %f",
+                           i, dist, valid);
+                    return 2;
                 }
             }
-            return false;
-        };
 
-        if (!elem->IsObject() || elem->ElemCnt() != 4) {
-            print_point_format_error();
-            return 2;
-        }
-        float x0, y0, x1, y1;
-        if (!read_float("x0", x0) ||
-            !read_float("y0", y0) ||
-            !read_float("x1", x1) ||
-            !read_float("y1", y1))
-        {
-            print_point_format_error();
-            return 2;
+            distances.Append(dist);
         }
 
-        const float dist = haversine_dist(x0, y0, x1, y1);
+        sum = 0.f;
+        FOR(distances) sum += *it;
+
+        avg = sum / point_cnt;
+    }
+
+    {
+        PROFILED_BLOCK("Output, validation and shutdown");
+
+        OUTPUT("Point count: %u\n", point_cnt);
+        OUTPUT("Avg dist: %f\n\n", avg);
 
         if (checksum_f) {
             float valid;
             fread(&valid, sizeof(valid), 1, checksum_f);
-            if (dist != valid) {
-                LOGERR("Validation failed: dist #%u mismatch, claculated %f, required %f",
-                       i, dist, valid);
+            if (avg != valid) {
+                LOGERR("Validation failed: avg dist mismatch, claculated %f, required %f",
+                       avg, valid);
                 return 2;
-            }
-        }
-
-        distances.Append(dist);
-    }
-
-    float sum = 0.f;
-    FOR(distances) sum += *it;
-
-    const float avg = sum / point_cnt;
-
-    long double calc_sec = get_cpu_sec_from(ref_ticks, cpu_freq);
-
-    OUTPUT("Point count: %u\n", point_cnt);
-    OUTPUT("Avg dist: %f\n\n", avg);
-
-    if (checksum_f) {
-        float valid;
-        fread(&valid, sizeof(valid), 1, checksum_f);
-        if (avg != valid) {
-            LOGERR("Validation failed: avg dist mismatch, claculated %f, required %f",
-                   avg, valid);
-            return 2;
+            } else
+                OUTPUT("Validation: %f\n", valid);
         } else
-            OUTPUT("Validation: %f\n", valid);
-    } else
-        OUTPUT("Validation file not found\n");
+            OUTPUT("Validation file not found\n");
 
-    long double total_sec = argparse_sec + jsonparse_sec + prep_sec + calc_sec;
+        if (checksum_f)
+            fclose(checksum_f);
+        if (g_inf)
+            fclose(g_inf);
 
-    OUTPUT("\nProfile:\n");
-    OUTPUT("Arg parsing: %Lfs (%.2Lf%%)\n", argparse_sec, 100.l * (argparse_sec / total_sec));
-    OUTPUT("Json parsing: %Lfs (%.2Lf%%)\n", jsonparse_sec, 100.l * (jsonparse_sec / total_sec));
-    OUTPUT("Misc prep: %Lfs (%.2Lf%%)\n", prep_sec, 100.l * (prep_sec / total_sec));
-    OUTPUT("Calculation: %Lfs (%.2Lf%%)\n", calc_sec, 100.l * (calc_sec / total_sec));
-    OUTPUT("Total: %Lfs\n", total_sec);
-
-    OUTPUT("\nTODO: Make it not dogshit slow\n");
-    OUTPUT("TODO: Sort out and save the utils\n");
-
-    if (checksum_f)
-        fclose(checksum_f);
-    if (g_inf)
-        fclose(g_inf);
+        OUTPUT("\nTODO: Make it not dogshit slow\n");
+        OUTPUT("TODO: Sort out and save the utils\n\n");
+    }
 
     return 0;
 }

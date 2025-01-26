@@ -2,6 +2,9 @@
 
 #include <cstring>
 
+#define CAT_(a_, b_) a_ ## b_
+#define CAT(a_, b_) CAT_(a_, b_)
+
 namespace meta
 {
 
