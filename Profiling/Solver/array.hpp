@@ -1,42 +1,11 @@
 #pragma once
 
+#include "util.hpp"
+
 #include <cassert>
 #include <cstdint>
 
-// @TODO: move somewhere
-namespace util
-{
-
-template <typename T>
-struct RemoveReference {
-    using Type = T;
-};
-template <typename T>
-struct RemoveReference<T &> {
-    using Type = T;
-};
-
-template <typename T>
-using remove_reference_t = typename RemoveReference<T>::Type;
-
-}
-
-// @TODO: pull out to some utils, and complete features when needed
-// Idea: HpArray, StArray, DynArray, TmpArray, etc
-
-#define FOR(arr_)                                                        \
-    for (util::remove_reference_t<decltype(arr_[0])> *it = arr_.Begin(); \
-         it != arr_.End();                                               \
-         ++it)
-
-// @TODO: pull out
-template <typename T>
-static T max(T a, T b)
-{
-    return a > b ? a : b;
-}
-
-// @TODO: make normal w/ inplace news, and test
+// @TODO: work out semantics, test
 
 template <typename T>
 class DynArray {
@@ -47,17 +16,20 @@ class DynArray {
 
 public:
     DynArray() = default;
-    DynArray(const DynArray &other) {
-        if (&other == this)
-            return;
 
-        CopyFrom(other);
-    }
-    DynArray& operator=(const DynArray &other) {
-        if (&other == this)
-            return *this;
+    DynArray(const DynArray &other) = delete;
+    DynArray& operator=(const DynArray &other) = delete;
 
-        CopyFrom(other);
+    DynArray(DynArray &&other)
+        : m_data{xchg(other.m_data, nullptr)}
+        , m_len{xchg(other.m_len, 0)}
+        , m_cap{xchg(other.m_cap, 0)}
+    {}
+    DynArray& operator=(DynArray &&other) {
+        DynArray tmp{mv(other)};
+        swp(m_data, tmp.m_data);
+        swp(m_len, tmp.m_len);
+        swp(m_cap, tmp.m_cap);
         return *this;
     }
 
@@ -66,11 +38,11 @@ public:
             delete[] m_data;
     }
 
-    void Add(const T &elem) {
+    void Append(T &&elem) {
         if (m_len == m_cap)
             Grow(max(2 * m_cap, c_min_cap));
 
-        m_data[m_len++] = elem;
+        m_data[m_len++] = mv(elem);
     }
 
     void Clear() {
@@ -105,6 +77,25 @@ public:
     T &operator[](uint32_t idx) { return At(idx); }
     const T &operator[](uint32_t idx) const { return At(idx); }
 
+    static DynArray Copy(const DynArray &other) {
+        DynArray arr;
+        arr.m_len = other.m_len;
+        arr.m_cap = arr.m_len;
+
+        T *old_data = arr.m_data;
+        if (other.m_data) {
+            arr.m_data = new T[arr.m_len];
+            for (uint32_t i = 0; i < arr.m_len; ++i)
+                arr.m_data[i] = mv(other.m_data[i]);
+        } else
+            arr.m_data = nullptr;
+
+        if (old_data)
+            delete[] old_data;
+
+        return arr;
+    }
+
 private:
     void Grow(uint32_t new_cap) {
         if (new_cap <= m_cap)
@@ -113,28 +104,12 @@ private:
         T *new_data = new T[new_cap];
         if (m_data) {
             for (uint32_t i = 0; i < m_len; ++i)
-                new_data[i] = m_data[i];
+                new_data[i] = mv(m_data[i]);
 
             delete[] m_data;
         }
 
         m_data = new_data;
         m_cap = new_cap;
-    }
-
-    void CopyFrom(const DynArray &other) {
-        m_len = other.m_len;
-        m_cap = m_len;
-
-        T *old_data = m_data;
-        if (other.m_data) {
-            m_data = new T[m_len];
-            for (uint32_t i = 0; i < m_len; ++i)
-                m_data[i] = other.m_data[i];
-        } else
-            m_data = nullptr;
-
-        if (old_data)
-            delete[] old_data;
     }
 };

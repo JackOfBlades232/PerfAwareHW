@@ -1,24 +1,18 @@
 #include "string.hpp"
 #include "array.hpp"
+#include "util.hpp"
 #include "defer.hpp"
 
+#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <cerrno>
 #include <cmath>
+#include <climits>
+#include <cstring>
 
-// @TODO brush up
-
+#define LOGDBG(fmt_, ...) fprintf(stderr, "[DBG] " fmt_ "\n", ##__VA_ARGS__)
 #define LOGERR(fmt_, ...) fprintf(stderr, "[ERR] " fmt_ "\n", ##__VA_ARGS__)
-
-#define STRERROR_BUF(bufname_, err_) \
-    char bufname_[256];              \
-    strerror_s(bufname_, 256, err_)
-
-static bool streq(const char *s1, const char *s2)
-{
-    return strcmp(s1, s2) == 0;
-}
 
 enum token_type_t {
     tt_eof,        // eof
@@ -39,7 +33,7 @@ enum token_type_t {
 
 struct token_t {
     token_type_t type;
-    long double number; // @TODO: union for different types?
+    long double number;
     HpString str;
 
     bool IsFinal() const { return type == tt_eof || type == tt_error; }
@@ -57,7 +51,7 @@ static int is_whitespace(int c)
 
 static token_t get_next_token(FILE *f)
 {
-    token_t tok = { tt_error };
+    token_t tok = {tt_error};
     DynArray<char> id;
     bool is_in_string = false;
     bool token_had_string = false; // for "" tokens
@@ -87,7 +81,7 @@ static token_t get_next_token(FILE *f)
                     ungetc(c, f);
                     if (token_had_string) {
                         tok.type = tt_string;
-                        tok.str = HpString(id.Begin(), id.Length());
+                        tok.str = HpString{id.Begin(), id.Length()};
                     } else if (strncmp(id.Begin(), "null", 4) == 0)
                         tok.type = tt_null;
                     else if (strncmp(id.Begin(), "true", 4) == 0)
@@ -150,7 +144,7 @@ static token_t get_next_token(FILE *f)
 
         // If no separator found or screened/in string, add char to id
         assert(c >= SCHAR_MIN && c <= SCHAR_MAX);
-        id.Add(c);
+        id.Append(c);
     }
 
 yield:
@@ -162,22 +156,28 @@ static FILE *g_inf = stdin;
 
 #define OUTPUT(fmt_, ...) printf(fmt_, ##__VA_ARGS__)
 
-static void output_indent(int depth)
-{
-    for (int i = 0; i < depth; ++i)
-        OUTPUT("  ");
-}
-
-#define OUTPUT_IND(depth_, fmt_, ...) \
-    do {                              \
-        output_indent(depth_);        \
-        OUTPUT(fmt_, ##__VA_ARGS__);  \
-    } while (0)
+struct json_field_t;
 
 struct IJsonEntity {
     virtual ~IJsonEntity() {}
-    virtual void PrettyPrint(int depth) const = 0;
+
+    virtual bool IsObject() const = 0;
+    virtual bool IsArray() const = 0;
+    virtual bool IsString() const = 0;
+    virtual bool IsNumber() const = 0;
+    virtual bool IsBool() const = 0;
+    virtual bool IsNull() const = 0;
+
+    virtual IJsonEntity *ObjectQuery(const char *key) const = 0;
+    virtual const json_field_t &FieldAt(uint32_t id) const = 0;
+    virtual IJsonEntity *ArrayAt(uint32_t id) const = 0;
+    virtual const HpString &Str() const = 0;
+    virtual long double Number() const = 0;
+    virtual bool Bool() const = 0;
+    virtual uint32_t ElemCnt() const = 0;
 };
+
+#define IS_STUB(name_) bool name_() const override { return false; }
 
 struct json_field_t {
     HpString name;
@@ -194,16 +194,28 @@ public:
             delete it->val;
     }
 
-    void AddField(const json_field_t &field) { m_fields.Add(field); }
+    void AddField(json_field_t &&field) { m_fields.Append(mv(field)); }
 
-    void PrettyPrint(int depth) const override {
-        OUTPUT_IND(depth, "{\n");
-        FOR (m_fields) {
-            OUTPUT_IND(depth + 1, "\"%s\":\n", it->name.CStr());
-            it->val->PrettyPrint(depth + 1);
+    bool IsObject() const override { return true; }
+    IS_STUB(IsArray)
+    IS_STUB(IsString)
+    IS_STUB(IsNumber)
+    IS_STUB(IsBool)
+    IS_STUB(IsNull)
+
+    IJsonEntity *ObjectQuery(const char *key) const override {
+        FOR(m_fields) {
+            if (streq(key, it->name.CStr()))
+                return it->val;
         }
-        OUTPUT_IND(depth, "},\n");
+        return nullptr;
     }
+    const json_field_t &FieldAt(uint32_t id) const override { return m_fields[id]; }
+    uint32_t ElemCnt() const override { return m_fields.Length(); }
+    IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
+    const HpString &Str() const override { assert(0); return {}; }
+    long double Number() const override { assert(0); return {}; }
+    bool Bool() const override { assert(0); return {}; }
 };
 
 class JsonArray : public IJsonEntity {
@@ -216,25 +228,45 @@ public:
             delete *it;
     }
 
-    void Add(IJsonEntity *elem) { m_elements.Add(elem); }
+    // @TODO: this mv is stupid, sort out
+    void Add(IJsonEntity *elem) { m_elements.Append(mv(elem)); }
 
-    void PrettyPrint(int depth) const override {
-        OUTPUT_IND(depth, "[\n");
-        FOR (m_elements)
-            (*it)->PrettyPrint(depth + 1);
-        OUTPUT_IND(depth, "],\n");
-    }
+    bool IsArray() const override { return true; }
+    IS_STUB(IsObject)
+    IS_STUB(IsString)
+    IS_STUB(IsNumber)
+    IS_STUB(IsBool)
+    IS_STUB(IsNull)
+
+    IJsonEntity *ArrayAt(uint32_t id) const override { return m_elements[id]; }
+    uint32_t ElemCnt() const override { return m_elements.Length(); }
+    IJsonEntity *ObjectQuery(const char *key) const override { assert(0); return {}; }
+    const json_field_t &FieldAt(uint32_t id) const override { assert(0); return {}; }
+    const HpString &Str() const override { assert(0); return {}; }
+    long double Number() const override { assert(0); return {}; }
+    bool Bool() const override { assert(0); return {}; }
 };
 
 class JsonString : public IJsonEntity {
     HpString m_content;
 
 public:
-    JsonString(const HpString &str) : m_content(str) {}
+    JsonString(HpString &&str) : m_content{mv(str)} {}
 
-    void PrettyPrint(int depth) const override {
-        OUTPUT_IND(depth, "\"%s\",\n", m_content.CStr());
-    }
+    bool IsString() const override { return true; }
+    IS_STUB(IsObject)
+    IS_STUB(IsArray)
+    IS_STUB(IsNumber)
+    IS_STUB(IsBool)
+    IS_STUB(IsNull)
+
+    const HpString &Str() const override { return m_content; }
+    IJsonEntity *ObjectQuery(const char *key) const override { assert(0); return {}; }
+    const json_field_t &FieldAt(uint32_t id) const override { assert(0); return {}; }
+    IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
+    long double Number() const override { assert(0); return {}; }
+    bool Bool() const override { assert(0); return {}; }
+    uint32_t ElemCnt() const override { assert(0); return {}; }
 };
 
 class JsonNumber : public IJsonEntity {
@@ -242,9 +274,21 @@ class JsonNumber : public IJsonEntity {
 
 public:
     JsonNumber(long double val) : m_val(val) {}
-    operator long double() const { return m_val; }
 
-    void PrettyPrint(int depth) const override { OUTPUT_IND(depth, "%Lf,\n", m_val); }
+    bool IsNumber() const override { return true; }
+    IS_STUB(IsObject)
+    IS_STUB(IsArray)
+    IS_STUB(IsString)
+    IS_STUB(IsBool)
+    IS_STUB(IsNull)
+
+    long double Number() const override { return m_val; }
+    IJsonEntity *ObjectQuery(const char *key) const override { assert(0); return {}; }
+    const json_field_t &FieldAt(uint32_t id) const override { assert(0); return {}; }
+    IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
+    const HpString &Str() const override { assert(0); return {}; }
+    bool Bool() const override { assert(0); return {}; }
+    uint32_t ElemCnt() const override { assert(0); return {}; }
 };
 
 class JsonBool : public IJsonEntity {
@@ -252,17 +296,42 @@ class JsonBool : public IJsonEntity {
 
 public:
     JsonBool(bool val) : m_val(val) {}
-    operator bool() const { return m_val; }
 
-    void PrettyPrint(int depth) const override {
-        OUTPUT_IND(depth, "%s,\n", m_val ? "true" : "false");
-    }
+    bool IsBool() const override { return true; }
+    IS_STUB(IsObject)
+    IS_STUB(IsArray)
+    IS_STUB(IsString)
+    IS_STUB(IsNumber)
+    IS_STUB(IsNull)
+
+    bool Bool() const override { return m_val; }
+    IJsonEntity *ObjectQuery(const char *key) const override { assert(0); return {}; }
+    const json_field_t &FieldAt(uint32_t id) const override { assert(0); return {}; }
+    IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
+    const HpString &Str() const override { assert(0); return {}; }
+    long double Number() const override { assert(0); return {}; }
+    uint32_t ElemCnt() const override { assert(0); return {}; }
 };
 
 class JsonNull : public IJsonEntity {
 public:
-    void PrettyPrint(int depth) const override { OUTPUT_IND(depth, "null,\n"); }
+    bool IsNull() const override { return true; }
+    IS_STUB(IsObject)
+    IS_STUB(IsArray)
+    IS_STUB(IsString)
+    IS_STUB(IsNumber)
+    IS_STUB(IsBool)
+
+    IJsonEntity *ObjectQuery(const char *key) const override { assert(0); return {}; }
+    const json_field_t &FieldAt(uint32_t id) const override { assert(0); return {}; }
+    IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
+    const HpString &Str() const override { assert(0); return {}; }
+    long double Number() const override { assert(0); return {}; }
+    bool Bool() const override { assert(0); return {}; }
+    uint32_t ElemCnt() const override { assert(0); return {}; }
 };
+
+// @TODO: more info on parse errors
 
 #define PARSE_ERR(obj_, fmt_, ...)                                      \
     do {                                                                \
@@ -271,14 +340,12 @@ public:
         return nullptr;                                                 \
     } while (0)
 
-static IJsonEntity *parse_json_entity(const token_t *first_token = nullptr);
-
-// @TODO: logerr messages & logic
-// @TODO: refac
+static IJsonEntity *parse_json_entity();
+static IJsonEntity *parse_json_entity(const token_t &first_token);
 
 static JsonObject *parse_json_object()
 {
-    JsonObject *obj = new JsonObject;
+    JsonObject *obj = new JsonObject{};
 
     for (;;) {
         token_t tok = GET_TOK();
@@ -289,19 +356,19 @@ static JsonObject *parse_json_object()
             break;
 
         if (tok.type != tt_string)
-            PARSE_ERR(obj, "Invalid token");
+            PARSE_ERR(obj, "Invalid token, should be a string field name");
 
-        json_field_t field = {tok.str, nullptr};
+        json_field_t field = {mv(tok.str), nullptr};
 
         tok = GET_TOK();
         if (tok.type != tt_colon)
-            PARSE_ERR(obj, "Invalid token");
+            PARSE_ERR(obj, "Invalid token, should be a colon");
 
         field.val = parse_json_entity();
         if (!field.val)
-            PARSE_ERR(obj, "Invalid token");
+            PARSE_ERR(obj, "Invalid token, should be a json entity");
 
-        obj->AddField(field);
+        obj->AddField(mv(field));
 
         tok = GET_TOK();
         if (tok.type == tt_comma)
@@ -317,7 +384,7 @@ static JsonObject *parse_json_object()
 
 static JsonArray *parse_json_array()
 {
-    JsonArray *arr = new JsonArray;
+    JsonArray *arr = new JsonArray{};
 
     for (;;) {
         token_t tok = GET_TOK();
@@ -327,16 +394,16 @@ static JsonArray *parse_json_array()
         if (tok.type == tt_rsqbracket)
             break;
 
-        IJsonEntity *elem = parse_json_entity(&tok);
+        IJsonEntity *elem = parse_json_entity(tok);
         if (!elem)
-            PARSE_ERR(arr, "Invalid token");
+            PARSE_ERR(arr, "Invalid token, should be a json entity");
 
         arr->Add(elem);
 
-        tok = GET_TOK();
-        if (tok.type == tt_comma)
+        token_t ntok = GET_TOK();
+        if (ntok.type == tt_comma)
             continue;
-        else if (tok.type == tt_rsqbracket)
+        else if (ntok.type == tt_rsqbracket)
             break;
 
         PARSE_ERR(arr, "Invalid token");
@@ -345,10 +412,9 @@ static JsonArray *parse_json_array()
     return arr;
 }
 
-static IJsonEntity *parse_json_entity(const token_t *first_token)
+static IJsonEntity *parse_json_entity(const token_t &first_token)
 {
-    token_t tok = first_token ? *first_token : GET_TOK();
-    switch (tok.type) {
+    switch (first_token.type) {
     case tt_lbrace:
         return parse_json_object();
     case tt_lsqbracket:
@@ -356,63 +422,66 @@ static IJsonEntity *parse_json_entity(const token_t *first_token)
     case tt_null:
         return new JsonNull;
     case tt_true:
-        return new JsonBool(true);
+        return new JsonBool{true};
     case tt_false:
-        return new JsonBool(false);
+        return new JsonBool{false};
     case tt_numeric:
-        return new JsonNumber(tok.number);
+        return new JsonNumber{first_token.number};
     case tt_string:
-        return new JsonString(tok.str);
+        return new JsonString{HpString::Copy(first_token.str)};
 
     default:
         return nullptr;
     }
 }
 
-// @TODO: verify
-static float reference_haversine_dist(float x0, float y0, float x1, float y1)
+static IJsonEntity *parse_json_entity()
 {
-    constexpr float c_pi = 3.14159265359f;
-
-    auto deg2rad = [](float deg) { return deg * c_pi / 180.f; };
-    auto rad2deg = [](float rad) { return rad * 180.f / c_pi; };
-
-    auto haversine = [](float rad) { return (1.f - cosf(rad)) * 0.5f; };
-
-    float dx = deg2rad(fabsf(x0 - x1));
-    float dy = deg2rad(fabsf(y0 - y1));
-    float y0r = deg2rad(y0);
-    float y1r = deg2rad(y1);
-
-    float hav_of_diff =
-        haversine(dy) + cosf(y0r)*cosf(y1r)*haversine(dx);
-
-    float rad_of_diff = acosf(1.f - 2.f*hav_of_diff);
-    return rad2deg(rad_of_diff);
+    token_t tok = GET_TOK();
+    return parse_json_entity(tok);
 }
 
-int main(int argc, char **argv)
+static void print_json(IJsonEntity *ent, int depth, bool indent, bool put_comma)
 {
-    for (int i = 1; i < argc; ++i) {
-        if (streq(argv[i], "-f")) {
-            ++i;
-            if (i >= argc) {
-                LOGERR("Invalid arg, specify file name after -f");
-                return 1;
-            }
-
-            errno_t err_code;
-            if ((err_code = fopen_s(&g_inf, argv[i], "r")) != 0) {
-                STRERROR_BUF(err_text, err_code);
-                LOGERR("Failed to open %s to read, error: %s",
-                       argv[i], err_text);
-                exit(1);
-            }
+    auto output_indent = [](int depth) {
+        for (int i = 0; i < depth; ++i)
+            OUTPUT("    ");
+    };
+    if (indent)
+        output_indent(depth);
+    if (ent->IsNull())
+        OUTPUT("null");
+    else if (ent->IsBool())
+        OUTPUT("%s", ent->Bool() ? "true" : "false");
+    else if (ent->IsNumber())
+        OUTPUT("%Lf", ent->Number());
+    else if (ent->IsString())
+        OUTPUT("%.*s", ent->Str().Length(), ent->Str().CStr());
+    else if (ent->IsArray()) {
+        OUTPUT("[\n");
+        for (uint32_t i = 0; i < ent->ElemCnt(); ++i)
+            print_json(ent->ArrayAt(i), depth + 1, true, true);
+        output_indent(depth);
+        OUTPUT("]");
+    } else if (ent->IsObject()) {
+        OUTPUT("{\n");
+        for (uint32_t i = 0; i < ent->ElemCnt(); ++i) {
+            const json_field_t &f = ent->FieldAt(i);
+            output_indent(depth + 1);
+            OUTPUT("\"%.*s\": ", f.name.Length(), f.name.CStr());
+            print_json(f.val, depth + 1, false, true);
         }
+        output_indent(depth);
+        OUTPUT("}");
     }
+    if (put_comma)
+        OUTPUT(",\n");
+    else
+        OUTPUT("\n");
+}
 
-    /*
-    printf("TEST: Tokenization\n");
+static int tokenize_and_print_main()
+{
     token_t tok;
     while (!(tok = GET_TOK()).IsFinal()) {
         switch (tok.type) {
@@ -452,9 +521,76 @@ int main(int argc, char **argv)
         LOGERR("Tokenization test failed!");
         return 2;
     }
-    */
 
-    printf("TEST: Parsing\n");
+    return 0;
+}
+
+static int reprint_json_main(JsonObject *root)
+{
+    print_json(root, 0, true, false);
+    return 0;
+}
+
+// @TODO: verify
+static float reference_haversine_dist(float x0, float y0, float x1, float y1)
+{
+    constexpr float c_pi = 3.14159265359f;
+
+    auto deg2rad = [](float deg) { return deg * c_pi / 180.f; };
+    auto rad2deg = [](float rad) { return rad * 180.f / c_pi; };
+
+    auto haversine = [](float rad) { return (1.f - cosf(rad)) * 0.5f; };
+
+    float dx = deg2rad(fabsf(x0 - x1));
+    float dy = deg2rad(fabsf(y0 - y1));
+    float y0r = deg2rad(y0);
+    float y1r = deg2rad(y1);
+
+    float hav_of_diff =
+        haversine(dy) + cosf(y0r)*cosf(y1r)*haversine(dx);
+
+    float rad_of_diff = acosf(1.f - 2.f*hav_of_diff);
+    return rad2deg(rad_of_diff);
+}
+
+int main(int argc, char **argv)
+{
+    bool only_tokenize = false;
+    bool only_reprint_json = false;
+    for (int i = 1; i < argc; ++i) {
+        if (streq(argv[i], "-f")) {
+            ++i;
+            if (i >= argc) {
+                LOGERR("Invalid arg, specify file name after -f");
+                return 1;
+            }
+
+            g_inf = fopen(argv[i], "r");
+            if (!g_inf) {
+                LOGERR("Failed to open %s to read, error: %s",
+                       argv[i], strerror(errno));
+                return 1;
+            }
+        } else if (streq(argv[i], "-tokenize")) {
+            if (only_reprint_json) {
+                LOGERR("Invalid usage: -tokenize and -print are incompatible");
+                return 1;
+            }
+            only_tokenize = true;
+        } else if (streq(argv[i], "-reprint")) {
+            if (only_tokenize) {
+                LOGERR("Invalid usage: -tokenize and -print are incompatible");
+                return 1;
+            }
+            only_reprint_json = true;
+        } else {
+            LOGERR("Invalid arg: %s", argv[i]);
+            return 1;
+        }
+    }
+
+    if (only_tokenize)
+        return tokenize_and_print_main();
 
     JsonObject *root = nullptr;
     token_t first_token = GET_TOK();
@@ -477,11 +613,13 @@ int main(int argc, char **argv)
         return 2;
     }
 
-    root->PrettyPrint(0);
-    delete root;
+    DEFER([root] { delete root; });
 
-    OUTPUT("TODO: Calc haversine!\n");
-    OUTPUT("TODO: Make it not dogshit slow!\n");
-    OUTPUT("TODO: Brush up and save the utils!\n");
+    if (only_reprint_json)
+        return reprint_json_main(root);
+
+    OUTPUT("TODO: Calc haversine\n");
+    OUTPUT("TODO: Make it not dogshit slow\n");
+    OUTPUT("TODO: Sort out and save the utils\n");
     return 0;
 }

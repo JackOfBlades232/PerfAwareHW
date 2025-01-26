@@ -5,16 +5,21 @@
 #include <ctime>
 #include <cassert>
 #include <cmath>
+#include <cerrno>
 
 #define LOGERR(fmt_, ...) fprintf(stderr, "[ERR] " fmt_ "\n", ##__VA_ARGS__)
-
-#define STRERROR_BUF(bufname_, err_) \
-    char bufname_[256];              \
-    strerror_s(bufname_, 256, err_)
 
 static bool streq(const char *s1, const char *s2)
 {
     return strcmp(s1, s2) == 0;
+}
+
+template <size_t t_n>
+static const char *argpref(const char *arg, const char (&val)[t_n])
+{
+    if (strncmp(arg, val, t_n - 1) != 0)
+        return nullptr;
+    return arg + (t_n - 1);
 }
 
 static float randflt(float min, float max)
@@ -43,7 +48,7 @@ static constexpr unsigned c_max_clusters = 1024;
 
 static random_technique_t g_rand_technique = e_rt_clusters;
 
-static int g_cluster_count = 6;
+static unsigned g_cluster_count = 6;
 static cluster_t clusters[c_max_clusters] = {};
 
 static void init_random(unsigned seed)
@@ -51,7 +56,7 @@ static void init_random(unsigned seed)
     srand(seed);
 
     if (g_rand_technique == e_rt_clusters) {
-        for (int i = 0; i < g_cluster_count; ++i) {
+        for (unsigned i = 0; i < g_cluster_count; ++i) {
             clusters[i] = cluster_t{
                 randflt(-180.f, 180.f), randflt(-90.f, 90.f), // center
                 randflt(5.f, 10.f)                            // max coord delta from center
@@ -145,13 +150,10 @@ int main(int argc, char **argv)
             }
 
             auto open_file_or_err = [](const char *fname, const char *mode) -> FILE * {
-                errno_t err_code;
-                FILE *f;
-                if ((err_code = fopen_s(&f, fname, mode)) != 0) {
-                    STRERROR_BUF(err_text, err_code);
+                FILE *f = fopen(fname, mode);
+                if (!f) {
                     LOGERR("Failed to open %s for write, error: %s",
-                           fname,
-                           err_text);
+                           fname, strerror(errno));
                     exit(1);
                 }
 
@@ -163,16 +165,13 @@ int main(int argc, char **argv)
 
             g_outf     = open_file_or_err(argv[i], "w");
             checksum_f = open_file_or_err(checksum_fname, "wb");
-        } else if (strncmp(argv[i], "-seed=", 6) == 0) {
-            const char *p = argv[i] + 6;
+        } else if (const char *p = argpref(argv[i], "-seed=")) {
             rand_seed = atoi(p);
             if (rand_seed <= 0) {
                 LOGERR("Invalid arg, specify positive seed in -seed=[val]");
                 return 1;
             }
-        } else if (strncmp(argv[i], "-random-technique=", 18) == 0) {
-            // @TODO: random technique choice
-            const char *technique = argv[i] + 18;
+        } else if (const char *technique = argpref(argv[i], "-random-technique=")) {
             if (streq(technique, "uniform"))
                 g_rand_technique = e_rt_uniform;
             else if (streq(technique, "clusters"))
@@ -181,8 +180,7 @@ int main(int argc, char **argv)
                 LOGERR("Invalid arg, specify one of [uniform|clusters] in -random-technique=[val]");
                 return 1;
             }
-        } else if (strncmp(argv[i], "-cluster-count=", 15) == 0) {
-            const char *p = argv[i] + 15;
+        } else if (const char *p = argpref(argv[i], "-cluster-count=")) {
             g_cluster_count = atoi(p);
             if (g_cluster_count <= 0) {
                 LOGERR("Invalid arg, specify positive cluster_count in -cluster-count=[val]");
@@ -193,6 +191,9 @@ int main(int argc, char **argv)
             }
 
             specified_cluster_count = true;
+        } else {
+            LOGERR("Invalid arg: %s", argv[i]);
+            return 1;
         }
     }
 
