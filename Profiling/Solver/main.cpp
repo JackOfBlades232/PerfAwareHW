@@ -54,6 +54,8 @@ static int is_whitespace(int c)
 
 static token_t get_next_token(FILE *f)
 {
+    PROFILED_FUNCTION;
+
     token_t tok = {tt_error};
     DynArray<char> id{};
     bool is_in_string = false;
@@ -345,6 +347,8 @@ static IJsonEntity *parse_json_entity(const token_t &first_token);
 
 static JsonObject *parse_json_object()
 {
+    PROFILED_FUNCTION;
+
     JsonObject *obj = new JsonObject{};
 
     for (;;) {
@@ -384,6 +388,8 @@ static JsonObject *parse_json_object()
 
 static JsonArray *parse_json_array()
 {
+    PROFILED_FUNCTION;
+
     JsonArray *arr = new JsonArray{};
 
     for (;;) {
@@ -414,6 +420,8 @@ static JsonArray *parse_json_array()
 
 static IJsonEntity *parse_json_entity(const token_t &first_token)
 {
+    PROFILED_FUNCTION;
+
     switch (first_token.type) {
     case tt_lbrace:
         return parse_json_object();
@@ -469,6 +477,8 @@ static JsonObject *parse_json_input()
 
 static void print_json(IJsonEntity *ent, int depth, bool indent, bool put_comma)
 {
+    PROFILED_FUNCTION;
+
     auto output_indent = [](int depth) {
         for (int i = 0; i < depth; ++i)
             OUTPUT("    ");
@@ -563,6 +573,8 @@ static int reprint_json_main(JsonObject *root)
 
 static float haversine_dist(float x0, float y0, float x1, float y1)
 {
+    PROFILED_FUNCTION;
+
     constexpr float c_pi = 3.14159265359f;
 
     auto deg2rad = [](float deg) { return deg * c_pi / 180.f; };
@@ -586,6 +598,8 @@ int main(int argc, char **argv)
 {
     init_profiler();
     DEFER([] { finish_profiling_and_dump_stats(printf); });
+
+    PROFILED_BLOCK("Program");
 
     bool only_tokenize = false;
     bool only_reprint_json = false;
@@ -752,3 +766,5 @@ int main(int argc, char **argv)
 
     return 0;
 }
+
+static_assert(__COUNTER__ < c_profiler_slots_count, "Too many profiler slots declared");

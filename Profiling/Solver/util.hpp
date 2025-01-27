@@ -44,6 +44,12 @@ inline T max(T a, T b)
 }
 
 template <typename T>
+inline T abs(T a)
+{
+    return a < T{0} ? -a : a;
+}
+
+template <typename T>
 inline auto mv(T &&var)
 {
     return (meta::remove_reference_t<decltype(var)> &&)(var);

@@ -2,6 +2,8 @@
 
 #include "util.hpp"
 
+#include <cassert>
+#include <cfloat>
 #include <cstdint>
 
 #if _WIN32
@@ -69,62 +71,97 @@ inline uint64_t measure_cpu_timer_freq(long double measure_time_sec)
     return (uint64_t)((long double)(end_cpu_ticks - start_cpu_tick) / measure_time_sec);
 }
 
-inline long double get_cpu_sec_from(uint64_t ref_ticks, uint64_t freq)
+inline long double ticks_to_sec(uint64_t ticks, uint64_t freq)
 {
-    uint64_t delta_ticks = read_cpu_timer() - ref_ticks;
-    return (long double)delta_ticks / freq;
+    return (long double)ticks / freq;
 }
 
-// @TODO: aggregate per function with hash table, in finalization
-
-struct profiler_measurement_t {
-    long double seconds;
-    const char *name;
-    uint32_t id_in_name;
+struct profiler_slot_t {
+    uint64_t inclusive_ticks = 0;
+    uint64_t exclusive_ticks = 0;
+    const char *name = nullptr;
+    uint32_t hit_count = 0;
+    uint32_t current_recursive_entries = 0;
 };
 
-inline profiler_measurement_t g_profiler_measurements[10'000] = {};
-inline uint32_t g_profiler_measurements_cnt = 0;
-inline uint64_t g_cpu_timer_freq = 0;
-inline uint64_t g_start_ticks = 0;
+inline struct profiler_t {
+    profiler_slot_t slots[4096] = {};
+    uint64_t start_ticks = 0;
+    uint64_t end_ticks = 0;
+    uint32_t current_slot = 0;
+} g_profiler{};
+
+inline constexpr size_t c_profiler_slots_count =
+    sizeof(g_profiler.slots) / sizeof(g_profiler.slots[0]);
 
 inline void init_profiler()
 {
-    g_cpu_timer_freq = measure_cpu_timer_freq(0.1l);
-    g_start_ticks = read_cpu_timer();
+    g_profiler.start_ticks = read_cpu_timer();
 }
 
 template <class TPrinter>
 inline void finish_profiling_and_dump_stats(TPrinter &&printer)
 {
-    // @TODO: less dumb recollection of ids, hash map would help
-    long double total_seconds = get_cpu_sec_from(g_start_ticks, g_cpu_timer_freq);
+    g_profiler.end_ticks = read_cpu_timer();
+
+    const uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
+    const long double total_sec =
+        ticks_to_sec(g_profiler.end_ticks - g_profiler.start_ticks, cpu_timer_freq);
 
     printer("Profile:\n");
-    for (uint32_t i = 0; i < g_profiler_measurements_cnt; ++i) {
-        auto &measurement = g_profiler_measurements[i];
-        for (uint32_t j = 0; j < i; ++j) {
-            const auto &other = g_profiler_measurements[j];
-            if (streq(measurement.name, other.name) && other.id_in_name >= measurement.id_in_name)
-                measurement.id_in_name = other.id_in_name + 1;
-        }
+    for (size_t i = 0; i < c_profiler_slots_count; ++i) {
+        const auto &slot = g_profiler.slots[i];
+        assert(slot.current_recursive_entries == 0);
 
-        printer("%s[%u]: %Lfs (%.1Lf%%)\n",
-                measurement.name, measurement.id_in_name,
-                measurement.seconds, 100.l * measurement.seconds / total_seconds);
+        if (!slot.name)
+            continue;
+
+        const long double inclusive_sec = ticks_to_sec(slot.inclusive_ticks, cpu_timer_freq);
+        const long double exclusive_sec = ticks_to_sec(slot.exclusive_ticks, cpu_timer_freq);
+
+        if (abs(inclusive_sec - exclusive_sec) < LDBL_EPSILON) {
+            printer("%s[%u]: %Lfs (%.1Lf%%)\n",
+                    slot.name, slot.hit_count,
+                    inclusive_sec, 100.l * inclusive_sec / total_sec);
+        } else {
+            printer("%s[%u]: %Lfs (%.1Lf%%) inclusive, %Lfs (%.1Lf%%) exclusive\n",
+                    slot.name, slot.hit_count,
+                    inclusive_sec, 100.l * inclusive_sec / total_sec,
+                    exclusive_sec, 100.l * exclusive_sec / total_sec);
+        }
     }
-    printer("Total: %Lfs\n", total_seconds);
+    printer("Total: %Lfs\n", total_sec);
 }
 
+template <uint32_t t_slot>
 class ScopedProfile {
     uint64_t m_ref_ticks;
-    const char *m_name;
+    uint32_t prev_slot;
 
 public:
-    ScopedProfile(const char *name) : m_name{name} { m_ref_ticks = read_cpu_timer(); }
+    ScopedProfile(const char *name) {
+        auto &slot = g_profiler.slots[t_slot];
+
+        slot.name = name;
+        ++slot.hit_count;
+
+        ++slot.current_recursive_entries; 
+        prev_slot = xchg(g_profiler.current_slot, t_slot);
+
+        m_ref_ticks = read_cpu_timer();
+    }
     ~ScopedProfile() {
-        long double seconds = get_cpu_sec_from(m_ref_ticks, g_cpu_timer_freq);
-        g_profiler_measurements[g_profiler_measurements_cnt++] = {seconds, m_name, 0};
+        uint64_t delta_ticks = read_cpu_timer() - m_ref_ticks;
+
+        auto &slot = g_profiler.slots[t_slot];
+
+        slot.exclusive_ticks += delta_ticks;
+        g_profiler.slots[prev_slot].exclusive_ticks -= delta_ticks;
+
+        --slot.current_recursive_entries;
+        slot.inclusive_ticks += slot.current_recursive_entries == 0 ? delta_ticks : 0;
+
+        g_profiler.current_slot = prev_slot;
     }
 
     ScopedProfile(const ScopedProfile &) = delete;
@@ -133,5 +170,9 @@ public:
     ScopedProfile& operator=(ScopedProfile &&) = delete;
 };
 
-#define PROFILED_BLOCK(name_) ScopedProfile CAT(profiled_block__, __COUNTER__){name_}
+// @TODO: try reduce overhead. Currently it's ~16% on linux))
+// @TODO: sort on output
+// @TODO: figure out a cross-translation unit decision for fast indexing
+
+#define PROFILED_BLOCK(name_) ScopedProfile<__COUNTER__ + 1> CAT(profiled_block__, __LINE__){name_}
 #define PROFILED_FUNCTION PROFILED_BLOCK(__FUNCTION__)
