@@ -57,18 +57,22 @@ inline uint64_t read_cpu_timer()
     return __rdtsc();
 }
 
+#ifndef READ_TIMER
+#define READ_TIMER read_cpu_timer
+#endif
+
 inline uint64_t measure_cpu_timer_freq(long double measure_time_sec)
 {
     uint64_t os_freq = get_os_timer_freq();
     uint64_t measure_ticks = (uint64_t)((long double)os_freq * measure_time_sec);
 
-    uint64_t start_cpu_tick = read_cpu_timer();
+    uint64_t start_cpu_tick = READ_TIMER();
     uint64_t start_os_tick = read_os_timer();
 
     while (read_os_timer() - start_os_tick < measure_ticks)
         ;
 
-    uint64_t end_cpu_ticks = read_cpu_timer();
+    uint64_t end_cpu_ticks = READ_TIMER();
 
     return (uint64_t)((long double)(end_cpu_ticks - start_cpu_tick) / measure_time_sec);
 }
@@ -97,13 +101,13 @@ inline constexpr size_t c_profiler_slots_count =
 
 inline void init_profiler()
 {
-    g_profiler.start_ticks = read_cpu_timer();
+    g_profiler.start_ticks = READ_TIMER();
 }
 
 template <class TPrinter>
 inline void finish_profiling_and_dump_stats(TPrinter &&printer)
 {
-    g_profiler.end_ticks = read_cpu_timer();
+    g_profiler.end_ticks = READ_TIMER();
 
     const uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
     const long double total_sec =
@@ -155,10 +159,10 @@ public:
         m_parent = xchg(g_profiler.current_slot, &g_profiler.slots[t_slot]);
 
         m_inclusive_snapshot = slot.inclusive_ticks;
-        m_ref_ticks = read_cpu_timer();
+        m_ref_ticks = READ_TIMER();
     }
     ~ScopedProfile() {
-        uint64_t delta_ticks = read_cpu_timer() - m_ref_ticks;
+        uint64_t delta_ticks = READ_TIMER() - m_ref_ticks;
 
         auto &slot = g_profiler.slots[t_slot];
 

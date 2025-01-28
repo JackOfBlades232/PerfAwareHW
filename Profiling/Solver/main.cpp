@@ -623,13 +623,13 @@ int main(int argc, char **argv)
                 }
             } else if (streq(argv[i], "-tokenize")) {
                 if (only_reprint_json) {
-                    LOGERR("Invalid usage: -tokenize and -print are incompatible");
+                    LOGERR("Invalid usage: -tokenize and -reprint are incompatible");
                     return 1;
                 }
                 only_tokenize = true;
             } else if (streq(argv[i], "-reprint")) {
                 if (only_tokenize) {
-                    LOGERR("Invalid usage: -tokenize and -print are incompatible");
+                    LOGERR("Invalid usage: -tokenize and -reprint are incompatible");
                     return 1;
                 }
                 only_reprint_json = true;
