@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <cfloat>
+#include <cstddef>
 #include <cstdint>
 
 #if _WIN32
@@ -175,9 +176,16 @@ public:
     ScopedProfile& operator=(ScopedProfile &&) = delete;
 };
 
-// @TODO: try reduce overhead. Currently it's ~16% on linux))
-// @TODO: sort on output
 // @TODO: figure out a cross-translation unit decision for fast indexing
+
+#if PROFILER
 
 #define PROFILED_BLOCK(name_) ScopedProfile<__COUNTER__ + 1> CAT(profiled_block__, __LINE__){name_}
 #define PROFILED_FUNCTION PROFILED_BLOCK(__FUNCTION__)
+
+#else
+
+#define PROFILED_BLOCK(name_)
+#define PROFILED_FUNCTION
+
+#endif

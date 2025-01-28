@@ -347,8 +347,6 @@ static IJsonEntity *parse_json_entity(const token_t &first_token);
 
 static JsonObject *parse_json_object()
 {
-    PROFILED_FUNCTION;
-
     JsonObject *obj = new JsonObject{};
 
     for (;;) {
@@ -388,8 +386,6 @@ static JsonObject *parse_json_object()
 
 static JsonArray *parse_json_array()
 {
-    PROFILED_FUNCTION;
-
     JsonArray *arr = new JsonArray{};
 
     for (;;) {
@@ -651,7 +647,10 @@ int main(int argc, char **argv)
     if (!root)
         return 2;
 
-    DEFER([root] { delete root; });
+    DEFER([root] {
+        PROFILED_BLOCK("Delete json");
+        delete root;
+    });
 
     if (only_reprint_json)
         return reprint_json_main(root);
