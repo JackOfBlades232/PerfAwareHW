@@ -17,4 +17,4 @@ private:
 
 } // namespace detail
 
-#define DEFER(func_) detail::Defer CAT(defer__, __COUNTER__)(func_)
+#define DEFER(func_) detail::Defer CAT(defer__, __LINE__)(func_)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "util.hpp"
+#include "algo.hpp"
 
 #include <cassert>
 #include <cfloat>
@@ -81,14 +82,13 @@ struct profiler_slot_t {
     uint64_t exclusive_ticks = 0;
     const char *name = nullptr;
     uint32_t hit_count = 0;
-    uint32_t current_recursive_entries = 0;
 };
 
 inline struct profiler_t {
     profiler_slot_t slots[4096] = {};
     uint64_t start_ticks = 0;
     uint64_t end_ticks = 0;
-    uint32_t current_slot = 0;
+    profiler_slot_t *current_slot = &slots[0];
 } g_profiler{};
 
 inline constexpr size_t c_profiler_slots_count =
@@ -108,10 +108,16 @@ inline void finish_profiling_and_dump_stats(TPrinter &&printer)
     const long double total_sec =
         ticks_to_sec(g_profiler.end_ticks - g_profiler.start_ticks, cpu_timer_freq);
 
+    insertion_sort(&g_profiler.slots[0],
+                   &g_profiler.slots[c_profiler_slots_count],
+                   [](const profiler_slot_t &s1, const profiler_slot_t &s2) {
+                       // Decreasing order with empty slots pushed to end
+                       return s1.name && (!s2.name || s1.inclusive_ticks > s2.inclusive_ticks);
+                   });
+
     printer("Profile:\n");
     for (size_t i = 0; i < c_profiler_slots_count; ++i) {
         const auto &slot = g_profiler.slots[i];
-        assert(slot.current_recursive_entries == 0);
 
         if (!slot.name)
             continue;
@@ -136,7 +142,8 @@ inline void finish_profiling_and_dump_stats(TPrinter &&printer)
 template <uint32_t t_slot>
 class ScopedProfile {
     uint64_t m_ref_ticks;
-    uint32_t prev_slot;
+    uint64_t m_inclusive_snapshot;
+    profiler_slot_t *m_parent;
 
 public:
     ScopedProfile(const char *name) {
@@ -144,10 +151,9 @@ public:
 
         slot.name = name;
         ++slot.hit_count;
+        m_parent = xchg(g_profiler.current_slot, &g_profiler.slots[t_slot]);
 
-        ++slot.current_recursive_entries; 
-        prev_slot = xchg(g_profiler.current_slot, t_slot);
-
+        m_inclusive_snapshot = slot.inclusive_ticks;
         m_ref_ticks = read_cpu_timer();
     }
     ~ScopedProfile() {
@@ -156,12 +162,11 @@ public:
         auto &slot = g_profiler.slots[t_slot];
 
         slot.exclusive_ticks += delta_ticks;
-        g_profiler.slots[prev_slot].exclusive_ticks -= delta_ticks;
+        m_parent->exclusive_ticks -= delta_ticks;
 
-        --slot.current_recursive_entries;
-        slot.inclusive_ticks += slot.current_recursive_entries == 0 ? delta_ticks : 0;
+        slot.inclusive_ticks = m_inclusive_snapshot + delta_ticks;
 
-        g_profiler.current_slot = prev_slot;
+        g_profiler.current_slot = m_parent;
     }
 
     ScopedProfile(const ScopedProfile &) = delete;
