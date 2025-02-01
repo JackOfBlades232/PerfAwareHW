@@ -17,6 +17,62 @@
 #define LOGDBG(fmt_, ...) fprintf(stderr, "[DBG] " fmt_ "\n", ##__VA_ARGS__)
 #define LOGERR(fmt_, ...) fprintf(stderr, "[ERR] " fmt_ "\n", ##__VA_ARGS__)
 
+// @TODO: clean up reimplemented files (as full loads)
+
+struct file_t {
+    char *data;
+    size_t len;
+
+    bool Loaded() const { return data != nullptr; }
+};
+
+static void free_file(file_t &f)
+{
+    if (f.Loaded()) {
+        delete f.data;
+        f.data = nullptr;
+        f.len = 0;
+    }
+}
+
+static file_t read_entire_file(const char *fn)
+{
+    PROFILED_FUNCTION;
+
+    // @TODO: > 4g files, aligned alloc
+    FILE *f = fopen(fn, "rb");
+    if (!f) {
+        LOGERR("Failed to open %s", fn);
+        return {};
+    }
+
+    DEFER([f] { fclose(f); });
+
+    fseek(f, 0, SEEK_END);
+    long flen = ftell(f);
+
+    file_t res = {new char[flen], size_t(flen)};
+
+    {
+        PROFILED_BANDWIDTH_BLOCK("Read file to memory", res.len);
+        fseek(f, 0, SEEK_SET);
+        if (fread(res.data, res.len, 1, f) != 1) {
+            LOGERR("Failed to read %lu bytes from %s", res.len, fn);
+            free_file(res);
+            return {};
+        }
+    }
+
+    return res;
+}
+
+struct input_file_t {
+    file_t f;
+    size_t pos;
+
+    bool IsEof() const { return pos >= f.len; }
+};
+
 enum token_type_t {
     tt_eof,        // eof
     tt_string,     // string literal
@@ -52,7 +108,7 @@ static int is_whitespace(int c)
     return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
 
-static token_t get_next_token(FILE *f)
+static token_t get_next_token(input_file_t &input)
 {
     PROFILED_FUNCTION;
 
@@ -66,7 +122,7 @@ static token_t get_next_token(FILE *f)
     // @FEAT: place error text in str for error
 
     for (;;) {
-        c = fgetc(f);
+        c = input.IsEof() ? EOF : input.f.data[input.pos++];
     
         if (is_in_string && is_eof(c))
             goto yield; // tok type is error
@@ -81,9 +137,9 @@ static token_t get_next_token(FILE *f)
         if (!is_in_string) {
             // Separator found
             if (is_eof(c) || is_whitespace(c) || strchr("{}[],:", c)) {
-                // If there was an identifier, return sep to stream and yield
+                // If there was an identifier, return sep and yield
                 if (!id.Empty() || token_had_string) {
-                    ungetc(c, f);
+                    --input.pos;
                     if (token_had_string) {
                         tok.type = tt_string;
                         tok.str = HpString{id.Begin(), id.Length()};
@@ -156,7 +212,7 @@ yield:
     return tok;
 }
 
-static FILE *g_inf = stdin;
+static input_file_t g_inf = {};
 #define GET_TOK() get_next_token(g_inf)
 
 #define OUTPUT(fmt_, ...) printf(fmt_, ##__VA_ARGS__)
@@ -567,7 +623,11 @@ static int reprint_json_main(JsonObject *root)
     return 0;
 }
 
-static float haversine_dist(float x0, float y0, float x1, float y1)
+struct point_pair_t {
+    float x0, y0, x1, y1;
+};
+
+static float haversine_dist(point_pair_t pair)
 {
     PROFILED_FUNCTION;
 
@@ -578,10 +638,10 @@ static float haversine_dist(float x0, float y0, float x1, float y1)
 
     auto haversine = [](float rad) { return (1.f - cosf(rad)) * 0.5f; };
 
-    float dx = deg2rad(fabsf(x0 - x1));
-    float dy = deg2rad(fabsf(y0 - y1));
-    float y0r = deg2rad(y0);
-    float y1r = deg2rad(y1);
+    float dx = deg2rad(fabsf(pair.x0 - pair.x1));
+    float dy = deg2rad(fabsf(pair.y0 - pair.y1));
+    float y0r = deg2rad(pair.y0);
+    float y1r = deg2rad(pair.y1);
 
     float hav_of_diff =
         haversine(dy) + cosf(y0r)*cosf(y1r)*haversine(dx);
@@ -600,7 +660,10 @@ int main(int argc, char **argv)
     bool only_tokenize = false;
     bool only_reprint_json = false;
     const char *json_fname = nullptr;
-    FILE *checksum_f = nullptr;
+    file_t checksum_f = {};
+
+    DEFER([] { free_file(g_inf.f); });
+    DEFER([&checksum_f] { free_file(checksum_f); });
 
     {
         PROFILED_BLOCK("Argument parsing");
@@ -615,12 +678,9 @@ int main(int argc, char **argv)
 
                 json_fname = argv[i];
 
-                g_inf = fopen(json_fname, "r");
-                if (!g_inf) {
-                    LOGERR("Failed to open %s to read, error: %s",
-                           json_fname, strerror(errno));
+                g_inf.f = read_entire_file(json_fname);
+                if (!g_inf.f.Loaded())
                     return 1;
-                }
             } else if (streq(argv[i], "-tokenize")) {
                 if (only_reprint_json) {
                     LOGERR("Invalid usage: -tokenize and -reprint are incompatible");
@@ -638,6 +698,11 @@ int main(int argc, char **argv)
                 return 1;
             }
         }
+    }
+
+    if (!g_inf.f.Loaded()) {
+        LOGERR("Invalid usage: specify input file with -f <name>");
+        return 1;
     }
 
     if (only_tokenize)
@@ -669,21 +734,17 @@ int main(int argc, char **argv)
         if (json_fname) {
             char checksum_fname[256];
             snprintf(checksum_fname, sizeof(checksum_fname), "%s.check.bin", json_fname);
-            checksum_f = fopen(checksum_fname, "rb");
+            checksum_f = read_entire_file(checksum_fname);
         }
     }
 
-    float sum;
-    float avg;
-    uint32_t point_cnt;
+    DynArray<point_pair_t> pairs{};
 
     {
-        PROFILED_BLOCK("Haversine claculation");
-
-        DynArray<float> distances{};
+        PROFILED_BLOCK("Haversine parsing");
 
         IJsonEntity *points = root->FieldAt(0).val;
-        point_cnt = points->ElemCnt();
+        uint32_t point_cnt = points->ElemCnt();
 
         for (uint32_t i = 0; i < point_cnt; ++i) {
             IJsonEntity *elem = points->ArrayAt(i);
@@ -715,11 +776,23 @@ int main(int argc, char **argv)
                 return 2;
             }
 
-            const float dist = haversine_dist(x0, y0, x1, y1);
+            pairs.Append({x0, y0, x1, y1});
+        }
+    }
 
-            if (checksum_f) {
-                float valid;
-                fread(&valid, sizeof(valid), 1, checksum_f);
+    float sum;
+    float avg;
+
+    {
+        PROFILED_BANDWIDTH_BLOCK("Haversine claculation", pairs.Length() * sizeof(point_pair_t));
+
+        sum = 0.f;
+
+        for (uint32_t i = 0; i < pairs.Length(); ++i) {
+            const float dist = haversine_dist(pairs[i]);
+
+            if (checksum_f.Loaded()) {
+                float valid = ((float *)checksum_f.data)[i];
                 if (dist != valid) {
                     LOGERR("Validation failed: dist #%u mismatch, claculated %f, required %f",
                            i, dist, valid);
@@ -727,24 +800,20 @@ int main(int argc, char **argv)
                 }
             }
 
-            distances.Append(dist);
+            sum += dist;
         }
 
-        sum = 0.f;
-        FOR(distances) sum += *it;
-
-        avg = sum / point_cnt;
+        avg = sum / pairs.Length();
     }
 
     {
         PROFILED_BLOCK("Output, validation and shutdown");
 
-        OUTPUT("Point count: %u\n", point_cnt);
+        OUTPUT("Point count: %u\n", pairs.Length());
         OUTPUT("Avg dist: %f\n\n", avg);
 
-        if (checksum_f) {
-            float valid;
-            fread(&valid, sizeof(valid), 1, checksum_f);
+        if (checksum_f.Loaded()) {
+            float valid = ((float *)checksum_f.data)[pairs.Length()];
             if (avg != valid) {
                 LOGERR("Validation failed: avg dist mismatch, claculated %f, required %f",
                        avg, valid);
@@ -753,11 +822,6 @@ int main(int argc, char **argv)
                 OUTPUT("Validation: %f\n", valid);
         } else
             OUTPUT("Validation file not found\n");
-
-        if (checksum_f)
-            fclose(checksum_f);
-        if (g_inf)
-            fclose(g_inf);
 
         OUTPUT("\nTODO: Make it not dogshit slow\n");
         OUTPUT("TODO: Sort out and save the utils\n\n");

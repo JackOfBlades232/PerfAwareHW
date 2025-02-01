@@ -85,6 +85,7 @@ inline long double ticks_to_sec(uint64_t ticks, uint64_t freq)
 struct profiler_slot_t {
     uint64_t inclusive_ticks = 0;
     uint64_t exclusive_ticks = 0;
+    uint64_t bytes_processed = 0;
     const char *name = nullptr;
     uint32_t hit_count = 0;
 };
@@ -131,15 +132,26 @@ inline void finish_profiling_and_dump_stats(TPrinter &&printer)
         const long double exclusive_sec = ticks_to_sec(slot.exclusive_ticks, cpu_timer_freq);
 
         if (abs(inclusive_sec - exclusive_sec) < LDBL_EPSILON) {
-            printer("%s[%u]: %Lfs (%.1Lf%%)\n",
+            printer("%s[%u]: %Lfs (%.1Lf%%)",
                     slot.name, slot.hit_count,
                     inclusive_sec, 100.l * inclusive_sec / total_sec);
         } else {
-            printer("%s[%u]: %Lfs (%.1Lf%%) inclusive, %Lfs (%.1Lf%%) exclusive\n",
+            printer("%s[%u]: %Lfs (%.1Lf%%) inclusive, %Lfs (%.1Lf%%) exclusive",
                     slot.name, slot.hit_count,
                     inclusive_sec, 100.l * inclusive_sec / total_sec,
                     exclusive_sec, 100.l * exclusive_sec / total_sec);
         }
+
+        if (slot.bytes_processed > 0) {
+            constexpr long double c_bytes_in_mb = (long double)(1u << 20);
+            constexpr long double c_bytes_in_gb = (long double)(1u << 30);
+            const long double mb = (long double)slot.bytes_processed / c_bytes_in_mb; 
+            const long double gb = (long double)slot.bytes_processed / c_bytes_in_gb; 
+            const long double gb_per_sec = gb / inclusive_sec;
+
+            printer(", %.3Lfmb (%.2Lfgb/s)", mb, gb_per_sec);
+        }
+        printer("\n");
     }
     printer("Total: %Lfs\n", total_sec);
 }
@@ -151,11 +163,12 @@ class ScopedProfile {
     profiler_slot_t *m_parent;
 
 public:
-    ScopedProfile(const char *name) {
+    ScopedProfile(const char *name, uint64_t bytes = 0) {
         auto &slot = g_profiler.slots[t_slot];
 
         slot.name = name;
         ++slot.hit_count;
+        slot.bytes_processed += bytes;
         m_parent = xchg(g_profiler.current_slot, &g_profiler.slots[t_slot]);
 
         m_inclusive_snapshot = slot.inclusive_ticks;
@@ -187,9 +200,14 @@ public:
 #define PROFILED_BLOCK(name_) ScopedProfile<__COUNTER__ + 1> CAT(profiled_block__, __LINE__){name_}
 #define PROFILED_FUNCTION PROFILED_BLOCK(__FUNCTION__)
 
+#define PROFILED_BANDWIDTH_BLOCK(name_, bytes_) ScopedProfile<__COUNTER__ + 1> CAT(profiled_block__, __LINE__){name_, bytes_}
+#define PROFILED_BANDWIDTH_FUNCTION(bytes_) PROFILED_BANDWIDTH_BLOCK(__FUNCTION__, bytes_)
+
 #else
 
 #define PROFILED_BLOCK(name_)
 #define PROFILED_FUNCTION
+#define PROFILED_BANDWIDTH_BLOCK(name_, bytes_)
+#define PROFILED_BANDWIDTH_FUNCTION(bytes_)
 
 #endif
