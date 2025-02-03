@@ -1,6 +1,6 @@
 #pragma once
 
-#include "util.hpp"
+#include <util.hpp>
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <cstring>

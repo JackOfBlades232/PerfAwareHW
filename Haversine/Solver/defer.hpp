@@ -1,6 +1,6 @@
 #pragma once
 
-#include "util.hpp"
+#include <util.hpp>
 
 namespace detail
 {
@@ -8,7 +8,7 @@ namespace detail
 template <typename TCallable>
 class Defer {
 public:
-    Defer(TCallable &&callable) : m_callable(callable) {}
+    Defer(TCallable &&callable) : m_callable(mv(callable)) {}
     ~Defer() { m_callable(); }
 
 private:
