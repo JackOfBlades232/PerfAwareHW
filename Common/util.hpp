@@ -5,6 +5,8 @@
 #define CAT_(a_, b_) a_ ## b_
 #define CAT(a_, b_) CAT_(a_, b_)
 
+#define ARR_CNT(arr_) (sizeof(arr_) / sizeof((arr_)[0]))
+
 namespace meta
 {
 
