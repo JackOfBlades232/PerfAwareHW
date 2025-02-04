@@ -59,7 +59,7 @@ public:
         , m_print_new_minimums{print_minimums}
         , m_name{name} {}
 
-    void Start() {
+    void ReStart() {
         if (m_state != e_st_pending)
             RT_ERR("Start called on non-pending rep tester");
         m_test_count = 0;

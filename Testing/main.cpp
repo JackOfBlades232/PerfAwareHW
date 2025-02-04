@@ -2,6 +2,9 @@
 #include <profiling.hpp>
 
 #include <cstdio>
+#include <cassert>
+
+#include <fcntl.h>
 
 // @TODO: pull out as generic data buffer?
 struct file_t {
@@ -20,59 +23,148 @@ static void free_file(file_t &f)
     }
 }
 
-// @TODO: verify correctness
-
-// @TODO: sort this out (construction vs reset, Casey is onto smth)
-static uint64_t g_cpu_timer_freq = uint64_t(-1);
-
-static void fread_rep_test(const char *fn)
+static void fread_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 {
-    // @TODO: > 4g files, aligned alloc
-    FILE *f = fopen(fn, "rb");
-    if (!f) {
-        fprintf(stderr, "Failed to open %s for fread\n", fn);
-        return;
-    }
-
-    fseek(f, 0, SEEK_END);
-    long flen = ftell(f);
-
-    file_t fmem = {new char[flen], size_t(flen)};
-    fclose(f);
-
-    RepetitionTester rt{"fread", (uint64_t)flen, g_cpu_timer_freq, 10.f, true};
-    rt.Start();
-
     do {
         FILE *f = fopen(fn, "rb");
-        fseek(f, 0, SEEK_SET);
+        assert(f);
 
         rt.BeginTimeBlock();
-        size_t read = fread(fmem.data, fmem.len, 1, f);
+        size_t elems = fread(mem.data, mem.len, 1, f);
         rt.EndTimeBlock();
 
-        if (read != 1)
+        if (elems != 1)
             rt.ReportError("Failed read");
 
-        rt.ReportProcessedBytes(read * fmem.len);
+        rt.ReportProcessedBytes(elems * mem.len);
 
         fclose(f);
     } while (rt.Tick());
-
-    free_file(fmem);
 }
 
-// @TODO: _read, ReadFile, unix syscalls
+#if _WIN32
+
+#include <io.h>
+
+static void _read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
+{
+    do {
+        int fh;
+        auto err = _sopen_s(&fh, fn, _O_RDONLY | _O_BINARY, _SH_DENYNO, 0);
+        assert(err == 0);
+
+        rt.BeginTimeBlock();
+        size_t bytes = _read(fh, mem.data, mem.len);
+        rt.EndTimeBlock();
+
+        if (bytes != mem.len)
+            rt.ReportError("Failed read");
+
+        rt.ReportProcessedBytes(bytes);
+
+        _close(fh);
+    } while (rt.Tick());
+}
+
+#include <fileapi.h>
+#include <handleapi.h>
+
+static void ReadFile_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
+{
+    do {
+        HANDLE hnd = CreateFileA(
+            fn, GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        assert(hnd != INVALID_HANDLE_VALUE);
+
+        DWORD bytes;
+        rt.BeginTimeBlock();
+        BOOL res = ReadFile(hnd, mem.data, (DWORD)mem.len, &bytes, nullptr);
+        rt.EndTimeBlock();
+
+        if (!res || bytes != mem.len)
+            rt.ReportError("Failed read");
+
+        rt.ReportProcessedBytes(bytes);
+
+        CloseHandle(hnd);
+    } while (rt.Tick());
+}
+
+#else
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static void read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
+{
+    do {
+        int fd = open(fn, O_RDONLY, 0);
+        assert(fd >= 0);
+
+        rt.BeginTimeBlock();
+        size_t bytes = read(fd, mem.data, mem.len);
+        rt.EndTimeBlock();
+
+        if (bytes != mem.len)
+            rt.ReportError("Failed read");
+
+        rt.ReportProcessedBytes(bytes);
+
+        close(fd);
+    } while (rt.Tick());
+}
+
+#endif
 
 int main(int argc, char **argv)
 {
-    g_cpu_timer_freq = measure_cpu_timer_freq(0.1l);
+    uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
 
     if (argc < 2) {
         fprintf(stderr, "Invalid args, usage: prog.exe [file name]\n");
         return 1;
     }
 
-    fread_rep_test(argv[1]);
+    const char *fn = argv[1];
+
+    file_t fmem = {};
+
+    {
+        FILE *f = fopen(fn, "rb");
+        if (!f) {
+            fprintf(stderr, "Failed to open %s to measure length\n", fn);
+            return 2;
+        }
+
+        // @NOTE: Not bothering with >4gb sizes cause some funcs can't do them.
+        fseek(f, 0, SEEK_END);
+        fmem.len = (size_t)ftell(f);
+
+        fmem.data = new char[fmem.len];
+        fclose(f);
+    }
+
+    struct file_rep_test_t { 
+        void (*func)(const char *, file_t &, RepetitionTester &);
+        RepetitionTester rt;
+    } tests[] =
+    {
+        {&fread_rep_test, {"fread", fmem.len, cpu_timer_freq, 10.f, true}},
+#if _WIN32
+        {&_read_rep_test, {"_read", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&ReadFile_rep_test, {"ReadFile", fmem.len, cpu_timer_freq, 10.f, true}},
+#else
+        {&read_rep_test, {"read", fmem.len, cpu_timer_freq, 10.f, true}},
+#endif
+    };
+
+    for (size_t i = 0; i < ARR_CNT(tests); ++i) {
+        file_rep_test_t &test = tests[i];
+        test.rt.ReStart();
+        (*test.func)(fn, fmem, test.rt);
+    }
+
+    free_file(fmem);
     return 0;
 }
