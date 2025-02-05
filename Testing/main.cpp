@@ -96,7 +96,6 @@ static void ReadFile_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 #include <sys/stat.h>
 #include <unistd.h>
 
-// @TODO: verify
 static void read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 {
     do {
