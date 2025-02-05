@@ -30,6 +30,8 @@ class RepetitionTester {
     uint64_t m_min_ticks;
     uint64_t m_max_ticks;
 
+    uint32_t m_last_chars_printed_for_min;
+
     const char *m_name;
 
 #define RT_ERR(text_, ...)                           \
@@ -44,9 +46,15 @@ class RepetitionTester {
         m_state = e_st_error;                        \
         return ret_;                                 \
     } while (0) 
-#define RT_PRINT(text_, ...) printf(text_ "\n", ##__VA_ARGS__)
+#define RT_PRINT(text_, ...) printf(text_, ##__VA_ARGS__)
+#define RT_PRINTLN(text_, ...) printf(text_ "\n", ##__VA_ARGS__)
+#define CLEAR(count_)                            \
+    do {                                         \
+        for (size_t i_ = 0; i_ < (count_); ++i_) \
+            putchar('\b');                       \
+    } while (0)
 
-public:
+  public:
     RepetitionTester(const char *name,
                      uint64_t target_bytes,
                      uint64_t cpu_timer_freq,
@@ -70,6 +78,7 @@ public:
         m_bytes = 0;
         m_open_blocks = 0;
         m_closed_blocks = 0;
+        m_last_chars_printed_for_min = 0;
         m_state = e_st_active;
         m_test_start_ticks = READ_TIMER();
     }
@@ -94,8 +103,12 @@ public:
             if (m_min_ticks > m_ticks) {
                 m_min_ticks = m_ticks;
                 m_test_start_ticks = cur_ticks;
-                if (m_print_new_minimums)
-                    RT_PRINT("Found new min time: %Lfs", (long double)m_min_ticks / m_cpu_timer_freq);
+                if (m_print_new_minimums) {
+                    CLEAR(m_last_chars_printed_for_min);
+                    m_last_chars_printed_for_min = RT_PRINT(
+                        "Found new min time: %Lfs",
+                        (long double)m_min_ticks / m_cpu_timer_freq);
+                }
             }
         }
 
@@ -143,15 +156,16 @@ private:
         const uint64_t avg_ticks = m_total_ticks / m_test_count;
         const long double avg_sec = ((long double)m_total_ticks / m_test_count) / m_cpu_timer_freq;
 
-        RT_PRINT("");
-        RT_PRINT("--- %s ---", m_name);
-        RT_PRINT("Min: %Lf (%llu), %Lfgb/s", min_sec, m_min_ticks, gb_per_sec(min_sec, m_target_processed_bytes));
-        RT_PRINT("Max: %Lf (%llu), %Lfgb/s", max_sec, m_max_ticks, gb_per_sec(max_sec, m_target_processed_bytes));
-        RT_PRINT("Avg: %Lf (%llu), %Lfgb/s", avg_sec, avg_ticks, gb_per_sec(avg_sec, m_target_processed_bytes));
-        RT_PRINT("");
+        RT_PRINTLN("");
+        RT_PRINTLN("");
+        RT_PRINTLN("--- %s ---", m_name);
+        RT_PRINTLN("Min: %Lf (%llu), %Lfgb/s", min_sec, m_min_ticks, gb_per_sec(min_sec, m_target_processed_bytes));
+        RT_PRINTLN("Max: %Lf (%llu), %Lfgb/s", max_sec, m_max_ticks, gb_per_sec(max_sec, m_target_processed_bytes));
+        RT_PRINTLN("Avg: %Lf (%llu), %Lfgb/s", avg_sec, avg_ticks, gb_per_sec(avg_sec, m_target_processed_bytes));
+        RT_PRINTLN("");
     }
 
 #undef RT_ERR
 #undef RT_ERRET
-#undef RT_PRINT
+#undef RT_PRINTLN
 };

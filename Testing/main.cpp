@@ -23,9 +23,22 @@ static void free_file(file_t &f)
     }
 }
 
+// For tests
+static void free_file_preserve_len(file_t &f)
+{
+    if (f.Loaded()) {
+        delete f.data;
+        f.data = nullptr;
+    }
+}
+
+template <bool t_remalloc>
 static void fread_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 {
     do {
+        if (!mem.Loaded())
+            mem.data = new char[mem.len];
+
         FILE *f = fopen(fn, "rb");
         assert(f);
 
@@ -39,6 +52,10 @@ static void fread_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
         rt.ReportProcessedBytes(elems * mem.len);
 
         fclose(f);
+
+        if constexpr (t_remalloc) {
+            free_file_preserve_len(mem);
+        }
     } while (rt.Tick());
 }
 
@@ -46,9 +63,13 @@ static void fread_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 
 #include <io.h>
 
+template <bool t_remalloc>
 static void _read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 {
     do {
+        if (!mem.Loaded())
+            mem.data = new char[mem.len];
+
         int fh;
         auto err = _sopen_s(&fh, fn, _O_RDONLY | _O_BINARY, _SH_DENYNO, 0);
         assert(err == 0);
@@ -63,15 +84,23 @@ static void _read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
         rt.ReportProcessedBytes(bytes);
 
         _close(fh);
+
+        if constexpr (t_remalloc) {
+            free_file_preserve_len(mem);
+        }
     } while (rt.Tick());
 }
 
 #include <fileapi.h>
 #include <handleapi.h>
 
+template <bool t_remalloc>
 static void ReadFile_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 {
     do {
+        if (!mem.Loaded())
+            mem.data = new char[mem.len];
+
         HANDLE hnd = CreateFileA(
             fn, GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
         assert(hnd != INVALID_HANDLE_VALUE);
@@ -87,6 +116,10 @@ static void ReadFile_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
         rt.ReportProcessedBytes(bytes);
 
         CloseHandle(hnd);
+
+        if constexpr (t_remalloc) {
+            free_file_preserve_len(mem);
+        }
     } while (rt.Tick());
 }
 
@@ -96,9 +129,13 @@ static void ReadFile_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 #include <sys/stat.h>
 #include <unistd.h>
 
+template <bool t_remalloc>
 static void read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 {
     do {
+        if (!mem.Loaded())
+            mem.data = new char[mem.len];
+
         int fd = open(fn, O_RDONLY, 0);
         assert(fd >= 0);
 
@@ -112,6 +149,10 @@ static void read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
         rt.ReportProcessedBytes(bytes);
 
         close(fd);
+
+        if constexpr (t_remalloc) {
+            free_file_preserve_len(mem);
+        }
     } while (rt.Tick());
 }
 
@@ -141,7 +182,6 @@ int main(int argc, char **argv)
         fseek(f, 0, SEEK_END);
         fmem.len = (size_t)ftell(f);
 
-        fmem.data = new char[fmem.len];
         fclose(f);
     }
 
@@ -150,19 +190,25 @@ int main(int argc, char **argv)
         RepetitionTester rt;
     } tests[] =
     {
-        {&fread_rep_test, {"fread", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&fread_rep_test<false>, {"fread", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&fread_rep_test<true>, {"fread + malloc", fmem.len, cpu_timer_freq, 10.f, true}},
 #if _WIN32
-        {&_read_rep_test, {"_read", fmem.len, cpu_timer_freq, 10.f, true}},
-        {&ReadFile_rep_test, {"ReadFile", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&_read_rep_test<false>, {"_read", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&_read_rep_test<true>, {"_read + malloc", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&ReadFile_rep_test<false>, {"ReadFile", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&ReadFile_rep_test<true>, {"ReadFile + malloc", fmem.len, cpu_timer_freq, 10.f, true}},
 #else
-        {&read_rep_test, {"read", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&read_rep_test<false>, {"read", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&read_rep_test<true>, {"read + malloc", fmem.len, cpu_timer_freq, 10.f, true}},
 #endif
     };
 
-    for (size_t i = 0; i < ARR_CNT(tests); ++i) {
-        file_rep_test_t &test = tests[i];
-        test.rt.ReStart();
-        (*test.func)(fn, fmem, test.rt);
+    for (;;) {
+        for (size_t i = 0; i < ARR_CNT(tests); ++i) {
+            file_rep_test_t &test = tests[i];
+            test.rt.ReStart();
+            (*test.func)(fn, fmem, test.rt);
+        }
     }
 
     free_file(fmem);
