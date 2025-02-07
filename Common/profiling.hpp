@@ -12,6 +12,7 @@
 
 #include <intrin.h>
 #include <windows.h>
+#include <psapi.h>
 
 inline uint64_t get_os_timer_freq()
 {
@@ -29,6 +30,20 @@ inline uint64_t read_os_timer()
     if (!res)
         return uint64_t(-1);
     return ticks.QuadPart;
+}
+
+inline uint64_t read_process_page_faults()
+{
+    // @TODO: this should always be enough, right?
+    static HANDLE process_hnd = GetCurrentProcess();
+    PROCESS_MEMORY_COUNTERS_EX memory_counters = {};
+    memory_counters.cb = sizeof(memory_counters);
+    BOOL res = GetProcessMemoryInfo(process_hnd,
+                                    (PROCESS_MEMORY_COUNTERS *)&memory_counters,
+                                    sizeof(memory_counters));
+    if (!res)
+        return uint64_t(-1);
+    return uint64_t(memory_counters.PageFaultCount);
 }
 
 #else
@@ -50,6 +65,12 @@ inline uint64_t read_os_timer()
     return ts.tv_sec * 1'000'000'000 + ts.tv_nsec;
 }
 
+inline uint64_t read_process_page_faults()
+{
+    // @TODO
+    return 0;
+}
+
 #endif
 
 inline uint64_t read_cpu_timer()
@@ -59,6 +80,9 @@ inline uint64_t read_cpu_timer()
 
 #ifndef READ_TIMER
 #define READ_TIMER read_cpu_timer
+#endif
+#ifndef READ_PAGE_FAULT_COUNTER
+#define READ_PAGE_FAULT_COUNTER read_process_page_faults
 #endif
 
 inline uint64_t measure_cpu_timer_freq(long double measure_time_sec)

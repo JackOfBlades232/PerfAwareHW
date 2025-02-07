@@ -2,6 +2,7 @@
 #include <profiling.hpp>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cassert>
 
 #include <fcntl.h>
@@ -17,7 +18,7 @@ struct file_t {
 static void free_file(file_t &f)
 {
     if (f.Loaded()) {
-        delete f.data;
+        free(f.data);
         f.data = nullptr;
         f.len = 0;
     }
@@ -27,9 +28,28 @@ static void free_file(file_t &f)
 static void free_file_preserve_len(file_t &f)
 {
     if (f.Loaded()) {
-        delete f.data;
+        free(f.data);
         f.data = nullptr;
     }
+}
+
+template <bool t_remalloc>
+static void memset_rep_test(const char *, file_t &mem, RepetitionTester &rt)
+{
+    do {
+        if (!mem.Loaded())
+            mem.data = (char *)malloc(mem.len);
+
+        rt.BeginTimeBlock();
+        memset(mem.data, 0, mem.len);
+        rt.EndTimeBlock();
+
+        rt.ReportProcessedBytes(mem.len);
+
+        if constexpr (t_remalloc) {
+            free_file_preserve_len(mem);
+        }
+    } while (rt.Tick());
 }
 
 template <bool t_remalloc>
@@ -37,7 +57,7 @@ static void fread_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 {
     do {
         if (!mem.Loaded())
-            mem.data = new char[mem.len];
+            mem.data = (char *)malloc(mem.len);
 
         FILE *f = fopen(fn, "rb");
         assert(f);
@@ -68,7 +88,7 @@ static void _read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 {
     do {
         if (!mem.Loaded())
-            mem.data = new char[mem.len];
+            mem.data = (char *)malloc(mem.len);
 
         int fh;
         auto err = _sopen_s(&fh, fn, _O_RDONLY | _O_BINARY, _SH_DENYNO, 0);
@@ -99,7 +119,7 @@ static void ReadFile_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 {
     do {
         if (!mem.Loaded())
-            mem.data = new char[mem.len];
+            mem.data = (char *)malloc(mem.len);
 
         HANDLE hnd = CreateFileA(
             fn, GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -134,7 +154,7 @@ static void read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 {
     do {
         if (!mem.Loaded())
-            mem.data = new char[mem.len];
+            mem.data = (char *)malloc(mem.len);
 
         int fd = open(fn, O_RDONLY, 0);
         assert(fd >= 0);
@@ -190,11 +210,16 @@ int main(int argc, char **argv)
         RepetitionTester rt;
     } tests[] =
     {
+        {&memset_rep_test<false>, {"memset", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&memset_rep_test<true>, {"memset + malloc", fmem.len, cpu_timer_freq, 10.f, true}},
+
         {&fread_rep_test<false>, {"fread", fmem.len, cpu_timer_freq, 10.f, true}},
         {&fread_rep_test<true>, {"fread + malloc", fmem.len, cpu_timer_freq, 10.f, true}},
+
 #if _WIN32
         {&_read_rep_test<false>, {"_read", fmem.len, cpu_timer_freq, 10.f, true}},
         {&_read_rep_test<true>, {"_read + malloc", fmem.len, cpu_timer_freq, 10.f, true}},
+
         {&ReadFile_rep_test<false>, {"ReadFile", fmem.len, cpu_timer_freq, 10.f, true}},
         {&ReadFile_rep_test<true>, {"ReadFile + malloc", fmem.len, cpu_timer_freq, 10.f, true}},
 #else
