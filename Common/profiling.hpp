@@ -50,6 +50,7 @@ inline uint64_t read_process_page_faults()
 
 #include <x86intrin.h>
 #include <ctime>
+#include <cstdio>
 
 inline uint64_t get_os_timer_freq()
 {
@@ -67,8 +68,27 @@ inline uint64_t read_os_timer()
 
 inline uint64_t read_process_page_faults()
 {
-    // @TODO
-    return 0;
+    FILE *procdata_f = fopen(g_os_proc_state.stat_file_name_buf, "r");
+    if (!procdata_f)
+        return uint64_t(-1);
+    unsigned long minor_fault_count;
+
+    {
+        char csink;
+        int isink;
+        unsigned usink;
+        char ssink[32]; // enough by man
+        int items = fscanf(procdata_f, "%d %s %c %d %d %d %d %d %u %lu", &isink,
+                           ssink, &csink, &isink, &isink, &isink, &isink, &isink,
+                           &usink, &minor_fault_count);
+        if (items != 10)
+            minor_fault_count = (unsigned long)(-1);
+    }
+    fclose(procdata_f);
+
+    return minor_fault_count == (unsigned long)(-1)
+               ? uint64_t(-1)
+               : uint64_t(minor_fault_count);
 }
 
 #endif

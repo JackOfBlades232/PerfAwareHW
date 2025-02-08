@@ -19,7 +19,7 @@ inline void free_os_pages_memory(void *mem, size_t)
 
 inline void *allocate_os_large_pages_memory(size_t bytes)
 {
-    // @TODO: have not been able to make it work yet, verify
+    // For some reason I can barely make it work on my low-ram pc( Is fragmentation that bad?
     if (g_os_proc_state.large_page_sz == 0)
         return nullptr;
     const size_t bytes_for_pages = round_up(bytes, g_os_proc_state.large_page_sz);
@@ -34,12 +34,17 @@ inline void free_os_large_pages_memory(void *mem, size_t)
 #else
 
 #include <sys/mman.h>
+#include <linux/mman.h>
 #include <unistd.h>
+
+#include <sys/time.h>
+#include <sys/resource.h>
 
 inline void *allocate_os_pages_memory(size_t bytes)
 {
-    const size_t bytes_for_pages = round_up(bytes, getpagesize());
-    return mmap(nullptr, bytes_for_pages, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+    const size_t bytes_for_pages = round_up(bytes, size_t(getpagesize()));
+    return mmap(nullptr, bytes_for_pages, PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
 }
 
 inline void free_os_pages_memory(void *mem, size_t bytes)
@@ -47,15 +52,19 @@ inline void free_os_pages_memory(void *mem, size_t bytes)
     munmap(mem, bytes);
 }
 
+// @TODO: sort out if page size should be dynamically decided and if we should try for 1g
+// This is for appication usage, for measurements should be enough
 inline void *allocate_os_large_pages_memory(size_t bytes)
 {
-    // @TODO
-    return nullptr;
+    void *ptr = mmap(nullptr, bytes, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB, 0, 0);
+    return ptr == MAP_FAILED ? nullptr : ptr;
 }
 
-inline void free_os_large_pages_memory(void *mem, size_t)
+inline void free_os_large_pages_memory(void *mem, size_t bytes)
 {
-    // @TODO
+    constexpr size_t c_huge_page_alignment = 2 << 20;
+    munmap(mem, round_up(bytes, c_huge_page_alignment));
 }
 
 #endif

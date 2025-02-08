@@ -2,6 +2,7 @@
 #include <profiling.hpp>
 #include <memory.hpp>
 #include <os.hpp>
+#include <util.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -31,6 +32,8 @@ static void free_file_preserve_len(file_t &f, allocator_t allocator)
         f.data = nullptr;
     }
 }
+
+static volatile uint32_t g_mapped_file_read_sink = '\0'; // disabling optimization
 
 template <bool t_realloc>
 static void mem_write_rep_test(const char *, file_t &mem,
@@ -179,8 +182,6 @@ static void ReadFile_rep_test(const char *fn, file_t &mem,
         free_file_preserve_len(mem, allocator);
 }
 
-static volatile uint32_t g_mapped_file_read_sink = '\0'; // disabling optimization
-
 // @TODO: test no remapping too? Maybe someday
 static void map_file_rep_test(const char *fn, file_t &mem,
                               RepetitionTester &rt, allocator_t)
@@ -216,6 +217,7 @@ static void map_file_rep_test(const char *fn, file_t &mem,
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 template <bool t_realloc>
@@ -251,7 +253,28 @@ static void read_rep_test(const char *fn, file_t &mem,
 static void map_file_rep_test(const char *fn, file_t &mem,
                               RepetitionTester &rt, allocator_t)
 {
-    // @TODO
+    do {
+        int fd = open(fn, O_RDONLY, 0);
+        assert(fd >= 0);
+
+        rt.BeginTimeBlock();
+
+        size_t bytes = round_up(mem.len, size_t(getpagesize()));
+        mem.data = (char *)mmap(nullptr, bytes, PROT_READ, MAP_PRIVATE, fd, 0);
+
+        if (mem.data != MAP_FAILED) {
+            for (char *p = mem.data; p != mem.data + mem.len; ++p)
+                g_mapped_file_read_sink += uint32_t(*p);
+        } else
+            rt.ReportError("Failed file mapping");
+
+        rt.EndTimeBlock();
+
+        rt.ReportProcessedBytes(mem.len);
+
+        munmap(mem.data, bytes);
+        close(fd);
+    } while (rt.Tick());
 }
 
 #endif
@@ -270,7 +293,7 @@ int main(int argc, char **argv)
  
     const allocator_t mallocator = {
         .alloc = malloc,
-        .free = [](void *ptr, size_t) { free(ptr); }
+        .free = +[](void *ptr, size_t) { free(ptr); }
     };
     const allocator_t os_page_allocator = {
         .alloc = allocate_os_pages_memory,

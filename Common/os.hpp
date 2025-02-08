@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdio>
 
 #if _WIN32
 
@@ -47,25 +48,29 @@ inline int64_t get_last_os_error()
 
 #else
 
+#include <unistd.h>
+#include <cerrno>
+
 struct os_process_state_t {
-    // @TODO
+    pid_t pid;
+    char stat_file_name_buf[128];
 };
 
 inline void init_os_process_state(os_process_state_t &st)
 {
-    // @TODO
+    st.pid = getpid();
+    snprintf(st.stat_file_name_buf, sizeof(st.stat_file_name_buf), "/proc/%d/stat", st.pid);
+    // @TODO: verify no truncation?
 }
 
 inline bool try_enable_large_pages(os_process_state_t &st)
 {
-    // @TODO
-    return false;
+    return true;
 }
 
 inline int64_t get_last_os_error()
 {
-    // @TODO
-    return 0;
+    return int64_t(errno);
 }
 
 #endif
