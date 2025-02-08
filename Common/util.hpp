@@ -85,3 +85,9 @@ inline bool streq(const char *s1, const char *s2)
 {
     return strcmp(s1, s2) == 0;
 }
+
+template <class T>
+inline T round_up(T val, T measure)
+{
+    return measure * ((val - 1) / measure + 1);
+}

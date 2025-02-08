@@ -24,8 +24,6 @@ class RepetitionTester {
     uint32_t m_open_blocks;
     uint32_t m_closed_blocks;
 
-    bool m_print_new_minimums;
-
     uint64_t m_test_count;
     uint64_t m_total_ticks;
     uint64_t m_total_bytes;
@@ -36,6 +34,7 @@ class RepetitionTester {
     uint64_t m_max_test_page_faults;
 
     uint32_t m_last_chars_printed_for_min;
+    bool m_print_new_minimums;
 
     const char *m_name;
 
@@ -53,7 +52,7 @@ class RepetitionTester {
     } while (0) 
 #define RT_PRINT(text_, ...) printf(text_, ##__VA_ARGS__)
 #define RT_PRINTLN(text_, ...) printf(text_ "\n", ##__VA_ARGS__)
-#define CLEAR(count_)                            \
+#define RT_CLEAR(count_)                         \
     do {                                         \
         for (size_t i_ = 0; i_ < (count_); ++i_) \
             putchar('\b');                       \
@@ -119,7 +118,7 @@ class RepetitionTester {
                 m_min_test_page_faults = m_page_faults;
                 m_test_start_ticks = cur_ticks;
                 if (m_print_new_minimums) {
-                    CLEAR(m_last_chars_printed_for_min);
+                    RT_CLEAR(m_last_chars_printed_for_min);
                     m_last_chars_printed_for_min = RT_PRINT(
                         "Found new min time: %Lfs",
                         (long double)m_min_ticks / m_cpu_timer_freq);
@@ -210,4 +209,6 @@ private:
 #undef RT_ERR
 #undef RT_ERRET
 #undef RT_PRINTLN
+#undef RT_PRINT
+#undef RT_CLEAR
 };

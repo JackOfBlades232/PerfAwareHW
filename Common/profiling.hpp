@@ -1,6 +1,7 @@
 #pragma once
 
 #include "util.hpp"
+#include "os.hpp"
 #include "algo.hpp"
 
 #include <cassert>
@@ -35,10 +36,9 @@ inline uint64_t read_os_timer()
 inline uint64_t read_process_page_faults()
 {
     // @TODO: this should always be enough, right?
-    static HANDLE process_hnd = GetCurrentProcess();
     PROCESS_MEMORY_COUNTERS_EX memory_counters = {};
     memory_counters.cb = sizeof(memory_counters);
-    BOOL res = GetProcessMemoryInfo(process_hnd,
+    BOOL res = GetProcessMemoryInfo(g_os_proc_state.process_hnd,
                                     (PROCESS_MEMORY_COUNTERS *)&memory_counters,
                                     sizeof(memory_counters));
     if (!res)

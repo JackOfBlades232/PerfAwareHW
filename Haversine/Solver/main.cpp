@@ -3,6 +3,7 @@
 #include "defer.hpp"
 
 #include <profiling.hpp>
+#include <os.hpp>
 #include <util.hpp>
 
 #include <cassert>
@@ -652,6 +653,8 @@ static float haversine_dist(point_pair_t pair)
 
 int main(int argc, char **argv)
 {
+    init_os_process_state(g_os_proc_state);
+
     init_profiler();
     DEFER([] { finish_profiling_and_dump_stats(printf); });
 

@@ -1,12 +1,19 @@
 #include <repetition.hpp>
 #include <profiling.hpp>
 #include <memory.hpp>
+#include <os.hpp>
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstdint>
 #include <cassert>
 
 #include <fcntl.h>
+
+struct allocator_t {
+    void *(*alloc)(size_t);
+    void (*free)(void *, size_t);
+};
 
 // @TODO: pull out as generic data buffer?
 struct file_t {
@@ -16,52 +23,45 @@ struct file_t {
     bool Loaded() const { return data != nullptr; }
 };
 
-static void free_file(file_t &f)
-{
-    if (f.Loaded()) {
-        free_os_pages_memory(f.data, f.len);
-        f.data = nullptr;
-        f.len = 0;
-    }
-}
-
 // For tests
-static void free_file_preserve_len(file_t &f)
+static void free_file_preserve_len(file_t &f, allocator_t allocator)
 {
     if (f.Loaded()) {
-        free_os_pages_memory(f.data, f.len);
+        (*allocator.free)(f.data, f.len);
         f.data = nullptr;
     }
 }
 
 template <bool t_realloc>
-static void mem_write_rep_test(const char *, file_t &mem, RepetitionTester &rt)
+static void mem_write_rep_test(const char *, file_t &mem,
+                               RepetitionTester &rt, allocator_t allocator)
 {
     do {
         if (!mem.Loaded())
-            mem.data = (char *)allocate_os_pages_memory(mem.len);
+            mem.data = (char *)(*allocator.alloc)(mem.len);
 
         rt.BeginTimeBlock();
-        for (char *p = mem.data; p < mem.data + mem.len; ++p)
+        for (char *p = mem.data; p != mem.data + mem.len; ++p)
             *p = char(p - mem.data);
         rt.EndTimeBlock();
 
         rt.ReportProcessedBytes(mem.len);
 
         if constexpr (t_realloc)
-            free_file_preserve_len(mem);
+            free_file_preserve_len(mem, allocator);
     } while (rt.Tick());
 
     if (mem.Loaded())
-        free_file_preserve_len(mem);
+        free_file_preserve_len(mem, allocator);
 }
 
 template <bool t_realloc>
-static void mem_write_backwards_rep_test(const char *, file_t &mem, RepetitionTester &rt)
+static void mem_write_backwards_rep_test(const char *, file_t &mem,
+                                         RepetitionTester &rt, allocator_t allocator)
 {
     do {
         if (!mem.Loaded())
-            mem.data = (char *)allocate_os_pages_memory(mem.len);
+            mem.data = (char *)(*allocator.alloc)(mem.len);
 
         rt.BeginTimeBlock();
         for (char *p = mem.data + mem.len - 1; p >= mem.data; --p)
@@ -71,19 +71,20 @@ static void mem_write_backwards_rep_test(const char *, file_t &mem, RepetitionTe
         rt.ReportProcessedBytes(mem.len);
 
         if constexpr (t_realloc)
-            free_file_preserve_len(mem);
+            free_file_preserve_len(mem, allocator);
     } while (rt.Tick());
 
     if (mem.Loaded())
-        free_file_preserve_len(mem);
+        free_file_preserve_len(mem, allocator);
 }
 
 template <bool t_realloc>
-static void fread_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
+static void fread_rep_test(const char *fn, file_t &mem,
+                           RepetitionTester &rt, allocator_t allocator)
 {
     do {
         if (!mem.Loaded())
-            mem.data = (char *)allocate_os_pages_memory(mem.len);
+            mem.data = (char *)(*allocator.alloc)(mem.len);
 
         FILE *f = fopen(fn, "rb");
         assert(f);
@@ -99,13 +100,12 @@ static void fread_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 
         fclose(f);
 
-        if constexpr (t_realloc) {
-            free_file_preserve_len(mem);
-        }
+        if constexpr (t_realloc)
+            free_file_preserve_len(mem, allocator);
     } while (rt.Tick());
 
     if (mem.Loaded())
-        free_file_preserve_len(mem);
+        free_file_preserve_len(mem, allocator);
 }
 
 #if _WIN32
@@ -113,11 +113,12 @@ static void fread_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 #include <io.h>
 
 template <bool t_realloc>
-static void _read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
+static void _read_rep_test(const char *fn, file_t &mem,
+                           RepetitionTester &rt, allocator_t allocator)
 {
     do {
         if (!mem.Loaded())
-            mem.data = (char *)allocate_os_pages_memory(mem.len);
+            mem.data = (char *)(*allocator.alloc)(mem.len);
 
         int fh;
         auto err = _sopen_s(&fh, fn, _O_RDONLY | _O_BINARY, _SH_DENYNO, 0);
@@ -134,24 +135,25 @@ static void _read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 
         _close(fh);
 
-        if constexpr (t_realloc) {
-            free_file_preserve_len(mem);
-        }
+        if constexpr (t_realloc)
+            free_file_preserve_len(mem, allocator);
     } while (rt.Tick());
 
     if (mem.Loaded())
-        free_file_preserve_len(mem);
+        free_file_preserve_len(mem, allocator);
 }
 
+#include <winbase.h>
 #include <fileapi.h>
 #include <handleapi.h>
 
 template <bool t_realloc>
-static void ReadFile_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
+static void ReadFile_rep_test(const char *fn, file_t &mem,
+                              RepetitionTester &rt, allocator_t allocator)
 {
     do {
         if (!mem.Loaded())
-            mem.data = (char *)allocate_os_pages_memory(mem.len);
+            mem.data = (char *)(*allocator.alloc)(mem.len);
 
         HANDLE hnd = CreateFileA(
             fn, GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -169,13 +171,45 @@ static void ReadFile_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 
         CloseHandle(hnd);
 
-        if constexpr (t_realloc) {
-            free_file_preserve_len(mem);
-        }
+        if constexpr (t_realloc)
+            free_file_preserve_len(mem, allocator);
     } while (rt.Tick());
 
     if (mem.Loaded())
-        free_file_preserve_len(mem);
+        free_file_preserve_len(mem, allocator);
+}
+
+static volatile uint32_t g_mapped_file_read_sink = '\0'; // disabling optimization
+
+// @TODO: test no remapping too? Maybe someday
+static void map_file_rep_test(const char *fn, file_t &mem,
+                              RepetitionTester &rt, allocator_t)
+{
+    do {
+        HANDLE file_hnd = CreateFileA(
+            fn, GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        assert(file_hnd != INVALID_HANDLE_VALUE);
+
+        rt.BeginTimeBlock();
+
+        HANDLE mapping_hnd = CreateFileMappingA(file_hnd, nullptr, PAGE_READONLY, 0, 0, nullptr);
+        assert(mapping_hnd != INVALID_HANDLE_VALUE);
+
+        mem.data = (char *)MapViewOfFile(mapping_hnd, FILE_MAP_READ, 0, 0, mem.len);
+        if (mem.data) {
+            for (char *p = mem.data; p != mem.data + mem.len; ++p)
+                g_mapped_file_read_sink += uint32_t(*p);
+        } else
+            rt.ReportError("Failed file mapping");
+
+        rt.EndTimeBlock();
+
+        rt.ReportProcessedBytes(mem.len);
+
+        UnmapViewOfFile(mem.data);
+        CloseHandle(mapping_hnd);
+        CloseHandle(file_hnd);
+    } while (rt.Tick());
 }
 
 #else
@@ -185,11 +219,12 @@ static void ReadFile_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 #include <unistd.h>
 
 template <bool t_realloc>
-static void read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
+static void read_rep_test(const char *fn, file_t &mem,
+                          RepetitionTester &rt, allocator_t allocator)
 {
     do {
         if (!mem.Loaded())
-            mem.data = (char *)allocate_os_pages_memory(mem.len);
+            mem.data = (char *)(*allocator.alloc)(mem.len);
 
         int fd = open(fn, O_RDONLY, 0);
         assert(fd >= 0);
@@ -205,27 +240,46 @@ static void read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
 
         close(fd);
 
-        if constexpr (t_realloc) {
-            free_file_preserve_len(mem);
-        }
+        if constexpr (t_realloc)
+            free_file_preserve_len(mem, allocator);
     } while (rt.Tick());
 
     if (mem.Loaded())
-        free_file_preserve_len(mem);
+        free_file_preserve_len(mem, allocator);
+}
+
+static void map_file_rep_test(const char *fn, file_t &mem,
+                              RepetitionTester &rt, allocator_t)
+{
+    // @TODO
 }
 
 #endif
 
 int main(int argc, char **argv)
 {
-    uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
-
     if (argc < 2) {
         fprintf(stderr, "Invalid args, usage: prog.exe [file name]\n");
         return 1;
     }
 
     const char *fn = argv[1];
+
+    init_os_process_state(g_os_proc_state);
+    uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
+ 
+    const allocator_t mallocator = {
+        .alloc = malloc,
+        .free = [](void *ptr, size_t) { free(ptr); }
+    };
+    const allocator_t os_page_allocator = {
+        .alloc = allocate_os_pages_memory,
+        .free = free_os_pages_memory
+    };
+    const allocator_t os_large_page_allocator = {
+        .alloc = allocate_os_large_pages_memory,
+        .free = free_os_large_pages_memory
+    };
 
     file_t fmem = {};
 
@@ -243,40 +297,72 @@ int main(int argc, char **argv)
         fclose(f);
     }
 
+    bool has_large_pages = try_enable_large_pages(g_os_proc_state);
+
+    if (has_large_pages) {
+        void *test_allocation = allocate_os_large_pages_memory(fmem.len);
+        if (!test_allocation) {
+            has_large_pages = false;
+            printf("Large page allocation test failed with error %lld, will not be used\n\n", get_last_os_error());
+        } else {
+            free_os_large_pages_memory(test_allocation, fmem.len);
+            printf("Enabled large pages\n\n");
+        }
+    } else
+        printf("Failed to enable large pages, they will not be tested\n\n");
+
     struct file_rep_test_t { 
-        void (*func)(const char *, file_t &, RepetitionTester &);
+        void (*func)(const char *, file_t &, RepetitionTester &, allocator_t);
         RepetitionTester rt;
+        allocator_t allocator;
+        bool enabled = true;
     } tests[] =
     {
-        {&mem_write_rep_test<false>, {"mem write", fmem.len, cpu_timer_freq, 10.f, true}},
-        {&mem_write_rep_test<true>, {"mem write + alloc", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&mem_write_rep_test<false>, {"mem write", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&mem_write_rep_test<true>, {"mem write + malloc", fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
+        {&mem_write_rep_test<true>, {"mem write + os alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&mem_write_rep_test<true>, {"mem write + os large alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
 
-        {&mem_write_backwards_rep_test<false>, {"mem write backwards", fmem.len, cpu_timer_freq, 10.f, true}},
-        {&mem_write_backwards_rep_test<true>, {"mem write backwards + alloc", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&mem_write_backwards_rep_test<false>, {"mem write backwards", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&mem_write_backwards_rep_test<true>, {"mem write backwards + malloc", fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
+        {&mem_write_backwards_rep_test<true>, {"mem write backwards + os alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&mem_write_backwards_rep_test<true>, {"mem write backwards + os large alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
 
-        {&fread_rep_test<false>, {"fread", fmem.len, cpu_timer_freq, 10.f, true}},
-        {&fread_rep_test<true>, {"fread + alloc", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&fread_rep_test<false>, {"fread", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&fread_rep_test<true>, {"fread + malloc", fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
+        {&fread_rep_test<true>, {"fread + os alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&fread_rep_test<true>, {"fread + os large alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
 
 #if _WIN32
-        {&_read_rep_test<false>, {"_read", fmem.len, cpu_timer_freq, 10.f, true}},
-        {&_read_rep_test<true>, {"_read + alloc", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&_read_rep_test<false>, {"_read", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&_read_rep_test<true>, {"_read + malloc", fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
+        {&_read_rep_test<true>, {"_read + os alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&_read_rep_test<true>, {"_read + os large alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
 
-        {&ReadFile_rep_test<false>, {"ReadFile", fmem.len, cpu_timer_freq, 10.f, true}},
-        {&ReadFile_rep_test<true>, {"ReadFile + alloc", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&ReadFile_rep_test<false>, {"ReadFile", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&ReadFile_rep_test<true>, {"ReadFile + malloc", fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
+        {&ReadFile_rep_test<true>, {"ReadFile + os alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&ReadFile_rep_test<true>, {"ReadFile + os large alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
 #else
-        {&read_rep_test<false>, {"read", fmem.len, cpu_timer_freq, 10.f, true}},
-        {&read_rep_test<true>, {"read + alloc", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&read_rep_test<false>, {"read", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&read_rep_test<true>, {"read + malloc", fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
+        {&read_rep_test<true>, {"read + os alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&read_rep_test<true>, {"read + os large alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
 #endif
+
+        {&map_file_rep_test, {"Map file (MapViewOfFile/mmap)", fmem.len, cpu_timer_freq, 10.f, true}},
     };
 
     for (;;) {
         for (size_t i = 0; i < ARR_CNT(tests); ++i) {
             file_rep_test_t &test = tests[i];
+            if (!test.enabled)
+                continue;
+
             test.rt.ReStart();
-            (*test.func)(fn, fmem, test.rt);
+            (*test.func)(fn, fmem, test.rt, test.allocator);
         }
     }
 
-    free_file(fmem);
     return 0;
 }

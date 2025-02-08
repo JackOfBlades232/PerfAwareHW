@@ -1,5 +1,6 @@
 #include <profiling.hpp>
 #include <memory.hpp>
+#include <os.hpp>
 
 #include <cstdlib>
 #include <cstddef>
@@ -14,6 +15,8 @@ int main(int argc, char **argv)
 
     constexpr size_t c_sample_page_size = 4096;
     const size_t page_count = atol(argv[1]);
+
+    init_os_process_state(g_os_proc_state);
 
     const size_t mem_bytes = page_count * c_sample_page_size;
 
