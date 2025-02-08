@@ -97,7 +97,7 @@ class RepetitionTester {
         if (m_state == e_st_pending)
             RT_ERRET(false, "Finish called on non-active rep tester");
         else if (m_state == e_st_error)
-            return false;
+            RT_ERRET(false, "Error during test");
 
         uint64_t cur_ticks = READ_TIMER();
         if (m_open_blocks) {

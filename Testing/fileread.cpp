@@ -48,10 +48,12 @@ static void mem_write_rep_test(const char *, file_t &mem, RepetitionTester &rt)
 
         rt.ReportProcessedBytes(mem.len);
 
-        if constexpr (t_realloc) {
+        if constexpr (t_realloc)
             free_file_preserve_len(mem);
-        }
     } while (rt.Tick());
+
+    if (mem.Loaded())
+        free_file_preserve_len(mem);
 }
 
 template <bool t_realloc>
@@ -68,10 +70,12 @@ static void mem_write_backwards_rep_test(const char *, file_t &mem, RepetitionTe
 
         rt.ReportProcessedBytes(mem.len);
 
-        if constexpr (t_realloc) {
+        if constexpr (t_realloc)
             free_file_preserve_len(mem);
-        }
     } while (rt.Tick());
+
+    if (mem.Loaded())
+        free_file_preserve_len(mem);
 }
 
 template <bool t_realloc>
@@ -99,6 +103,9 @@ static void fread_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
             free_file_preserve_len(mem);
         }
     } while (rt.Tick());
+
+    if (mem.Loaded())
+        free_file_preserve_len(mem);
 }
 
 #if _WIN32
@@ -131,6 +138,9 @@ static void _read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
             free_file_preserve_len(mem);
         }
     } while (rt.Tick());
+
+    if (mem.Loaded())
+        free_file_preserve_len(mem);
 }
 
 #include <fileapi.h>
@@ -163,6 +173,9 @@ static void ReadFile_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
             free_file_preserve_len(mem);
         }
     } while (rt.Tick());
+
+    if (mem.Loaded())
+        free_file_preserve_len(mem);
 }
 
 #else
@@ -196,6 +209,9 @@ static void read_rep_test(const char *fn, file_t &mem, RepetitionTester &rt)
             free_file_preserve_len(mem);
         }
     } while (rt.Tick());
+
+    if (mem.Loaded())
+        free_file_preserve_len(mem);
 }
 
 #endif

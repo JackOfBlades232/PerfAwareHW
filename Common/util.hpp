@@ -7,6 +7,8 @@
 
 #define ARR_CNT(arr_) (sizeof(arr_) / sizeof((arr_)[0]))
 
+struct nil_t {};
+
 namespace meta
 {
 
