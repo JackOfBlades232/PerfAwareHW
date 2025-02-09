@@ -42,14 +42,15 @@ inline void free_os_large_pages_memory(void *mem, size_t)
 
 inline void *allocate_os_pages_memory(size_t bytes)
 {
-    const size_t bytes_for_pages = round_up(bytes, size_t(getpagesize()));
+    const size_t bytes_for_pages =
+        round_up(bytes, g_os_proc_state.regular_page_size);
     return mmap(nullptr, bytes_for_pages, PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
 }
 
 inline void free_os_pages_memory(void *mem, size_t bytes)
 {
-    munmap(mem, bytes);
+    munmap(mem, round_up(bytes, g_os_proc_state.regular_page_size));
 }
 
 // @TODO: sort out if page size should be dynamically decided and if we should try for 1g

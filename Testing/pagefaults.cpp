@@ -9,7 +9,7 @@
 int main(int argc, char **argv)
 {
     if (argc < 2) {
-        fprintf(stderr, "Usage: pagefaults.exe [page count]\n");
+        fprintf(stderr, "Usage: <program> [page count]\n");
         return 1;
     }
 

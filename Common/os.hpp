@@ -53,12 +53,14 @@ inline int64_t get_last_os_error()
 
 struct os_process_state_t {
     pid_t pid;
+    size_t regular_page_size;
     char stat_file_name_buf[128];
 };
 
 inline void init_os_process_state(os_process_state_t &st)
 {
     st.pid = getpid();
+    st.regular_page_size = size_t(getpagesize());
     snprintf(st.stat_file_name_buf, sizeof(st.stat_file_name_buf), "/proc/%d/stat", st.pid);
     // @TODO: verify no truncation?
 }

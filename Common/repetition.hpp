@@ -36,6 +36,8 @@ class RepetitionTester {
     uint32_t m_last_chars_printed_for_min;
     bool m_print_new_minimums;
 
+    bool m_print_bytes_per_tick;
+
     const char *m_name;
 
 #define RT_ERR(text_, ...)                           \
@@ -63,12 +65,14 @@ class RepetitionTester {
                      uint64_t target_bytes,
                      uint64_t cpu_timer_freq,
                      float seconds_for_min_renewal,
-                     bool print_minimums)
+                     bool print_minimums = false,
+                     bool print_bytes_per_tick = false)
         : m_state{e_st_pending}
         , m_target_processed_bytes{target_bytes}
         , m_cpu_timer_freq{cpu_timer_freq}
         , m_try_renew_min_for_ticks{uint64_t(seconds_for_min_renewal * cpu_timer_freq)}
         , m_print_new_minimums{print_minimums}
+        , m_print_bytes_per_tick{print_bytes_per_tick}
         , m_name{name} {}
 
     void ReStart() {
@@ -180,6 +184,8 @@ private:
 
         RT_PRINT("Min: %Lf (%llu), %Lfgb/s", min_sec, m_min_ticks,
                    gb_per_measure(min_sec, m_target_processed_bytes));
+        if (m_print_bytes_per_tick)
+            RT_PRINT(" (%.2Lfbytes/tick)", (long double)m_target_processed_bytes / m_min_ticks);
         if (m_min_test_page_faults > 0) {
             RT_PRINT(" PF: %llu faults (%.3Lfkb/fault)", m_min_test_page_faults,
                        c_kb_in_gb * gb_per_measure((long double)m_min_test_page_faults, m_target_processed_bytes));
@@ -188,6 +194,8 @@ private:
 
         RT_PRINT("Max: %Lf (%llu), %Lfgb/s", max_sec, m_max_ticks,
                    gb_per_measure(max_sec, m_target_processed_bytes));
+        if (m_print_bytes_per_tick)
+            RT_PRINT(" (%.2Lfbytes/tick)", (long double)m_target_processed_bytes / m_max_ticks);
         if (m_max_test_page_faults > 0) {
             RT_PRINT(" PF: %llu faults (%.3Lfkb/fault)", m_max_test_page_faults,
                        c_kb_in_gb * gb_per_measure((long double)m_max_test_page_faults, m_target_processed_bytes));
@@ -196,6 +204,8 @@ private:
 
         RT_PRINT("Avg: %Lf (%llu), %Lfgb/s", avg_sec, avg_ticks,
                    gb_per_measure(avg_sec, m_target_processed_bytes));
+        if (m_print_bytes_per_tick)
+            RT_PRINT(" (%.2Lfbytes/tick)", (long double)m_target_processed_bytes / avg_ticks);
         if (m_total_page_faults > 0) {
             const uint64_t avg_page_faults = m_total_page_faults / m_test_count;
             RT_PRINTLN(" PF: %llu faults (%.3Lfkb/fault)", avg_page_faults,
