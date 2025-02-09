@@ -13,6 +13,11 @@ extern "C"
 extern uint64_t run_write_loop(uint64_t count, char *ptr);
 extern uint64_t run_empty_loop(uint64_t count, char *ptr);
 extern uint64_t run_nop_loop(uint64_t count, char *ptr);
+extern uint64_t run_nop3_loop(uint64_t count, char *ptr);
+extern uint64_t run_3nop1_loop(uint64_t count, char *ptr);
+extern uint64_t run_nop9_loop(uint64_t count, char *ptr);
+extern uint64_t run_3nop3_loop(uint64_t count, char *ptr);
+extern uint64_t run_9nop_loop(uint64_t count, char *ptr);
 }
 
 template <class TCallable>
@@ -51,9 +56,16 @@ int main(int argc, char **argv)
 
 #define RUN_TEST(func_name_) run_test([mem, byte_count] { return func_name_(byte_count, mem); }, rt, #func_name_)
 
-    RUN_TEST(run_write_loop);
-    RUN_TEST(run_empty_loop);
-    RUN_TEST(run_nop_loop);
+    for (;;) {
+        RUN_TEST(run_write_loop);
+        RUN_TEST(run_empty_loop);
+        RUN_TEST(run_nop_loop);
+        RUN_TEST(run_nop3_loop);
+        RUN_TEST(run_3nop1_loop);
+        RUN_TEST(run_nop9_loop);
+        RUN_TEST(run_3nop3_loop);
+        RUN_TEST(run_9nop_loop);
+    }
 
     free_os_pages_memory(mem, byte_count);
     return 0;
