@@ -161,6 +161,8 @@ class RepetitionTester {
     // @TODO format?
     void ReportError(const char *text) { RT_ERR("%s", text); }
 
+    void SetName(const char *name) { m_name = name; }
+
 private:
     void FinishAndPrintResults() {
         m_state = e_st_pending;

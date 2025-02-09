@@ -8,6 +8,27 @@
 #include <cstdlib>
 #include <cstdint>
 
+extern "C"
+{
+extern uint64_t run_write_loop(uint64_t count, char *ptr);
+extern uint64_t run_empty_loop(uint64_t count, char *ptr);
+extern uint64_t run_nop_loop(uint64_t count, char *ptr);
+}
+
+template <class TCallable>
+static void run_test(TCallable &&tested, RepetitionTester &rt, const char *name)
+{
+    rt.SetName(name);
+    rt.ReStart();
+    do {
+        rt.BeginTimeBlock();
+        uint64_t byte_cnt = tested();
+        rt.EndTimeBlock();
+
+        rt.ReportProcessedBytes(byte_cnt);
+    } while (rt.Tick());
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -28,15 +49,11 @@ int main(int argc, char **argv)
         return 2;
     }
 
-    rt.ReStart();
-    do {
-        rt.BeginTimeBlock();
-        for (size_t i = 0; i < byte_count; ++i)
-            mem[i] = char(i);
-        rt.EndTimeBlock();
+#define RUN_TEST(func_name_) run_test([mem, byte_count] { return func_name_(byte_count, mem); }, rt, #func_name_)
 
-        rt.ReportProcessedBytes(byte_count);
-    } while (rt.Tick());
+    RUN_TEST(run_write_loop);
+    RUN_TEST(run_empty_loop);
+    RUN_TEST(run_nop_loop);
 
     free_os_pages_memory(mem, byte_count);
     return 0;
