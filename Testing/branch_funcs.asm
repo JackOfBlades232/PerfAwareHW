@@ -8,6 +8,8 @@ global run_cond_loop
 %define PARAM1 rsi
 %endif
 
+section .text
+
 ; proc run_cond_loop: reads memory, taking a jump if it was odd.
 ; output : processed bytes count -> rax
 run_cond_loop:  xor     rax, rax 

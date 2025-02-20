@@ -11,6 +11,10 @@
 #include <ctime>
 #include <cassert>
 
+#if _WIN32
+#pragma comment(lib, "Bcrypt.lib")
+#endif
+
 extern "C"
 {
 extern uint64_t run_cond_loop(uint64_t count, const char *ptr);
@@ -78,9 +82,9 @@ void fill_c_random(char *mem, uint64_t cnt)
 void fill_os_random(char *mem, uint64_t cnt)
 {
 #if _WIN32
-    NTSTATUS st =
-        BCryptGenRandom(nullptr, mem, cnt, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
-    assert(st == STATUS_SUCCESS);
+    NTSTATUS st = BCryptGenRandom(
+        nullptr, PUCHAR(mem), cnt, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+    assert(st == 0);
 #else
     FILE *rf = fopen("/dev/urandom", "rb");
     assert(rf);
