@@ -69,3 +69,10 @@ inline void free_os_large_pages_memory(void *mem, size_t bytes)
 }
 
 #endif
+
+inline void page_memory_in(void *mem, size_t bytes)
+{
+    char *m = (char *)mem;
+    for (char *p = m; p < m + bytes; p += 8)
+        *p = char(m - p);
+}

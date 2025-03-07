@@ -26,15 +26,12 @@ uint64_t mb(uint64_t cnt)
     return cnt << 20;
 }
 
-uint64_t gb(uint64_t cnt)
-{
-    return cnt << 30;
-}
-
 template <class TCallable>
-static void run_test(TCallable &&tested, RepetitionTester &rt, const char *name)
+static void run_test(TCallable &&tested, RepetitionTester &rt,
+                     const char *name, uint64_t target_bytes)
 {
     rt.SetName(name);
+    rt.SetTargetBytes(target_bytes);
     rt.ReStart();
     do {
         rt.BeginTimeBlock();
@@ -42,7 +39,6 @@ static void run_test(TCallable &&tested, RepetitionTester &rt, const char *name)
         rt.EndTimeBlock();
 
         rt.ReportProcessedBytes(byte_cnt);
-        rt.OverrideTargetBytes(byte_cnt);
     } while (rt.Tick());
 }
 
@@ -67,23 +63,7 @@ int main(int argc, char **argv)
     init_os_process_state(g_os_proc_state);
     uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
 
-    RepetitionTester rt{
-        "Mem write loop", byte_count, cpu_timer_freq, 10.f, false, true,
-        +[](uint64_t min_ticks, uint64_t, uint64_t, uint64_t test_count,
-            uint64_t processed_bytes, uint64_t cpu_timer_freq,
-            uint64_t, uint64_t, uint64_t, bool, const char *) {
-
-            // @TODO: pull out these computations
-            constexpr long double c_bytes_in_gb = (long double)(1u << 30);
-            constexpr long double c_kb_in_gb = (long double)(1u << 20);
-            auto gb_per_measure = [](long double measure, uint64_t bytes) {
-                const long double gb = (long double)bytes / c_bytes_in_gb; 
-                return gb / measure;
-            };
-
-            const long double min_sec = (long double)min_ticks / cpu_timer_freq;
-            printf(",%Lf\n", gb_per_measure(min_sec, processed_bytes));
-        }};
+    RepetitionTester rt{"Mem write loop", byte_count, cpu_timer_freq, 10.f, false, true};
 
     char *mem = (char *)allocate_os_pages_memory(byte_count);
     if (!mem) {
@@ -95,22 +75,14 @@ int main(int argc, char **argv)
     for (char *p = mem; p != mem + byte_count; ++p)
         *p = char(p - mem);
 
-    printf("bytes,gbps\n");
-
-#define RUN_TEST_POT(func_name_, size_)                              \
-    do {                                                             \
-        printf("%llu", (size_));                                     \
-        run_test([mem, byte_count] {                                 \
-            return func_name_ ## _pot(byte_count, mem, (size_) - 1); \
-        }, rt, #func_name_ "_" #size_);                              \
-    } while (0)
-#define RUN_TEST_NPOT(func_name_, size_)                          \
-    do {                                                          \
-        printf("%llu", (size_));                                  \
-        run_test([mem, byte_count] {                              \
-            return func_name_ ## _npot(byte_count, mem, (size_)); \
-        }, rt, #func_name_ "_" #size_);                           \
-    } while (0)
+#define RUN_TEST_POT(func_name_, size_)                            \
+    run_test([mem, byte_count] {                                   \
+        return func_name_ ## _pot(byte_count, mem, (size_) - 1);   \
+    }, rt, #func_name_ "_" #size_, round_up(byte_count, (size_)))
+#define RUN_TEST_NPOT(func_name_, size_)                           \
+    run_test([mem, byte_count] {                                   \
+        return func_name_ ## _npot(byte_count, mem, (size_));      \
+    }, rt, #func_name_ "_" #size_, round_up(byte_count, (size_)))
 
     for (;;) {
         RUN_TEST_POT(run_loop_load, kb(4));

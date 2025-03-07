@@ -2,7 +2,7 @@
 
 #include "profiling.hpp"
 
-// @TODO customizable printer instead?
+// @TODO customizable processor instead?
 #include <cstdio>
 
 class RepetitionTester {
@@ -12,7 +12,7 @@ class RepetitionTester {
         e_st_error
     } m_state;
 
-    using stats_printer_t = void (*)(
+    using stats_processor_t = void (*)(
         uint64_t /*min_ticks*/, uint64_t /*max_ticks*/,
         uint64_t /*total_ticks*/, uint64_t /*test_count*/,
         uint64_t /*processed_bytes*/, uint64_t /*cpu_timer_freq*/,
@@ -48,7 +48,7 @@ class RepetitionTester {
 
     const char *m_name;
 
-    stats_printer_t m_stats_printer;
+    stats_processor_t m_stats_processor;
 
 #define RT_ERR(text_, ...)                                    \
     do {                                                      \
@@ -77,7 +77,7 @@ class RepetitionTester {
                      float seconds_for_min_renewal,
                      bool print_minimums = false,
                      bool print_bytes_per_tick = false,
-                     stats_printer_t stats_printer = DefaultPrintStats)
+                     stats_processor_t stats_processor = DefaultPrintStats)
         : m_state{e_st_pending}
         , m_target_processed_bytes{target_bytes}
         , m_cpu_timer_freq{cpu_timer_freq}
@@ -85,7 +85,7 @@ class RepetitionTester {
         , m_print_new_minimums{print_minimums}
         , m_print_bytes_per_tick{print_bytes_per_tick}
         , m_name{name}
-        , m_stats_printer{stats_printer} {}
+        , m_stats_processor{stats_processor} {}
 
     void ReStart() {
         if (m_state != e_st_pending)
@@ -170,21 +170,19 @@ class RepetitionTester {
 
     void ReportProcessedBytes(uint64_t bytes) { m_bytes += bytes; }
 
-    // @HACK
-    void OverrideTargetBytes(uint64_t bytes) { m_target_processed_bytes = bytes; }
-
     // @TODO format?
     void ReportError(const char *text) { RT_ERR("%s", text); }
 
     void SetName(const char *name) { m_name = name; }
+    void SetTargetBytes(uint64_t target_bytes) { m_target_processed_bytes = target_bytes; }
 
 private:
     void FinishAndPrintStats() {
         m_state = e_st_pending;
-        m_stats_printer(m_min_ticks, m_max_ticks, m_total_ticks, m_test_count,
-                        m_target_processed_bytes, m_cpu_timer_freq,
-                        m_min_test_page_faults, m_max_test_page_faults,
-                        m_total_page_faults, m_print_bytes_per_tick, m_name);
+        m_stats_processor(m_min_ticks, m_max_ticks, m_total_ticks, m_test_count,
+                          m_target_processed_bytes, m_cpu_timer_freq,
+                          m_min_test_page_faults, m_max_test_page_faults,
+                          m_total_page_faults, m_print_bytes_per_tick, m_name);
     }
 
     static void DefaultPrintStats(uint64_t min_ticks, uint64_t max_ticks,

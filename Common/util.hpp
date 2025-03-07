@@ -53,6 +53,12 @@ inline T abs(T a)
     return a < T{0} ? -a : a;
 }
 
+template <typename TInt, typename TFlt>
+inline TInt round_to_int(TFlt f)
+{
+    return TInt(f + TFlt{0.50000001});
+}
+
 template <typename T>
 inline auto mv(T &&var)
 {
