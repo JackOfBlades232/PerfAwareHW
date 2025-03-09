@@ -21,5 +21,5 @@ g++ -g -std=c++20 -Wno-format -I ../../Common/ ../calign.cpp calign_funcs.o $@ -
 g++ -g -std=c++20 -Wno-format -I ../../Common/ ../exprt.cpp exprt_funcs.o $@ -o exprt
 g++ -g -std=c++20 -Wno-format -I ../../Common/ ../bandwidth_nocache.cpp bandwidth_nocache_funcs.o $@ -o bandwidth_nocache
 g++ -g -std=c++20 -Wno-format -I ../../Common/ ../cache_bandwidth.cpp cache_bandwidth_funcs.o $@ -o cache_bandwidth
-g++ -g -std=c++20 -Wno-format -I ../../Common/ ../cache_autoprobe.cpp cache_bandwidth_funcs.o $@ -lm -o cache_autoprobe
+g++ -g -std=c++20 -Wno-format -I ../../Common/ ../cache_autoprobe.cpp cache_bandwidth_funcs.o $@ -o cache_autoprobe
 popd
