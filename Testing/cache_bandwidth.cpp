@@ -14,6 +14,10 @@ extern uint64_t run_loop_load_pot(uint64_t count, char *ptr, uint64_t mask);
 extern uint64_t run_loop_store_pot(uint64_t count, char *ptr, uint64_t mask);
 extern uint64_t run_loop_load_npot(uint64_t count, char *ptr, uint64_t sz);
 extern uint64_t run_loop_store_npot(uint64_t count, char *ptr, uint64_t sz);
+extern uint64_t run_loop_load_pot_offseted(uint64_t count, char *ptr, uint64_t mask, uint64_t offset);
+extern uint64_t run_loop_store_pot_offseted(uint64_t count, char *ptr, uint64_t mask, uint64_t offset);
+extern uint64_t run_loop_load_npot_offseted(uint64_t count, char *ptr, uint64_t sz, uint64_t offset);
+extern uint64_t run_loop_store_npot_offseted(uint64_t count, char *ptr, uint64_t sz, uint64_t offset);
 }
 
 uint64_t kb(uint64_t cnt)
@@ -83,8 +87,62 @@ int main(int argc, char **argv)
     run_test([mem, byte_count] {                                   \
         return func_name_ ## _npot(byte_count, mem, (size_));      \
     }, rt, #func_name_ "_" #size_, round_up(byte_count, (size_)))
+#define RUN_TEST_NPOT_OFF(func_name_, size_, off_)                             \
+    run_test([mem, byte_count] {                                               \
+        return func_name_ ## _npot_offseted(byte_count, mem, (size_), (off_)); \
+    }, rt, #func_name_ "_" #size_ "_" #off_, round_up(byte_count, (size_)))
 
     for (;;) {
+        RUN_TEST_NPOT(run_loop_load, kb(48));
+        RUN_TEST_NPOT_OFF(run_loop_load, kb(48), 1);
+        RUN_TEST_NPOT_OFF(run_loop_load, kb(48), 3);
+        RUN_TEST_NPOT_OFF(run_loop_load, kb(48), 7);
+        RUN_TEST_NPOT_OFF(run_loop_load, kb(48), 15);
+        RUN_TEST_NPOT_OFF(run_loop_load, kb(48), 31);
+        RUN_TEST_NPOT_OFF(run_loop_load, kb(48), 63);
+        RUN_TEST_NPOT(run_loop_load, kb(52));
+        RUN_TEST_NPOT_OFF(run_loop_load, kb(52), 1);
+        RUN_TEST_NPOT_OFF(run_loop_load, kb(52), 3);
+        RUN_TEST_NPOT_OFF(run_loop_load, kb(52), 7);
+        RUN_TEST_NPOT_OFF(run_loop_load, kb(52), 15);
+        RUN_TEST_NPOT_OFF(run_loop_load, kb(52), 31);
+        RUN_TEST_NPOT_OFF(run_loop_load, kb(52), 63);
+        RUN_TEST_NPOT(run_loop_load, mb(1) + kb(256));
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(256), 1);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(256), 3);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(256), 7);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(256), 15);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(256), 31);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(256), 63);
+        RUN_TEST_NPOT(run_loop_load, mb(1) + kb(320));
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(320), 1);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(320), 3);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(320), 7);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(320), 15);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(320), 31);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(320), 63);
+        RUN_TEST_NPOT(run_loop_load, mb(1) + kb(384));
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(384), 1);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(384), 3);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(384), 7);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(384), 15);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(384), 31);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(1) + kb(384), 63);
+        RUN_TEST_NPOT(run_loop_load, mb(12));
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(12), 1);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(12), 3);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(12), 7);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(12), 15);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(12), 31);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(12), 63);
+        RUN_TEST_NPOT(run_loop_load, mb(14));
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(14), 1);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(14), 3);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(14), 7);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(14), 15);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(14), 31);
+        RUN_TEST_NPOT_OFF(run_loop_load, mb(14), 63);
+
         RUN_TEST_POT(run_loop_load, kb(4));
         RUN_TEST_POT(run_loop_load, kb(16));
         RUN_TEST_POT(run_loop_load, kb(32));
