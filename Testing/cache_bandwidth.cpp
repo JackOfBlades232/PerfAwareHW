@@ -14,10 +14,6 @@ extern uint64_t run_loop_load_pot(uint64_t count, char *ptr, uint64_t mask);
 extern uint64_t run_loop_store_pot(uint64_t count, char *ptr, uint64_t mask);
 extern uint64_t run_loop_load_npot(uint64_t count, char *ptr, uint64_t sz);
 extern uint64_t run_loop_store_npot(uint64_t count, char *ptr, uint64_t sz);
-extern uint64_t run_loop_load_pot_offseted(uint64_t count, char *ptr, uint64_t mask, uint64_t offset);
-extern uint64_t run_loop_store_pot_offseted(uint64_t count, char *ptr, uint64_t mask, uint64_t offset);
-extern uint64_t run_loop_load_npot_offseted(uint64_t count, char *ptr, uint64_t sz, uint64_t offset);
-extern uint64_t run_loop_store_npot_offseted(uint64_t count, char *ptr, uint64_t sz, uint64_t offset);
 }
 
 uint64_t kb(uint64_t cnt)
@@ -87,9 +83,9 @@ int main(int argc, char **argv)
     run_test([mem, byte_count] {                                   \
         return func_name_ ## _npot(byte_count, mem, (size_));      \
     }, rt, #func_name_ "_" #size_, round_up(byte_count, (size_)))
-#define RUN_TEST_NPOT_OFF(func_name_, size_, off_)                             \
-    run_test([mem, byte_count] {                                               \
-        return func_name_ ## _npot_offseted(byte_count, mem, (size_), (off_)); \
+#define RUN_TEST_NPOT_OFF(func_name_, size_, off_)                     \
+    run_test([mem, byte_count] {                                       \
+        return func_name_ ## _npot(byte_count, mem + (off_), (size_)); \
     }, rt, #func_name_ "_" #size_ "_" #off_, round_up(byte_count, (size_)))
 
     for (;;) {

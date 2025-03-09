@@ -3,10 +3,6 @@ global run_loop_load_pot
 global run_loop_store_pot
 global run_loop_load_npot
 global run_loop_store_npot
-global run_loop_load_pot_offseted
-global run_loop_store_pot_offseted
-global run_loop_load_npot_offseted
-global run_loop_store_npot_offseted
 
 %ifdef _WIN32
 %define PARAM0 rcx
@@ -96,24 +92,4 @@ run_loop_store_npot:
                 add     rax, PARAM2
                 cmp     rax, PARAM0
                 jb      .loop
-                ret
-
-run_loop_load_pot_offseted:
-                add     PARAM1, PARAM3
-                call    run_loop_load_pot
-                ret
-
-run_loop_store_pot_offseted:
-                add     PARAM1, PARAM3
-                call    run_loop_store_pot
-                ret
-
-run_loop_load_npot_offseted:
-                add     PARAM1, PARAM3
-                call    run_loop_load_npot
-                ret
-
-run_loop_store_npot_offseted:
-                add     PARAM1, PARAM3
-                call    run_loop_store_npot
                 ret
