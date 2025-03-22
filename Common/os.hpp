@@ -11,7 +11,8 @@
 
 struct os_process_state_t {
     HANDLE process_hnd;
-    uint64_t large_page_sz = 0; // 0 means disabled
+    size_t regular_page_size = 4096;
+    size_t large_page_size = 0; // 0 means disabled
 };
 
 inline void init_os_process_state(os_process_state_t &st)
@@ -32,13 +33,13 @@ inline bool try_enable_large_pages(os_process_state_t &st)
         {
             AdjustTokenPrivileges(token_hnd, FALSE, &privs, 0, 0, 0);
             if (GetLastError() == ERROR_SUCCESS)
-                st.large_page_sz = GetLargePageMinimum();
+                st.large_page_size = GetLargePageMinimum();
         }
         
         CloseHandle(token_hnd);
     }
 
-    return st.large_page_sz > 0;
+    return st.large_page_size > 0;
 }
 
 inline int64_t get_last_os_error()

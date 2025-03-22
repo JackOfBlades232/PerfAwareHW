@@ -17,14 +17,15 @@
 
 extern "C"
 {
-extern uint64_t run_cond_loop(uint64_t count, const char *ptr);
+extern uint64_t run_cond_loop(uint64_t count, char const *ptr);
 }
 
 template <class TCallable>
-static void run_test(TCallable &&tested, RepetitionTester &rt, const char *name)
+static void run_test(TCallable &&tested, RepetitionTester &rt,
+                     repetition_test_results_t &results,
+                     char const *name, uint64_t cpu_timer_freq)
 {
-    rt.SetName(name);
-    rt.ReStart();
+    rt.ReStart(results);
     do {
         rt.BeginTimeBlock();
         uint64_t byte_cnt = tested();
@@ -32,6 +33,7 @@ static void run_test(TCallable &&tested, RepetitionTester &rt, const char *name)
 
         rt.ReportProcessedBytes(byte_cnt);
     } while (rt.Tick());
+    print_reptest_results(results, cpu_timer_freq, name, true);
 }
 
 void fill_zeroes(char *mem, uint64_t cnt)
@@ -101,14 +103,15 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    const size_t byte_count = atol(argv[1]);
+    size_t const byte_count = atol(argv[1]);
 
     init_os_process_state(g_os_proc_state);
     uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
 
     srand(time(nullptr));
 
-    RepetitionTester rt{"Mem write loop", byte_count, cpu_timer_freq, 10.f, false, true};
+    RepetitionTester rt{byte_count, cpu_timer_freq, 10.f, false};
+    repetition_test_results_t results = {};
 
     char *mem = (char *)allocate_os_pages_memory(byte_count);
     if (!mem) {
@@ -116,12 +119,13 @@ int main(int argc, char **argv)
         return 2;
     }
 
-#define RUN_TEST(func_name_, memfill_func_name_)      \
-    do {                                              \
-        memfill_func_name_(mem, byte_count);          \
-        run_test([mem, byte_count] {                  \
-            return func_name_(byte_count, mem);       \
-        }, rt, #func_name_ "__" #memfill_func_name_); \
+#define RUN_TEST(func_name_, memfill_func_name_)                       \
+    do {                                                               \
+        memfill_func_name_(mem, byte_count);                           \
+        run_test(                                                      \
+            [mem, byte_count] { return func_name_(byte_count, mem); }, \
+            rt, results, #func_name_ "__" #memfill_func_name_,         \
+            cpu_timer_freq);                                           \
     } while (0)
 
     for (;;) {

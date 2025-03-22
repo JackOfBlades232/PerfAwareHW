@@ -27,12 +27,12 @@ uint64_t mb(uint64_t cnt)
 }
 
 template <class TCallable>
-static void run_test(TCallable &&tested, RepetitionTester &rt,
-                     const char *name, uint64_t target_bytes)
+static void run_test(TCallable &&tested, uint64_t target_bytes,
+                     RepetitionTester &rt,
+                     repetition_test_results_t &results,
+                     char const *name, uint64_t cpu_timer_freq)
 {
-    rt.SetName(name);
-    rt.SetTargetBytes(target_bytes);
-    rt.ReStart();
+    rt.ReStart(results, target_bytes);
     do {
         rt.BeginTimeBlock();
         uint64_t byte_cnt = tested();
@@ -40,6 +40,7 @@ static void run_test(TCallable &&tested, RepetitionTester &rt,
 
         rt.ReportProcessedBytes(byte_cnt);
     } while (rt.Tick());
+    print_reptest_results(results, cpu_timer_freq, name, true);
 }
 
 int main(int argc, char **argv)
@@ -49,7 +50,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    const size_t byte_count = atol(argv[1]);
+    size_t const byte_count = atol(argv[1]);
 
     if (byte_count < mb(256)) {
         fprintf(stderr, "Minimal byte count for the test suite is 256mb\n");
@@ -63,7 +64,8 @@ int main(int argc, char **argv)
     init_os_process_state(g_os_proc_state);
     uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
 
-    RepetitionTester rt{"Mem write loop", byte_count, cpu_timer_freq, 10.f, false, true};
+    RepetitionTester rt{byte_count, cpu_timer_freq, 10.f, false};
+    repetition_test_results_t results = {};
 
     char *mem = (char *)allocate_os_pages_memory(byte_count);
     if (!mem) {
@@ -78,15 +80,15 @@ int main(int argc, char **argv)
 #define RUN_TEST_POT(func_name_, size_)                            \
     run_test([mem, byte_count] {                                   \
         return func_name_ ## _pot(byte_count, mem, (size_) - 1);   \
-    }, rt, #func_name_ "_" #size_, round_up(byte_count, (size_)))
+    }, round_up(byte_count, (size_)), rt, results, #func_name_ "_" #size_, cpu_timer_freq)
 #define RUN_TEST_NPOT(func_name_, size_)                           \
     run_test([mem, byte_count] {                                   \
         return func_name_ ## _npot(byte_count, mem, (size_));      \
-    }, rt, #func_name_ "_" #size_, round_up(byte_count, (size_)))
+    }, round_up(byte_count, (size_)), rt, results, #func_name_ "_" #size_, cpu_timer_freq)
 #define RUN_TEST_NPOT_OFF(func_name_, size_, off_)                     \
     run_test([mem, byte_count] {                                       \
         return func_name_ ## _npot(byte_count, mem + (off_), (size_)); \
-    }, rt, #func_name_ "_" #size_ "_" #off_, round_up(byte_count, (size_)))
+    }, round_up(byte_count, (size_)), rt, results, #func_name_ "_" #size_ "_" #off_, cpu_timer_freq)
 
     for (;;) {
         RUN_TEST_NPOT(run_loop_load, kb(48));

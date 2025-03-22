@@ -20,9 +20,9 @@ inline void free_os_pages_memory(void *mem, size_t)
 inline void *allocate_os_large_pages_memory(size_t bytes)
 {
     // For some reason I can barely make it work on my low-ram pc( Is fragmentation that bad?
-    if (g_os_proc_state.large_page_sz == 0)
+    if (g_os_proc_state.large_page_size == 0)
         return nullptr;
-    const size_t bytes_for_pages = round_up(bytes, g_os_proc_state.large_page_sz);
+    const size_t bytes_for_pages = round_up(bytes, g_os_proc_state.large_page_size);
     return VirtualAlloc(nullptr, bytes_for_pages, MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES, PAGE_READWRITE);
 }
 

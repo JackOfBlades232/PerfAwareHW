@@ -16,9 +16,18 @@ extern "C"
 extern uint64_t run_loop_load_npot(uint64_t count, char *ptr, uint64_t sz);
 }
 
+static long double get_gbps_throughput_from_res(
+    repetition_test_results_t const &results, uint64_t cpu_timer_freq)
+{
+    long double const min_sec = (long double)results.min_ticks / cpu_timer_freq;
+    long double const processed_gb =
+        (long double)results.processed_bytes / (long double)(1u << 30);
+
+    return processed_gb / min_sec;
+}
+
 static void fill_first_pass_sizes(uint64_t *sizes, int min_pot, int max_pot)
 {
-    uint64_t *p = sizes;
     for (int i = min_pot; i <= max_pot; ++i)
         *sizes++ = 1 << i;
 }
@@ -27,25 +36,12 @@ static long double probe_cache_size(
     uint64_t iter_byte_cnt, char *mem,
     uint64_t probed_size, uint64_t cpu_timer_freq)
 {
-    static long double res = 0.0; // For having lambda be an fptr
-
     uint64_t const real_byte_cnt = round_up(iter_byte_cnt, probed_size);
 
-    RepetitionTester rt{
-        "", real_byte_cnt, cpu_timer_freq, 15.f, false, false, 
-        +[](uint64_t min_ticks, uint64_t, uint64_t, uint64_t,
-            uint64_t processed_bytes, uint64_t cpu_timer_freq,
-            uint64_t, uint64_t, uint64_t, bool, const char *) {
+    RepetitionTester rt{real_byte_cnt, cpu_timer_freq, 15.f, false};
+    repetition_test_results_t results = {};
 
-            long double const min_sec = (long double)min_ticks / cpu_timer_freq;
-            long double const processed_gb =
-                (long double)processed_bytes / (long double)(1u << 30);
-
-            res = processed_gb / min_sec;
-        }
-    };
-
-    rt.ReStart();
+    rt.ReStart(results);
     do {
         rt.BeginTimeBlock();
         uint64_t byte_cnt = run_loop_load_npot(iter_byte_cnt, mem, probed_size);
@@ -53,7 +49,7 @@ static long double probe_cache_size(
         rt.ReportProcessedBytes(byte_cnt);
     } while (rt.Tick());
 
-    return res;
+    return get_gbps_throughput_from_res(results, cpu_timer_freq);
 }
 
 int main()
@@ -78,8 +74,7 @@ int main()
             fprintf(stderr, "Using large pages\n");
         } else {
             has_large_pages = false;
-            fprintf(
-                stderr,
+            fprintf(stderr,
                 "Failed large page allocation, falling back to regular\n");
         }
     }
@@ -156,8 +151,7 @@ int main()
             else
                 desired_measurements = 2;
 
-            fprintf(
-                stderr, "Interval [%d, %d]: rk = %llu, samples = %llu\n",
+            fprintf(stderr, "Interval [%d, %d]: rk = %llu, samples = %llu\n",
                 1 << i, 1 << (i + 1), rk, desired_measurements);
 
             uint64_t base = 1 << i;

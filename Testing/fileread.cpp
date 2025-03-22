@@ -36,7 +36,7 @@ static void free_file_preserve_len(file_t &f, allocator_t allocator)
 static volatile uint32_t g_mapped_file_read_sink = '\0'; // disabling optimization
 
 template <bool t_realloc>
-static void mem_write_rep_test(const char *, file_t &mem,
+static void mem_write_rep_test(char const *, file_t &mem,
                                RepetitionTester &rt, allocator_t allocator)
 {
     do {
@@ -59,7 +59,7 @@ static void mem_write_rep_test(const char *, file_t &mem,
 }
 
 template <bool t_realloc>
-static void mem_write_backwards_rep_test(const char *, file_t &mem,
+static void mem_write_backwards_rep_test(char const *, file_t &mem,
                                          RepetitionTester &rt, allocator_t allocator)
 {
     do {
@@ -82,7 +82,7 @@ static void mem_write_backwards_rep_test(const char *, file_t &mem,
 }
 
 template <bool t_realloc>
-static void fread_rep_test(const char *fn, file_t &mem,
+static void fread_rep_test(char const *fn, file_t &mem,
                            RepetitionTester &rt, allocator_t allocator)
 {
     do {
@@ -116,7 +116,7 @@ static void fread_rep_test(const char *fn, file_t &mem,
 #include <io.h>
 
 template <bool t_realloc>
-static void _read_rep_test(const char *fn, file_t &mem,
+static void _read_rep_test(char const *fn, file_t &mem,
                            RepetitionTester &rt, allocator_t allocator)
 {
     do {
@@ -151,7 +151,7 @@ static void _read_rep_test(const char *fn, file_t &mem,
 #include <handleapi.h>
 
 template <bool t_realloc>
-static void ReadFile_rep_test(const char *fn, file_t &mem,
+static void ReadFile_rep_test(char const *fn, file_t &mem,
                               RepetitionTester &rt, allocator_t allocator)
 {
     do {
@@ -183,7 +183,7 @@ static void ReadFile_rep_test(const char *fn, file_t &mem,
 }
 
 // @TODO: test no remapping too? Maybe someday
-static void map_file_rep_test(const char *fn, file_t &mem,
+static void map_file_rep_test(char const *fn, file_t &mem,
                               RepetitionTester &rt, allocator_t)
 {
     do {
@@ -221,7 +221,7 @@ static void map_file_rep_test(const char *fn, file_t &mem,
 #include <unistd.h>
 
 template <bool t_realloc>
-static void read_rep_test(const char *fn, file_t &mem,
+static void read_rep_test(char const *fn, file_t &mem,
                           RepetitionTester &rt, allocator_t allocator)
 {
     do {
@@ -250,7 +250,7 @@ static void read_rep_test(const char *fn, file_t &mem,
         free_file_preserve_len(mem, allocator);
 }
 
-static void map_file_rep_test(const char *fn, file_t &mem,
+static void map_file_rep_test(char const *fn, file_t &mem,
                               RepetitionTester &rt, allocator_t)
 {
     do {
@@ -286,20 +286,20 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    const char *fn = argv[1];
+    char const *fn = argv[1];
 
     init_os_process_state(g_os_proc_state);
     uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
  
-    const allocator_t mallocator = {
+    allocator_t const mallocator = {
         .alloc = malloc,
         .free = +[](void *ptr, size_t) { free(ptr); }
     };
-    const allocator_t os_page_allocator = {
+    allocator_t const os_page_allocator = {
         .alloc = allocate_os_pages_memory,
         .free = free_os_pages_memory
     };
-    const allocator_t os_large_page_allocator = {
+    allocator_t const os_large_page_allocator = {
         .alloc = allocate_os_large_pages_memory,
         .free = free_os_large_pages_memory
     };
@@ -335,55 +335,58 @@ int main(int argc, char **argv)
         printf("Failed to enable large pages, they will not be tested\n\n");
 
     struct file_rep_test_t { 
-        void (*func)(const char *, file_t &, RepetitionTester &, allocator_t);
+        void (*func)(char const *, file_t &, RepetitionTester &, allocator_t);
+        char const *name;
         RepetitionTester rt;
         allocator_t allocator;
         bool enabled = true;
     } tests[] =
     {
-        {&mem_write_rep_test<false>, {"mem write", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
-        {&mem_write_rep_test<true>, {"mem write + malloc", fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
-        {&mem_write_rep_test<true>, {"mem write + os alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
-        {&mem_write_rep_test<true>, {"mem write + os large alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
+        {&mem_write_rep_test<false>, "mem write", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&mem_write_rep_test<true>, "mem write + malloc", {fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
+        {&mem_write_rep_test<true>, "mem write + os alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&mem_write_rep_test<true>, "mem write + os large alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
 
-        {&mem_write_backwards_rep_test<false>, {"mem write backwards", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
-        {&mem_write_backwards_rep_test<true>, {"mem write backwards + malloc", fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
-        {&mem_write_backwards_rep_test<true>, {"mem write backwards + os alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
-        {&mem_write_backwards_rep_test<true>, {"mem write backwards + os large alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
+        {&mem_write_backwards_rep_test<false>, "mem write backwards", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&mem_write_backwards_rep_test<true>, "mem write backwards + malloc", {fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
+        {&mem_write_backwards_rep_test<true>, "mem write backwards + os alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&mem_write_backwards_rep_test<true>, "mem write backwards + os large alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
 
-        {&fread_rep_test<false>, {"fread", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
-        {&fread_rep_test<true>, {"fread + malloc", fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
-        {&fread_rep_test<true>, {"fread + os alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
-        {&fread_rep_test<true>, {"fread + os large alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
+        {&fread_rep_test<false>, "fread", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&fread_rep_test<true>, "fread + malloc", {fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
+        {&fread_rep_test<true>, "fread + os alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&fread_rep_test<true>, "fread + os large alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
 
 #if _WIN32
-        {&_read_rep_test<false>, {"_read", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
-        {&_read_rep_test<true>, {"_read + malloc", fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
-        {&_read_rep_test<true>, {"_read + os alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
-        {&_read_rep_test<true>, {"_read + os large alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
+        {&_read_rep_test<false>, "_read", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&_read_rep_test<true>, "_read + malloc", {fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
+        {&_read_rep_test<true>, "_read + os alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&_read_rep_test<true>, "_read + os large alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
 
-        {&ReadFile_rep_test<false>, {"ReadFile", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
-        {&ReadFile_rep_test<true>, {"ReadFile + malloc", fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
-        {&ReadFile_rep_test<true>, {"ReadFile + os alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
-        {&ReadFile_rep_test<true>, {"ReadFile + os large alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
+        {&ReadFile_rep_test<false>, "ReadFile", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&ReadFile_rep_test<true>, "ReadFile + malloc", {fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
+        {&ReadFile_rep_test<true>, "ReadFile + os alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&ReadFile_rep_test<true>, "ReadFile + os large alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
 #else
-        {&read_rep_test<false>, {"read", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
-        {&read_rep_test<true>, {"read + malloc", fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
-        {&read_rep_test<true>, {"read + os alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
-        {&read_rep_test<true>, {"read + os large alloc", fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
+        {&read_rep_test<false>, "read", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&read_rep_test<true>, "read + malloc", {fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
+        {&read_rep_test<true>, "read + os alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&read_rep_test<true>, "read + os large alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
 #endif
 
-        {&map_file_rep_test, {"Map file (MapViewOfFile/mmap)", fmem.len, cpu_timer_freq, 10.f, true}},
+        {&map_file_rep_test, "Map file (MapViewOfFile/mmap)", {fmem.len, cpu_timer_freq, 10.f, true}},
     };
+
+    repetition_test_results_t results = {};
 
     for (;;) {
         for (size_t i = 0; i < ARR_CNT(tests); ++i) {
             file_rep_test_t &test = tests[i];
             if (!test.enabled)
                 continue;
-
-            test.rt.ReStart();
+            test.rt.ReStart(results);
             (*test.func)(fn, fmem, test.rt, test.allocator);
+            print_reptest_results(results, cpu_timer_freq, test.name, false);
         }
     }
 
