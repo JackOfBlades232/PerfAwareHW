@@ -28,30 +28,34 @@ uint64_t mb(uint64_t cnt)
 
 template <class TCallable>
 static void run_test(
-    TCallable &&tested, uint64_t target_bytes,
-    RepetitionTester &rt, repetition_test_results_t &results,
-    char const *name, uint64_t cpu_timer_freq)
+    TCallable &&tested, uint64_t target_bytes, RepetitionTester &rt,
+    char const *name, uint64_t cpu_timer_freq, bool write_csv)
 {
+    repetition_test_results_t results{};
+
     rt.ReStart(results, target_bytes);
     do {
         rt.BeginTimeBlock();
         uint64_t byte_cnt = tested();
         rt.EndTimeBlock();
-
         rt.ReportProcessedBytes(byte_cnt);
     } while (rt.Tick());
-    print_reptest_results(
-        results, rt.GetTargetBytes(), cpu_timer_freq, name, true);
+
+    if (write_csv)
+        print_best_bandwidth_csv(results, target_bytes, cpu_timer_freq, name);
+    else
+        print_reptest_results(results, target_bytes, cpu_timer_freq, name, true);
 }
 
 int main(int argc, char **argv)
 {
     if (argc < 2) {
-        fprintf(stderr, "Usage: <program> [byte count]\n");
+        fprintf(stderr, "Usage: <program> [byte count] (csv)\n");
         return 1;
     }
 
     size_t const byte_count = atol(argv[1]);
+    bool const write_csv = argc > 2 && streq(argv[2], "csv");
 
     if (byte_count < mb(256)) {
         fprintf(stderr, "Minimal byte count for the test suite is 256mb\n");
@@ -66,7 +70,6 @@ int main(int argc, char **argv)
     uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
 
     RepetitionTester rt{byte_count, cpu_timer_freq, 10.f, false};
-    repetition_test_results_t results = {};
 
     char *mem = (char *)allocate_os_pages_memory(byte_count);
     if (!mem) {
@@ -74,22 +77,23 @@ int main(int argc, char **argv)
         return 2;
     }
 
-    // Linux needs data in pages for them to not be mapped to null page
-    for (char *p = mem; p != mem + byte_count; ++p)
-        *p = char(p - mem);
+    page_memory_in(mem, byte_count);
+
+    if (write_csv)
+        printf("name,bytes,seconds,gb/s\n");
 
 #define RUN_TEST_POT(func_name_, size_)                            \
     run_test([mem, byte_count] {                                   \
         return func_name_ ## _pot(byte_count, mem, (size_) - 1);   \
-    }, round_up(byte_count, (size_)), rt, results, #func_name_ "_" #size_, cpu_timer_freq)
+    }, round_up(byte_count, (size_)), rt, #func_name_ "_" #size_, cpu_timer_freq, write_csv)
 #define RUN_TEST_NPOT(func_name_, size_)                           \
     run_test([mem, byte_count] {                                   \
         return func_name_ ## _npot(byte_count, mem, (size_));      \
-    }, round_up(byte_count, (size_)), rt, results, #func_name_ "_" #size_, cpu_timer_freq)
+    }, round_up(byte_count, (size_)), rt, #func_name_ "_" #size_, cpu_timer_freq, write_csv)
 #define RUN_TEST_NPOT_OFF(func_name_, size_, off_)                     \
     run_test([mem, byte_count] {                                       \
         return func_name_ ## _npot(byte_count, mem + (off_), (size_)); \
-    }, round_up(byte_count, (size_)), rt, results, #func_name_ "_" #size_ "_" #off_, cpu_timer_freq)
+    }, round_up(byte_count, (size_)), rt, #func_name_ "_" #size_ "_" #off_, cpu_timer_freq, write_csv)
 
     for (;;) {
         RUN_TEST_NPOT(run_loop_load, kb(48));
@@ -142,53 +146,8 @@ int main(int argc, char **argv)
         RUN_TEST_NPOT_OFF(run_loop_load, mb(14), 31);
         RUN_TEST_NPOT_OFF(run_loop_load, mb(14), 63);
 
-        RUN_TEST_POT(run_loop_load, kb(4));
-        RUN_TEST_POT(run_loop_load, kb(16));
-        RUN_TEST_POT(run_loop_load, kb(32));
-        RUN_TEST_NPOT(run_loop_load, kb(36));
-        RUN_TEST_NPOT(run_loop_load, kb(40));
-        RUN_TEST_NPOT(run_loop_load, kb(44));
-        RUN_TEST_NPOT(run_loop_load, kb(48));
-        RUN_TEST_NPOT(run_loop_load, kb(52));
-        RUN_TEST_NPOT(run_loop_load, kb(56));
-        RUN_TEST_NPOT(run_loop_load, kb(60));
-        RUN_TEST_POT(run_loop_load, kb(64));
-        RUN_TEST_POT(run_loop_load, kb(128));
-        RUN_TEST_POT(run_loop_load, kb(256));
-        RUN_TEST_POT(run_loop_load, kb(512));
-        RUN_TEST_NPOT(run_loop_load, kb(640));
-        RUN_TEST_NPOT(run_loop_load, kb(768));
-        RUN_TEST_NPOT(run_loop_load, kb(896));
-        RUN_TEST_POT(run_loop_load, mb(1));
-        RUN_TEST_NPOT(run_loop_load, mb(1) + kb(64));
-        RUN_TEST_NPOT(run_loop_load, mb(1) + kb(128));
-        RUN_TEST_NPOT(run_loop_load, mb(1) + kb(192));
-        RUN_TEST_NPOT(run_loop_load, mb(1) + kb(256));
-        RUN_TEST_NPOT(run_loop_load, mb(1) + kb(320));
-        RUN_TEST_NPOT(run_loop_load, mb(1) + kb(384));
-        RUN_TEST_NPOT(run_loop_load, mb(1) + kb(448));
-        RUN_TEST_NPOT(run_loop_load, mb(1) + kb(512));
-        RUN_TEST_NPOT(run_loop_load, mb(1) + kb(640));
-        RUN_TEST_NPOT(run_loop_load, mb(1) + kb(768));
-        RUN_TEST_NPOT(run_loop_load, mb(1) + kb(896));
-        RUN_TEST_POT(run_loop_load, mb(2));
-        RUN_TEST_POT(run_loop_load, mb(4));
-        RUN_TEST_POT(run_loop_load, mb(8));
-        RUN_TEST_NPOT(run_loop_load, mb(10));
-        RUN_TEST_NPOT(run_loop_load, mb(12));
-        RUN_TEST_NPOT(run_loop_load, mb(14));
-        RUN_TEST_POT(run_loop_load, mb(16));
-        RUN_TEST_NPOT(run_loop_load, mb(18));
-        RUN_TEST_NPOT(run_loop_load, mb(20));
-        RUN_TEST_NPOT(run_loop_load, mb(22));
-        RUN_TEST_NPOT(run_loop_load, mb(24));
-        RUN_TEST_NPOT(run_loop_load, mb(26));
-        RUN_TEST_NPOT(run_loop_load, mb(28));
-        RUN_TEST_NPOT(run_loop_load, mb(30));
-        RUN_TEST_POT(run_loop_load, mb(32));
-        RUN_TEST_POT(run_loop_load, mb(64));
-        RUN_TEST_POT(run_loop_load, mb(128));
-        RUN_TEST_POT(run_loop_load, mb(256));
+        if (write_csv)
+            break;
     }
 
     free_os_pages_memory(mem, byte_count);

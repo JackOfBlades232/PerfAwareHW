@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstring>
+#include <cstdint>
+#include <cstddef>
 
 #define CAT_(a_, b_) a_ ## b_
 #define CAT(a_, b_) CAT_(a_, b_)
@@ -97,3 +99,12 @@ inline T round_up(T val, T measure)
 {
     return measure * ((val - 1) / measure + 1);
 }
+
+inline constexpr long double c_bytes_in_gb = (long double)(1u << 30);
+inline constexpr long double c_kb_in_gb = (long double)(1u << 20);
+
+inline long double gb_per_measure(long double measure, uint64_t bytes)
+{
+    long double const gb = (long double)bytes / c_bytes_in_gb; 
+    return gb / measure;
+};

@@ -1,12 +1,14 @@
 #pragma once
 
 #include "profiling.hpp"
+#include "util.hpp"
 
-// @TODO customizable processor instead?
+#if !defined(RT_PRINT) || !defined(RT_PRINTLN)
 #include <cstdio>
 
 #define RT_PRINT(text_, ...) printf(text_, ##__VA_ARGS__)
 #define RT_PRINTLN(text_, ...) printf(text_ "\n", ##__VA_ARGS__)
+#endif
 
 #define RT_PRESERVE_BYTES_TARGET uint64_t(0)
 
@@ -170,14 +172,6 @@ inline void print_reptest_results(
     uint64_t cpu_timer_freq, char const *name,
     bool print_bytes_per_tick)
 {
-    constexpr long double c_bytes_in_gb = (long double)(1u << 30);
-    constexpr long double c_kb_in_gb = (long double)(1u << 20);
-
-    // @TODO: pull out these computations
-    auto gb_per_measure = [](long double measure, uint64_t bytes) {
-        long double const gb = (long double)bytes / c_bytes_in_gb; 
-        return gb / measure;
-    };
     long double const min_sec = (long double)results.min_ticks / cpu_timer_freq;
     long double const max_sec = (long double)results.max_ticks / cpu_timer_freq;
 
@@ -233,3 +227,13 @@ inline void print_reptest_results(
     RT_PRINTLN("");
 }
 
+inline void print_best_bandwidth_csv(
+    repetition_test_results_t const &results,
+    uint64_t target_processed_bytes, uint64_t cpu_timer_freq,
+    char const *label)
+{
+    long double const min_sec = (long double)results.min_ticks / cpu_timer_freq;
+    RT_PRINTLN("%s,%llu,%Lf,%Lf",
+        label, target_processed_bytes, min_sec,
+        gb_per_measure(min_sec, target_processed_bytes));
+}
