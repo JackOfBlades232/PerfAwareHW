@@ -6,6 +6,7 @@ global run_loop_align31
 global run_loop_align63
 global run_loop_align127
 global run_loop_align255
+global run_loop_align4095
 
 %ifdef _WIN32
 %define PARAM0 rcx
@@ -93,6 +94,17 @@ run_loop_align255:
                 xor     rax, rax 
 align 256
 %rep 255
+                nop
+%endrep
+.loop:          inc     rax 
+                cmp     rax, PARAM0
+                jb      .loop
+                ret
+
+run_loop_align4095:
+                xor     rax, rax 
+align 4096
+%rep 4095
                 nop
 %endrep
 .loop:          inc     rax 

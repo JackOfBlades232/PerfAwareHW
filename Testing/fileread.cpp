@@ -386,7 +386,9 @@ int main(int argc, char **argv)
                 continue;
             test.rt.ReStart(results);
             (*test.func)(fn, fmem, test.rt, test.allocator);
-            print_reptest_results(results, cpu_timer_freq, test.name, false);
+            print_reptest_results(
+                results, test.rt.GetTargetBytes(),
+                cpu_timer_freq, test.name, false);
         }
     }
 

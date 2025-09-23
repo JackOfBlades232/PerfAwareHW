@@ -12,7 +12,7 @@
 
 struct repetition_test_results_t {
     uint64_t test_count = 0;
-    uint64_t processed_bytes = 0;
+    uint64_t total_bytes = 0;
     uint64_t min_ticks = uint64_t(-1);
     uint64_t max_ticks = 0;
     uint64_t total_ticks = 0;
@@ -28,22 +28,22 @@ class RepetitionTester {
         e_st_error
     } m_state;
 
-    uint64_t m_target_processed_bytes;
-    uint64_t m_try_renew_min_for_ticks;
-    uint64_t m_test_start_ticks;
-    uint64_t m_cpu_timer_freq;
+    uint64_t m_target_bytes = 0;
+    uint64_t m_try_renew_min_for_ticks = 0;
+    uint64_t m_test_start_ticks = 0;
+    uint64_t m_cpu_timer_freq = 0;
 
-    uint64_t m_ticks;
-    uint64_t m_page_faults;
-    uint64_t m_bytes;
+    uint64_t m_ticks = 0;
+    uint64_t m_page_faults = 0;
+    uint64_t m_bytes = 0;
 
-    uint32_t m_open_blocks;
-    uint32_t m_closed_blocks;
+    uint32_t m_open_blocks = 0;
+    uint32_t m_closed_blocks = 0;
 
-    uint32_t m_last_chars_printed_for_min;
-    bool m_print_new_minimums;
+    uint32_t m_last_chars_printed_for_min = 0;
+    bool m_print_new_minimums = false;
 
-    repetition_test_results_t *m_results;
+    repetition_test_results_t *m_results = nullptr;
 
 #define RT_ERR(text_, ...)                                    \
     do {                                                      \
@@ -64,25 +64,26 @@ class RepetitionTester {
     } while (0)
 
   public:
-    RepetitionTester(uint64_t target_bytes,
-                     uint64_t cpu_timer_freq,
-                     float seconds_for_min_renewal,
-                     bool print_minimums = false)
+    RepetitionTester(
+            uint64_t target_bytes, uint64_t cpu_timer_freq,
+            float seconds_for_min_renewal, bool print_minimums = false)
         : m_state{e_st_pending}
-        , m_target_processed_bytes{target_bytes}
+        , m_target_bytes{target_bytes}
         , m_try_renew_min_for_ticks{uint64_t(seconds_for_min_renewal * cpu_timer_freq)}
         , m_cpu_timer_freq{cpu_timer_freq}
         , m_print_new_minimums{print_minimums}
         , m_results{nullptr} {}
 
-    void ReStart(repetition_test_results_t &out_results,
-                 uint64_t new_target_bytes = RT_PRESERVE_BYTES_TARGET) {
+    void ReStart(
+        repetition_test_results_t &out_results,
+        uint64_t new_target_bytes = RT_PRESERVE_BYTES_TARGET)
+    {
         if (m_state != e_st_pending)
             RT_ERR("Start called on non-pending rep tester");
         if (new_target_bytes != RT_PRESERVE_BYTES_TARGET)
-            m_target_processed_bytes = new_target_bytes;
+            m_target_bytes = new_target_bytes;
         m_results = &out_results;
-        *m_results = {};
+        *m_results = repetition_test_results_t{};
         m_ticks = 0;
         m_page_faults = 0;
         m_bytes = 0;
@@ -103,12 +104,12 @@ class RepetitionTester {
         if (m_open_blocks) {
             if (m_open_blocks != m_closed_blocks)
                 RT_ERRET(false, "Not all timed blocks closed in rep tester");
-            if (m_bytes != m_target_processed_bytes)
+            if (m_bytes != m_target_bytes)
                 RT_ERRET(false, "Bytes processed in test not equal to target bytes");
 
             ++m_results->test_count;
             m_results->total_ticks += m_ticks;
-            m_results->processed_bytes += m_bytes;
+            m_results->total_bytes += m_bytes;
             m_results->total_page_faults += m_page_faults;
             if (m_results->max_ticks < m_ticks) {
                 m_results->max_ticks = m_ticks;
@@ -156,14 +157,18 @@ class RepetitionTester {
     void ReportProcessedBytes(uint64_t bytes) { m_bytes += bytes; }
     void ReportError(char const *text) { RT_ERR("%s", text); }
 
+    uint64_t GetTargetBytes() const { return m_target_bytes; }
+
 #undef RT_ERR
 #undef RT_ERRET
 #undef RT_CLEAR
 };
 
-inline void print_reptest_results(repetition_test_results_t const &results,
-                                  uint64_t cpu_timer_freq, char const *name,
-                                  bool print_bytes_per_tick)
+inline void print_reptest_results(
+    repetition_test_results_t const &results,
+    uint64_t target_processed_bytes,
+    uint64_t cpu_timer_freq, char const *name,
+    bool print_bytes_per_tick)
 {
     constexpr long double c_bytes_in_gb = (long double)(1u << 30);
     constexpr long double c_kb_in_gb = (long double)(1u << 20);
@@ -182,34 +187,46 @@ inline void print_reptest_results(repetition_test_results_t const &results,
     RT_PRINTLN("");
     RT_PRINTLN("--- %s ---", name);
 
-    RT_PRINT("Min: %Lf (%llu), %Lfgb/s", min_sec, results.min_ticks,
-             gb_per_measure(min_sec, results.processed_bytes));
-    if (print_bytes_per_tick)
-        RT_PRINT(" (%.2Lfbytes/tick)", (long double)results.processed_bytes / results.min_ticks);
+    RT_PRINT(
+        "Min: %Lf (%llu), %Lfgb/s", min_sec, results.min_ticks,
+        gb_per_measure(min_sec, target_processed_bytes));
+    if (print_bytes_per_tick) {
+        RT_PRINT(" (%.2Lfbytes/tick)",
+            (long double)target_processed_bytes / results.min_ticks);
+    }
     if (results.min_test_page_faults > 0) {
-        RT_PRINT(" PF: %llu faults (%.3Lfkb/fault)", results.min_test_page_faults,
-                   c_kb_in_gb * gb_per_measure((long double)results.min_test_page_faults, results.processed_bytes));
+        RT_PRINT(
+            " PF: %llu faults (%.3Lfkb/fault)", results.min_test_page_faults,
+            c_kb_in_gb * gb_per_measure((long double)results.min_test_page_faults, target_processed_bytes));
     }
     RT_PRINTLN("");
 
-    RT_PRINT("Max: %Lf (%llu), %Lfgb/s", max_sec, results.max_ticks,
-             gb_per_measure(max_sec, results.processed_bytes));
-    if (print_bytes_per_tick)
-        RT_PRINT(" (%.2Lfbytes/tick)", (long double)results.processed_bytes / results.max_ticks);
+    RT_PRINT(
+        "Max: %Lf (%llu), %Lfgb/s", max_sec, results.max_ticks,
+        gb_per_measure(max_sec, target_processed_bytes));
+    if (print_bytes_per_tick) {
+        RT_PRINT(" (%.2Lfbytes/tick)",
+            (long double)target_processed_bytes / results.max_ticks);
+    }
     if (results.max_test_page_faults > 0) {
-        RT_PRINT(" PF: %llu faults (%.3Lfkb/fault)", results.max_test_page_faults,
-                   c_kb_in_gb * gb_per_measure((long double)results.max_test_page_faults, results.processed_bytes));
+        RT_PRINT(
+            " PF: %llu faults (%.3Lfkb/fault)", results.max_test_page_faults,
+            c_kb_in_gb * gb_per_measure((long double)results.max_test_page_faults, target_processed_bytes));
     }
     RT_PRINTLN("");
 
-    RT_PRINT("Avg: %Lf (%llu), %Lfgb/s", avg_sec, avg_ticks,
-             gb_per_measure(avg_sec, results.processed_bytes));
-    if (print_bytes_per_tick)
-        RT_PRINT(" (%.2Lfbytes/tick)", (long double)results.processed_bytes / avg_ticks);
+    RT_PRINT(
+        "Avg: %Lf (%llu), %Lfgb/s", avg_sec, avg_ticks,
+        gb_per_measure(avg_sec, target_processed_bytes));
+    if (print_bytes_per_tick) {
+        RT_PRINT(" (%.2Lfbytes/tick)",
+            (long double)target_processed_bytes / avg_ticks);
+    }
     if (results.total_page_faults > 0) {
         uint64_t const avg_page_faults = results.total_page_faults / results.test_count;
-        RT_PRINT(" PF: %llu faults (%.3Lfkb/fault)", avg_page_faults,
-                   c_kb_in_gb * gb_per_measure((long double)avg_page_faults, results.processed_bytes));
+        RT_PRINT(
+            " PF: %llu faults (%.3Lfkb/fault)", avg_page_faults,
+            c_kb_in_gb * gb_per_measure((long double)avg_page_faults, target_processed_bytes));
     }
     RT_PRINTLN("");
 

@@ -21,9 +21,10 @@ extern uint64_t run_cond_loop(uint64_t count, char const *ptr);
 }
 
 template <class TCallable>
-static void run_test(TCallable &&tested, RepetitionTester &rt,
-                     repetition_test_results_t &results,
-                     char const *name, uint64_t cpu_timer_freq)
+static void run_test(
+    TCallable &&tested, RepetitionTester &rt,
+    repetition_test_results_t &results,
+    char const *name, uint64_t cpu_timer_freq)
 {
     rt.ReStart(results);
     do {
@@ -33,7 +34,8 @@ static void run_test(TCallable &&tested, RepetitionTester &rt,
 
         rt.ReportProcessedBytes(byte_cnt);
     } while (rt.Tick());
-    print_reptest_results(results, cpu_timer_freq, name, true);
+    print_reptest_results(
+        results, rt.GetTargetBytes(), cpu_timer_freq, name, true);
 }
 
 void fill_zeroes(char *mem, uint64_t cnt)

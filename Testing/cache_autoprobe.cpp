@@ -17,11 +17,12 @@ extern uint64_t run_loop_load_npot(uint64_t count, char *ptr, uint64_t sz);
 }
 
 static long double get_gbps_throughput_from_res(
-    repetition_test_results_t const &results, uint64_t cpu_timer_freq)
+    repetition_test_results_t const &results,
+    uint64_t target_bytes, uint64_t cpu_timer_freq)
 {
     long double const min_sec = (long double)results.min_ticks / cpu_timer_freq;
     long double const processed_gb =
-        (long double)results.processed_bytes / (long double)(1u << 30);
+        (long double)target_bytes / (long double)(1u << 30);
 
     return processed_gb / min_sec;
 }
@@ -49,7 +50,8 @@ static long double probe_cache_size(
         rt.ReportProcessedBytes(byte_cnt);
     } while (rt.Tick());
 
-    return get_gbps_throughput_from_res(results, cpu_timer_freq);
+    return get_gbps_throughput_from_res(
+        results, rt.GetTargetBytes(), cpu_timer_freq);
 }
 
 int main()
@@ -65,7 +67,7 @@ int main()
     init_os_process_state(g_os_proc_state);
     uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
 
-    char *mem;
+    char *mem = nullptr;
     bool has_large_pages = try_enable_large_pages(g_os_proc_state);
     if (has_large_pages) {
         fprintf(stderr, "Trying large pages\n");

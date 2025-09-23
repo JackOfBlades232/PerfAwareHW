@@ -27,9 +27,10 @@ extern uint64_t run_loop_store2x64(uint64_t count, char *ptr);
 }
 
 template <class TCallable>
-static void run_test(TCallable &&tested, RepetitionTester &rt,
-                     repetition_test_results_t &results,
-                     char const *name, uint64_t cpu_timer_freq)
+static void run_test(
+    TCallable &&tested, RepetitionTester &rt,
+    repetition_test_results_t &results,
+    char const *name, uint64_t cpu_timer_freq)
 {
     rt.ReStart(results);
     do {
@@ -39,7 +40,8 @@ static void run_test(TCallable &&tested, RepetitionTester &rt,
 
         rt.ReportProcessedBytes(byte_cnt);
     } while (rt.Tick());
-    print_reptest_results(results, cpu_timer_freq, name, true);
+    print_reptest_results(
+        results, rt.GetTargetBytes(), cpu_timer_freq, name, true);
 }
 
 int main(int argc, char **argv)
@@ -63,9 +65,10 @@ int main(int argc, char **argv)
         return 2;
     }
 
-#define RUN_TEST(func_name_)                                            \
-    run_test([mem, byte_count] { return func_name_(byte_count, mem); }, \
-             rt, results, #func_name_, cpu_timer_freq)
+#define RUN_TEST(func_name_)                                       \
+    run_test(                                                      \
+        [mem, byte_count] { return func_name_(byte_count, mem); }, \
+        rt, results, #func_name_, cpu_timer_freq)
 
     for (;;) {
         RUN_TEST(run_loop_load2x1);

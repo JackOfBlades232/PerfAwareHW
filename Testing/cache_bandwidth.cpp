@@ -27,10 +27,10 @@ uint64_t mb(uint64_t cnt)
 }
 
 template <class TCallable>
-static void run_test(TCallable &&tested, uint64_t target_bytes,
-                     RepetitionTester &rt,
-                     repetition_test_results_t &results,
-                     char const *name, uint64_t cpu_timer_freq)
+static void run_test(
+    TCallable &&tested, uint64_t target_bytes,
+    RepetitionTester &rt, repetition_test_results_t &results,
+    char const *name, uint64_t cpu_timer_freq)
 {
     rt.ReStart(results, target_bytes);
     do {
@@ -40,7 +40,8 @@ static void run_test(TCallable &&tested, uint64_t target_bytes,
 
         rt.ReportProcessedBytes(byte_cnt);
     } while (rt.Tick());
-    print_reptest_results(results, cpu_timer_freq, name, true);
+    print_reptest_results(
+        results, rt.GetTargetBytes(), cpu_timer_freq, name, true);
 }
 
 int main(int argc, char **argv)
@@ -188,7 +189,6 @@ int main(int argc, char **argv)
         RUN_TEST_POT(run_loop_load, mb(64));
         RUN_TEST_POT(run_loop_load, mb(128));
         RUN_TEST_POT(run_loop_load, mb(256));
-
     }
 
     free_os_pages_memory(mem, byte_count);
