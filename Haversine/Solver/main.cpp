@@ -2,6 +2,8 @@
 #include "array.hpp"
 #include "defer.hpp"
 
+#define PROFILE
+
 #include <profiling.hpp>
 #include <os.hpp>
 #include <util.hpp>

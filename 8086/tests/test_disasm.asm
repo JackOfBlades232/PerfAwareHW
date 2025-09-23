@@ -1,258 +1,345 @@
-;; test_sim_input disassembly ;;
+;; ..\..\computer_enhance\perfaware\part1\listing_0042_completionist_decode disassembly ;;
 bits 16
-mov ax, 4096
-mov ss, ax
-add ax, 4096
-mov ds, ax
-add ax, 4096
-mov es, ax
-mov sp, -2
-mov bp, sp
-push ds
-xor ax, ax
-mov ds, ax
-mov word [0], 9
-mov word [2], 5
-mov word [4], 0
-mov word [6], 6
-mov word [8], 3
-mov word [10], 6
-mov word [12], 6
-mov word [14], 6
-mov word [16], 13
-mov word [18], 6
-pop ds
-jmp $+26+2
-mov ax, 666
-out 0, ax
-hlt
-iret
-in al, 0
-iret
-out 1, al
-iret
-mov ax, 3
-out 0, ax
-wait
-iret
-mov ax, 4221
-out 0, ax
-iret
-xor bx, bx
-mov cx, 2
-call $+34+3
-call $-61+3
-mov word [bp-100], 64
-call word [bp-100]
-call 4:15
-mov word [bp-99], 15
-mov word [bp-97], 4
-call far [bp-99]
-loop $-34+2
-jmp $+479+3
-mov ax, [bx]
-push ax
-out 44, ax
-add bx, 2
-mov word [bx], ax
-sub word [bx], 15
-pop dx
-ret
-adc ax, -11111
-pushf
-mov ah, 252
-sahf
-sub bx, -2
-lahf
-popf
-retf
-xor ax, ax
-mov al, 9
-mov bl, 7
-mov dx, 15
-inc dx
-add al, bl
-aaa
-out 0, ax
-mov al, 7
-mov bl, 9
-sub al, bl
-aas
-out 0, ax
-mov al, 121
-mov dl, 25
-add al, dl
-daa
-out 0, ax
-mov dl, 105
-dec dl
-mov al, 130
-sub al, dl
-das
-out 0, ax
-adc ax, dx
-sub cx, 1
-sbb ax, dx
-out 0, ax
-cmp ax, 1234
-neg dx
-out 0, ax
-jmp $+388+3
-mov ax, 123
-mov bh, 222
-mul bx
-mov cx, 323
-div cx
-mov al, 253
+mov si, bx
+mov dh, al
+mov cl, 12
 mov ch, 244
-imul ch
-mov cl, 251
-idiv cl
-mov al, 8
-mov bl, 7
-mul bl
-aam
-mov ax, 1543
-mov bl, 8
-aad
-div bl
-out 0, ax
-mov ax, dx
-out 1, ax
-jmp $+340+3
-xor ax, ax
-sub ax, 16
-clc
-cmc
-cmc
-stc
-std
-cld
-sti
-cli
-mov cx, 5
-mov di, 0
-mov al, 55
-mov word [si], 22
-mov byte [si+2], 11
-stosb
-lodsw
-movsb
-xor di, di
-scasw
-xor si, si
-xor di, di
-mov word [si], 1222
-mov word es:[di], 1
-cmpsw
-xor si, si
-xor di, di
-mov byte es:[di], 104
-mov byte es:[di+1], 101
-mov byte es:[di+2], 108
-mov byte es:[di+3], 111
-mov byte es:[di+4], 0
-xor ax, ax
-sahf
-mov cx, 6
-repnz scasb
-xor di, di
-add al, 1
-mov byte [si], 119
-mov byte [si+1], 104
-mov byte [si+2], 97
-mov byte [si+3], 116
-mov cx, 4
-rep movsb
-xor si, si
-xor di, di
-mov byte [si], 119
-mov byte [si+1], 104
-mov byte [si+2], 104
-mov byte [si+3], 104
-mov cx, 4
-rep cmpsb
+mov cx, 12
+mov cx, -12
+mov dx, 3948
+mov dx, -3948
+mov al, [bx+si]
+mov bx, [bp+di]
+mov dx, [bp]
+mov ah, [bx+si+4]
+mov al, [bx+si+4999]
+mov word [bx+di], cx
+mov byte [bp+si], cl
+mov byte [bp], ch
+mov ax, [bx+di-37]
+mov word [si-300], cx
+mov dx, [bx-32]
+mov byte [bp+di], 7
+mov word [di+901], 347
+mov bp, [5]
+mov bx, [3458]
+mov ax, [2555]
+mov ax, [16]
+mov word [2554], ax
+mov word [15], ax
+push word [bp+si]
+push word [3000]
+push word [bx+di-30]
+push cx
+push ax
+push dx
+push cs
+pop word [bp+si]
+pop word [3]
+pop word [bx+di-3000]
+pop sp
+pop di
+pop si
+pop ds
+xchg ax, [bp-1000]
+xchg bp, [bx+50]
 nop
-jmp $+203+3
-xor ax, ax
-mov bx, 255
-mov cx, 193
-and bx, cx
-or cl, bl
-test bx, 35
-not bx
-or cx, 14
-and ax, 14
-xor dx, 14
-or word [bx], 14
-and byte [bp+13], 14
-xor word [di], 14
-mov ax, 3
-shl ax, 1
-mov cl, 3
-shl al, cl
-shr al, 1
-not al
-dec cl
-sar al, cl
-mov bx, -4866
-mov cl, 4
-rol bx, 1
-rcl bx, cl
-mov dl, 131
-mov cl, 3
-ror dl, cl
-stc
-rcr dl, 1
-jmp $+128+3
-int 1
-int 2
-int3
-into
-mov ax, 32766
-add ax, 15
-into
-jmp $+113+2
-xor ax, ax
-xor bx, bx
-mov dx, -4095
-mov ax, -4097
-mov bx, 2
-idiv bx
-jmp $+96+2
-mov ax, 3
-mov bx, 8
-xchg ax, bx
-mov word [bp], 9
-xchg bl, [bp]
-mov al, 223
+xchg ax, dx
+xchg ax, sp
+xchg ax, si
+xchg ax, di
+xchg cx, dx
+xchg si, cx
+xchg cl, ah
+in al, 200
+in al, dx
+in ax, dx
+out 44, ax
+out dx, al
+xlat
+lea ax, [bx+di+1420]
+lea bx, [bp-50]
+lea sp, [bp-1003]
+lea di, [bx+si-7]
+lds ax, [bx+di+1420]
+lds bx, [bp-50]
+lds sp, [bp-1003]
+lds di, [bx+si-7]
+les ax, [bx+di+1420]
+les bx, [bp-50]
+les sp, [bp-1003]
+les di, [bx+si-7]
+lahf
+sahf
+pushf
+popf
+add cx, [bp]
+add dx, [bx+si]
+add byte [bp+di+5000], ah
+add byte [bx], al
+add sp, 392
+add si, 5
+add ax, 1000
+add ah, 30
+add al, 9
+add cx, bx
+add ch, al
+adc cx, [bp]
+adc dx, [bx+si]
+adc byte [bp+di+5000], ah
+adc byte [bx], al
+adc sp, 392
+adc si, 5
+adc ax, 1000
+adc ah, 30
+adc al, 9
+adc cx, bx
+adc ch, al
+inc ax
+inc cx
+inc dh
+inc al
+inc ah
+inc sp
+inc di
+inc byte [bp+1002]
+inc word [bx+39]
+inc byte [bx+si+5]
+inc word [bp+di-10044]
+inc word [9349]
+inc byte [bp]
+aaa
+daa
+sub cx, [bp]
+sub dx, [bx+si]
+sub byte [bp+di+5000], ah
+sub byte [bx], al
+sub sp, 392
+sub si, 5
+sub ax, 1000
+sub ah, 30
+sub al, 9
+sub cx, bx
+sub ch, al
+sbb cx, [bp]
+sbb dx, [bx+si]
+sbb byte [bp+di+5000], ah
+sbb byte [bx], al
+sbb sp, 392
+sbb si, 5
+sbb ax, 1000
+sbb ah, 30
+sbb al, 9
+sbb cx, bx
+sbb ch, al
+dec ax
+dec cx
+dec dh
+dec al
+dec ah
+dec sp
+dec di
+dec byte [bp+1002]
+dec word [bx+39]
+dec byte [bx+si+5]
+dec word [bp+di-10044]
+dec word [9349]
+dec byte [bp]
+neg ax
+neg cx
+neg dh
+neg al
+neg ah
+neg sp
+neg di
+neg byte [bp+1002]
+neg word [bx+39]
+neg byte [bx+si+5]
+neg word [bp+di-10044]
+neg word [9349]
+neg byte [bp]
+cmp bx, cx
+cmp dh, [bp+390]
+cmp word [bp+2], si
+cmp bl, 20
+cmp byte [bx], 34
+cmp ax, 23909
+aas
+das
+mul al
+mul cx
+mul word [bp]
+mul byte [bx+di+500]
+imul ch
+imul dx
+imul byte [bx]
+imul word [9483]
+aam
+div bl
+div sp
+div byte [bx+si+2990]
+div word [bp+di+1000]
+idiv ax
+idiv si
+idiv byte [bp+si]
+idiv word [bx+493]
+aad
 cbw
 cwd
-xor bx, bx
-mov byte [bx+36], 97
-mov al, 36
-xlat
-mov di, 12
-mov si, 333
-lea dx, [bp+di+12]
-mov word [bx+si-7], 38
-mov word [bx+si-5], 1221
-mov word [bx+di+1420], 2213
-mov word [bx+di+1422], 2
-les ax, [bx+di+1420]
-lds dx, [bx+si-7]
-jmp $+28+2
-mov dx, 2
-dec dx
-jne $-3+2
-mov bl, 3
-dec bl
-js $+2+2
-jmp $-6+2
-mov ax, 3
-mov cx, 4
-cmp ax, cx
-jae $+4+2
-out 0, ax
-jmp $+0+2
+not ah
+not bl
+not sp
+not si
+not word [bp]
+not byte [bp+9905]
+shl ah, 1
+shr ax, 1
+sar bx, 1
+rol cx, 1
+ror dh, 1
+rcl sp, 1
+rcr bp, 1
+shl word [bp+5], 1
+shr byte [bx+si-199], 1
+sar byte [bx+di-300], 1
+rol word [bp], 1
+ror word [4938], 1
+rcl byte [3], 1
+rcr word [bx], 1
+shl ah, cl
+shr ax, cl
+sar bx, cl
+rol cx, cl
+ror dh, cl
+rcl sp, cl
+rcr bp, cl
+shl word [bp+5], cl
+shr word [bx+si-199], cl
+sar byte [bx+di-300], cl
+rol byte [bp], cl
+ror byte [4938], cl
+rcl byte [3], cl
+rcr word [bx], cl
+and al, ah
+and ch, cl
+and bp, si
+and di, sp
+and al, 93
+and ax, 20392
+and byte [bp+si+10], ch
+and word [bx+di+1000], dx
+and bx, [bp]
+and cx, [4384]
+and byte [bp-39], 239
+and word [bx+si-4332], 10328
+test bx, cx
+test byte [bp+390], dh
+test word [bp+2], si
+test bl, 20
+test byte [bx], 34
+test ax, 23909
+or al, ah
+or ch, cl
+or bp, si
+or di, sp
+or al, 93
+or ax, 20392
+or byte [bp+si+10], ch
+or word [bx+di+1000], dx
+or bx, [bp]
+or cx, [4384]
+or byte [bp-39], 239
+or word [bx+si-4332], 10328
+xor al, ah
+xor ch, cl
+xor bp, si
+xor di, sp
+xor al, 93
+xor ax, 20392
+xor byte [bp+si+10], ch
+xor word [bx+di+1000], dx
+xor bx, [bp]
+xor cx, [4384]
+xor byte [bp-39], 239
+xor word [bx+si-4332], 10328
+rep movsb
+rep cmpsb
+rep scasb
+rep lodsb
+rep movsw
+rep cmpsw
+rep scasw
+rep lodsw
+rep stosb
+rep stosw
+call word [39201]
+call word [bp-100]
+call sp
+call ax
+jmp ax
+jmp di
+jmp word [12]
+jmp word [4395]
+ret -7
+ret 500
+ret
+je $-2+2
+jl $-4+2
+jle $-6+2
+jb $-8+2
+jbe $-10+2
+jp $-12+2
+jo $-14+2
+js $-16+2
+jne $-18+2
+jge $-20+2
+jg $-22+2
+jae $-24+2
+ja $-26+2
+jnp $-28+2
+jno $-30+2
+jns $-32+2
+loop $-34+2
+loopz $-36+2
+loopnz $-38+2
+jcxz $-40+2
+int 13
+int3
+into
+iret
+clc
+cmc
+stc
+cld
+std
+cli
+sti
 hlt
+wait
+lock not byte [bp+9905]
+lock xchg byte [100], al
+mov al, cs:[bx+si]
+mov bx, ds:[bp+di]
+mov dx, es:[bp]
+mov ah, ss:[bx+si+4]
+and byte ss:[bp+si+10], ch
+or word ds:[bx+di+1000], dx
+xor bx, es:[bp]
+cmp cx, es:[4384]
+test byte cs:[bp-39], 239
+sbb word cs:[bx+si-4332], 10328
+lock not byte cs:[bp+9905]
+call 123:456
+jmp 789:34
+mov word [bx+si+59], es
+jmp $+1753+3
+call $+10934+3
+retf 17556
+ret 17560
+retf
+ret
+call word [bp+si-58]
+call far [bp+si-58]
+jmp word [di]
+jmp far [di]
+jmp 21862:30600

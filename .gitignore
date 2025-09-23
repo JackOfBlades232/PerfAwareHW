@@ -32,11 +32,14 @@
 *.app
 
 # Debug stuff
-.ilk
-.pdb
+*.ilk
+*.pdb
 
 #other
 nasm
 .vs/
+**/build/**
+!**/build/build.bat
+!**/build/build.sh
 
 *.data
