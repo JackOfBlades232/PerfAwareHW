@@ -36,8 +36,8 @@ static void free_file_preserve_len(file_t &f, allocator_t allocator)
 static volatile uint32_t g_mapped_file_read_sink = '\0'; // disabling optimization
 
 template <bool t_realloc>
-static void mem_write_rep_test(char const *, file_t &mem,
-                               RepetitionTester &rt, allocator_t allocator)
+static void mem_write_rep_test(
+    char const *, file_t &mem, RepetitionTester &rt, allocator_t allocator)
 {
     do {
         if (!mem.Loaded())
@@ -59,8 +59,8 @@ static void mem_write_rep_test(char const *, file_t &mem,
 }
 
 template <bool t_realloc>
-static void mem_write_backwards_rep_test(char const *, file_t &mem,
-                                         RepetitionTester &rt, allocator_t allocator)
+static void mem_write_backwards_rep_test(
+    char const *, file_t &mem, RepetitionTester &rt, allocator_t allocator)
 {
     do {
         if (!mem.Loaded())
@@ -82,8 +82,8 @@ static void mem_write_backwards_rep_test(char const *, file_t &mem,
 }
 
 template <bool t_realloc>
-static void fread_rep_test(char const *fn, file_t &mem,
-                           RepetitionTester &rt, allocator_t allocator)
+static void fread_rep_test(
+    char const *fn, file_t &mem, RepetitionTester &rt, allocator_t allocator)
 {
     do {
         if (!mem.Loaded())
@@ -116,8 +116,8 @@ static void fread_rep_test(char const *fn, file_t &mem,
 #include <io.h>
 
 template <bool t_realloc>
-static void _read_rep_test(char const *fn, file_t &mem,
-                           RepetitionTester &rt, allocator_t allocator)
+static void _read_rep_test(
+    char const *fn, file_t &mem, RepetitionTester &rt, allocator_t allocator)
 {
     do {
         if (!mem.Loaded())
@@ -151,8 +151,8 @@ static void _read_rep_test(char const *fn, file_t &mem,
 #include <handleapi.h>
 
 template <bool t_realloc>
-static void ReadFile_rep_test(char const *fn, file_t &mem,
-                              RepetitionTester &rt, allocator_t allocator)
+static void ReadFile_rep_test(
+    char const *fn, file_t &mem, RepetitionTester &rt, allocator_t allocator)
 {
     do {
         if (!mem.Loaded())
@@ -183,8 +183,8 @@ static void ReadFile_rep_test(char const *fn, file_t &mem,
 }
 
 // @TODO: test no remapping too? Maybe someday
-static void map_file_rep_test(char const *fn, file_t &mem,
-                              RepetitionTester &rt, allocator_t)
+static void map_file_rep_test(
+    char const *fn, file_t &mem, RepetitionTester &rt, allocator_t)
 {
     do {
         HANDLE file_hnd = CreateFileA(
@@ -200,8 +200,9 @@ static void map_file_rep_test(char const *fn, file_t &mem,
         if (mem.data) {
             for (char *p = mem.data; p != mem.data + mem.len; ++p)
                 g_mapped_file_read_sink += uint32_t(*p);
-        } else
+        } else {
             rt.ReportError("Failed file mapping");
+        }
 
         rt.EndTimeBlock();
 
@@ -221,8 +222,8 @@ static void map_file_rep_test(char const *fn, file_t &mem,
 #include <unistd.h>
 
 template <bool t_realloc>
-static void read_rep_test(char const *fn, file_t &mem,
-                          RepetitionTester &rt, allocator_t allocator)
+static void read_rep_test(
+    char const *fn, file_t &mem, RepetitionTester &rt, allocator_t allocator)
 {
     do {
         if (!mem.Loaded())
@@ -250,8 +251,8 @@ static void read_rep_test(char const *fn, file_t &mem,
         free_file_preserve_len(mem, allocator);
 }
 
-static void map_file_rep_test(char const *fn, file_t &mem,
-                              RepetitionTester &rt, allocator_t)
+static void map_file_rep_test(
+    char const *fn, file_t &mem, RepetitionTester &rt, allocator_t)
 {
     do {
         int fd = open(fn, O_RDONLY, 0);
@@ -265,8 +266,9 @@ static void map_file_rep_test(char const *fn, file_t &mem,
         if (mem.data != MAP_FAILED) {
             for (char *p = mem.data; p != mem.data + mem.len; ++p)
                 g_mapped_file_read_sink += uint32_t(*p);
-        } else
+        } else {
             rt.ReportError("Failed file mapping");
+        }
 
         rt.EndTimeBlock();
 
@@ -331,8 +333,9 @@ int main(int argc, char **argv)
             free_os_large_pages_memory(test_allocation, fmem.len);
             printf("Enabled large pages\n\n");
         }
-    } else
+    } else {
         printf("Failed to enable large pages, they will not be tested\n\n");
+    }
 
     struct file_rep_test_t { 
         void (*func)(char const *, file_t &, RepetitionTester &, allocator_t);
