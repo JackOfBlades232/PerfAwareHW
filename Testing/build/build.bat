@@ -7,6 +7,7 @@ pushd build
 "C:\Program Files\NASM\nasm.exe" -f win64 -D_WIN32=1 ..\bandwidth_nocache_funcs.asm
 "C:\Program Files\NASM\nasm.exe" -f win64 -D_WIN32=1 ..\cache_bandwidth_funcs.asm
 "C:\Program Files\NASM\nasm.exe" -f win64 -D_WIN32=1 ..\critical_stride_funcs.asm
+"C:\Program Files\NASM\nasm.exe" -f win64 -D_WIN32=1 ..\nontemporal_funcs.asm
 move ..\bandwidth_funcs.obj .\
 move ..\branch_funcs.obj .\
 move ..\calign_funcs.obj .\
@@ -14,6 +15,7 @@ move ..\exprt_funcs.obj .\
 move ..\bandwidth_nocache_funcs.obj .\
 move ..\cache_bandwidth_funcs.obj .\
 move ..\critical_stride_funcs.obj .\
+move ..\nontemporal_funcs.obj .\
 cl /Zi /std:c++20 /I..\..\Common ..\fileread.cpp %* /Fe: fileread.exe
 cl /Zi /std:c++20 /I..\..\Common ..\pagefaults.cpp %* /Fe: pagefaults.exe
 cl /Zi /std:c++20 /I..\..\Common ..\bandwidth.cpp bandwidth_funcs.obj %* /Fe: bandwidth.exe
@@ -24,5 +26,6 @@ cl /Zi /std:c++20 /I..\..\Common ..\bandwidth_nocache.cpp bandwidth_nocache_func
 cl /Zi /std:c++20 /I..\..\Common ..\cache_bandwidth.cpp cache_bandwidth_funcs.obj %* /Fe: cache_bandwidth.exe
 cl /Zi /std:c++20 /I..\..\Common ..\cache_autoprobe.cpp cache_bandwidth_funcs.obj %* /Fe: cache_autoprobe.exe
 cl /Zi /std:c++20 /I..\..\Common ..\critical_stride.cpp critical_stride_funcs.obj %* /Fe: critical_stride.exe
+cl /Zi /std:c++20 /I..\..\Common ..\nontemporal_demo.cpp nontemporal_funcs.obj %* /Fe: nontemporal_demo.exe
 popd
 @echo on
