@@ -13,11 +13,11 @@
 
 extern "C"
 {
-extern void memcpy512(void *to, void *from, uint64_t bytecnt);
-extern void memcpy512_nt(void *to, void *from, uint64_t bytecnt);
+extern void memcpy512(void *to, const void *from, uint64_t bytecnt);
+extern void memcpy512_nt(void *to, const void *from, uint64_t bytecnt);
 }
 
-using test_func_t = void (*)(void *, void *, uint64_t);
+using test_func_t = void (*)(void *, const void *, uint64_t);
 
 int main(int argc, char **argv)
 {

@@ -5,9 +5,17 @@
 
 #if !defined(RT_PRINT) || !defined(RT_PRINTLN)
 #include <cstdio>
-
 #define RT_PRINT(text_, ...) printf(text_, ##__VA_ARGS__)
 #define RT_PRINTLN(text_, ...) printf(text_ "\n", ##__VA_ARGS__)
+#endif
+
+#if !defined(RT_CLEAR)
+#include <cstdio>
+#define RT_CLEAR(count_)                         \
+    do {                                         \
+        for (size_t i_ = 0; i_ < (count_); ++i_) \
+            putchar('\b');                       \
+    } while (0)
 #endif
 
 #define RT_PRESERVE_BYTES_TARGET uint64_t(0)
@@ -59,11 +67,6 @@ class RepetitionTester {
         m_state = e_st_error;                                 \
         return ret_;                                          \
     } while (0) 
-#define RT_CLEAR(count_)                         \
-    do {                                         \
-        for (size_t i_ = 0; i_ < (count_); ++i_) \
-            putchar('\b');                       \
-    } while (0)
 
   public:
     RepetitionTester(
@@ -137,6 +140,8 @@ class RepetitionTester {
         m_closed_blocks = 0;
 
         if (cur_ticks - m_test_start_ticks > m_try_renew_min_for_ticks) {
+            if (m_print_new_minimums)
+                RT_CLEAR(m_last_chars_printed_for_min);
             m_state = e_st_pending;
             return false;
         }

@@ -1,3 +1,11 @@
+#define RT_PRINT(fmt_, ...) fprintf(stderr, fmt_, ##__VA_ARGS__)
+#define RT_PRINTLN(fmt_, ...) fprintf(stderr, fmt_ "\n", ##__VA_ARGS__)
+#define RT_CLEAR(count_)                         \
+    do {                                         \
+        for (size_t i_ = 0; i_ < (count_); ++i_) \
+            fprintf(stderr, "\b");               \
+    } while (0)
+
 #include <repetition.hpp>
 #include <profiling.hpp>
 #include <memory.hpp>
@@ -9,93 +17,130 @@
 #include <cstdint>
 #include <cassert>
 
+#define RT_STOP_TIME 10.f
+
 extern "C"
 {
-extern uint64_t calc_on_data(const void *data, const void *lut, uint64_t cnt);
-extern uint64_t calc_on_data_prefetch1(const void *data, const void *lut, uint64_t cnt);
-extern uint64_t calc_on_data_prefetch2(const void *data, const void *lut, uint64_t cnt);
-extern uint64_t calc_on_data_prefetch4(const void *data, const void *lut, uint64_t cnt);
+extern uint64_t ll_foreach(const void *ll, uint64_t bytecnt, uint64_t itercnt);
+extern uint64_t ll_foreach_prefetch(const void *ll, uint64_t bytecnt, uint64_t itercnt);
 }
 
-template <class TCallable>
-static void run_test(
-    TCallable &&tested, uint64_t target_bytes, RepetitionTester &rt,
-    char const *name, uint64_t cpu_timer_freq, bool write_csv)
+using test_func_t = uint64_t (*)(const void *, uint64_t, uint64_t);
+
+constexpr uint64_t clines(uint64_t cnt)
 {
-    repetition_test_results_t results{};
-
-    rt.ReStart(results, target_bytes);
-    do {
-        rt.BeginTimeBlock();
-        uint64_t bytes_cnt = tested();
-        rt.EndTimeBlock();
-        rt.ReportProcessedBytes(bytes_cnt);
-    } while (rt.Tick());
-
-    if (write_csv)
-        print_best_bandwidth_csv(results, target_bytes, cpu_timer_freq, name);
-    else
-        print_reptest_results(results, target_bytes, cpu_timer_freq, name, true);
+    return cnt << 6;
 }
+
+struct alignas(clines(1)) node_t {
+    node_t *next = nullptr;
+    float data[14] = {};
+};
+
+static_assert(sizeof(node_t) == clines(1));
 
 int main(int argc, char **argv)
 {
     if (argc < 2) {
-        fprintf(stderr, "Usage: <program> [float count] (csv)\n");
+        fprintf(stderr, "Usage: <program> [cline count] (csv)\n");
         return 1;
     }
 
-    size_t const count = atol(argv[1]);
-    bool const write_csv = argc > 3 && streq(argv[3], "csv");
+    constexpr size_t c_work_iter_counts[] = { 1, 2, 4, 8, 32, 64, 128, 192, 256, 512, 1024 };
 
-    size_t const byte_count = count * sizeof(float) * 16;
-    size_t const lut_byte_count = count * sizeof(void *);
+    constexpr test_func_t c_test_funcs[] = { &ll_foreach, &ll_foreach_prefetch };
+    constexpr size_t c_test_func_count = sizeof(c_test_funcs) / sizeof(c_test_funcs[0]);
+
+    constexpr char const *c_test_func_names[c_test_func_count] =
+        { "Regular loop", "Loop with next node prefetch" };
+
+    size_t const count = atol(argv[1]);
+    bool const write_csv = argc > 2 && streq(argv[2], "csv");
+
+    size_t const byte_count = clines(count);
 
     init_os_process_state(g_os_proc_state);
     uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
 
     srand(time(nullptr));
 
-    RepetitionTester rt{byte_count, cpu_timer_freq, 10.f, false};
-
-    float *mem = (float *)allocate_os_pages_memory(byte_count);
-    float **lut = (float **)allocate_os_pages_memory(lut_byte_count);
-    if (!mem) {
+    node_t *nodes = (node_t *)allocate_os_pages_memory(byte_count);
+    if (!nodes) {
         fprintf(stderr, "Allocation failed\n");
         return 2;
     }
 
-    for (size_t i = 0; i < byte_count / sizeof(float); ++i)
-        mem[i] = float(rand()) / float(RAND_MAX);
-    for (size_t i = 0; i < count; ++i)
-        lut[i] = &mem[i];
+    page_memory_in(nodes, byte_count);
 
-    for (size_t i = 0; i < count - 1; ++i) {
-        float *tmp = lut[i];
-        size_t swi = rand() % (count - i - 1) + i + 1;
-        lut[i] = lut[swi];
-        lut[swi] = tmp;
+    node_t *head = nullptr;
+
+    {
+        int *index_order = (int *)allocate_os_pages_memory(count * sizeof(int));
+        if (!index_order) {
+            fprintf(stderr, "Allocation failed\n");
+            free_os_pages_memory(nodes, byte_count);
+            return 2;
+        }
+
+        for (size_t i = 0; i < count; ++i)
+            index_order[i] = int(i);
+        for (size_t i = 0; i < count - 1; ++i) {
+            size_t swi = rand() % (count - i) + i;
+            assert(swi >= i && swi < count);
+            swp(index_order[i], index_order[swi]);
+        }
+
+        for (size_t i = 0; i < count - 1; ++i)
+            nodes[index_order[i]].next = &nodes[index_order[i + 1]];
+        nodes[index_order[count - 1]].next = nullptr;
+        head = &nodes[index_order[0]];
+
+        free_os_pages_memory(index_order, count * sizeof(int));
     }
 
-    if (write_csv)
-        printf("name,bytes,seconds,gb/s\n");
+    RepetitionTester rt{byte_count, cpu_timer_freq, RT_STOP_TIME, true};
+    repetition_test_results_t results{};
 
-    run_test(
-        [&] { return calc_on_data(mem, lut, count); },
-        byte_count, rt, "plain compute", cpu_timer_freq, write_csv);
-    run_test(
-        [&] { return calc_on_data_prefetch1(mem, lut, count); },
-        byte_count, rt, "prefetch 1", cpu_timer_freq, write_csv);
-    run_test(
-        [&] { return calc_on_data_prefetch2(mem, lut, count); },
-        byte_count, rt, "prefetch 2", cpu_timer_freq, write_csv);
-    run_test(
-        [&] { return calc_on_data_prefetch4(mem, lut, count); },
-        byte_count, rt, "prefetch 4", cpu_timer_freq, write_csv);
+    if (write_csv) {
+        printf("iterations");
+        for (char const *name : c_test_func_names)
+            printf(",%s", name);
+        printf("\n");
+    }
 
-    free_os_pages_memory(mem, byte_count);
-    free_os_pages_memory(lut, lut_byte_count);
+    for (size_t iters : c_work_iter_counts) {
+        if (write_csv)
+            printf("%llu", iters);
+        for (size_t fi = 0; test_func_t func : c_test_funcs) {
+            rt.ReStart(results, byte_count);
+            do {
+                rt.BeginTimeBlock();
+                uint64_t real_byte_count = (*func)(head, byte_count, iters);
+                rt.EndTimeBlock();
+                rt.ReportProcessedBytes(real_byte_count);
+            } while (rt.Tick());
+
+            if (write_csv) {
+                printf(",%Lf", gb_per_measure(
+                    (long double)results.min_ticks / cpu_timer_freq, byte_count));
+            }
+
+            {
+                char namebuf[256];
+                snprintf(
+                    namebuf, sizeof(namebuf), "%s (%llu work loop iterations)",
+                    c_test_func_names[fi], iters);
+                print_reptest_results(results, byte_count, cpu_timer_freq, namebuf, true);
+            }
+
+            ++fi;
+        }
+
+        if (write_csv)
+            printf("\n");
+    }
+
+    free_os_pages_memory(nodes, byte_count);
     return 0;
 }
-
 
