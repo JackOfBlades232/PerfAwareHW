@@ -62,7 +62,7 @@ int main()
     constexpr size_t c_pot_intervals = c_pot_measurements - 1;
     constexpr size_t c_measurements_per_pot_gap_base = 8;
 
-    constexpr size_t c_test_byte_count = (1 << 29) * 2; // 1gb
+    constexpr size_t c_test_byte_count = 1 << 30; // 1gb
 
     init_os_process_state(g_os_proc_state);
     uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);

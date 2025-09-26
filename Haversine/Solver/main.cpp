@@ -21,10 +21,22 @@
 #define LOGDBG(fmt_, ...) fprintf(stderr, "[DBG] " fmt_ "\n", ##__VA_ARGS__)
 #define LOGERR(fmt_, ...) fprintf(stderr, "[ERR] " fmt_ "\n", ##__VA_ARGS__)
 
-// @TODO: clean up reimplemented files (as full loads)
+static os_mapped_file_t map_file_try_largepages(char const *fn)
+{
+#if USE_LARGE_PAGES
+    if (os_mapped_file_t f = os_read_map_file(fn, e_osfmf_largepage); f.data) {
+        LOGDBG("Mapped '%s' with large pages", fn);
+        return f;
+    } else
+#endif
+    {
+        LOGDBG("Mapped '%s' with regular pages", fn);
+        return os_read_map_file(fn);
+    }
+}
 
 struct input_file_t {
-    mapped_file_t f;
+    os_mapped_file_t f;
     size_t pos;
 
     bool IsEof() const { return pos >= f.len; }
@@ -220,17 +232,17 @@ public:
     IS_STUB(IsBool)
     IS_STUB(IsNull)
 
-    IJsonEntity *ObjectQuery(const char *key) const override {
+    IJsonEntity *ObjectQuery(char const *key) const override {
         FOR(m_fields) {
             if (streq(key, it->name.CStr()))
                 return it->val;
         }
         return nullptr;
     }
-    const json_field_t &FieldAt(uint32_t id) const override { return m_fields[id]; }
+    json_field_t const &FieldAt(uint32_t id) const override { return m_fields[id]; }
     uint32_t ElemCnt() const override { return m_fields.Length(); }
     IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
-    const HpString &Str() const override { assert(0); return {}; }
+    HpString const &Str() const override { assert(0); return {}; }
     long double Number() const override { assert(0); return {}; }
     bool Bool() const override { assert(0); return {}; }
 };
@@ -255,9 +267,9 @@ public:
 
     IJsonEntity *ArrayAt(uint32_t id) const override { return m_elements[id]; }
     uint32_t ElemCnt() const override { return m_elements.Length(); }
-    IJsonEntity *ObjectQuery(const char *key) const override { assert(0); return {}; }
-    const json_field_t &FieldAt(uint32_t id) const override { assert(0); return {}; }
-    const HpString &Str() const override { assert(0); return {}; }
+    IJsonEntity *ObjectQuery(char const *key) const override { assert(0); return {}; }
+    json_field_t const &FieldAt(uint32_t id) const override { assert(0); return {}; }
+    HpString const &Str() const override { assert(0); return {}; }
     long double Number() const override { assert(0); return {}; }
     bool Bool() const override { assert(0); return {}; }
 };
@@ -275,9 +287,9 @@ public:
     IS_STUB(IsBool)
     IS_STUB(IsNull)
 
-    const HpString &Str() const override { return m_content; }
-    IJsonEntity *ObjectQuery(const char *key) const override { assert(0); return {}; }
-    const json_field_t &FieldAt(uint32_t id) const override { assert(0); return {}; }
+    HpString const &Str() const override { return m_content; }
+    IJsonEntity *ObjectQuery(char const *key) const override { assert(0); return {}; }
+    json_field_t const &FieldAt(uint32_t id) const override { assert(0); return {}; }
     IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
     long double Number() const override { assert(0); return {}; }
     bool Bool() const override { assert(0); return {}; }
@@ -298,10 +310,10 @@ public:
     IS_STUB(IsNull)
 
     long double Number() const override { return m_val; }
-    IJsonEntity *ObjectQuery(const char *key) const override { assert(0); return {}; }
-    const json_field_t &FieldAt(uint32_t id) const override { assert(0); return {}; }
+    IJsonEntity *ObjectQuery(char const *key) const override { assert(0); return {}; }
+    json_field_t const &FieldAt(uint32_t id) const override { assert(0); return {}; }
     IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
-    const HpString &Str() const override { assert(0); return {}; }
+    HpString const &Str() const override { assert(0); return {}; }
     bool Bool() const override { assert(0); return {}; }
     uint32_t ElemCnt() const override { assert(0); return {}; }
 };
@@ -320,10 +332,10 @@ public:
     IS_STUB(IsNull)
 
     bool Bool() const override { return m_val; }
-    IJsonEntity *ObjectQuery(const char *key) const override { assert(0); return {}; }
-    const json_field_t &FieldAt(uint32_t id) const override { assert(0); return {}; }
+    IJsonEntity *ObjectQuery(char const *key) const override { assert(0); return {}; }
+    json_field_t const &FieldAt(uint32_t id) const override { assert(0); return {}; }
     IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
-    const HpString &Str() const override { assert(0); return {}; }
+    HpString const &Str() const override { assert(0); return {}; }
     long double Number() const override { assert(0); return {}; }
     uint32_t ElemCnt() const override { assert(0); return {}; }
 };
@@ -337,10 +349,10 @@ public:
     IS_STUB(IsNumber)
     IS_STUB(IsBool)
 
-    IJsonEntity *ObjectQuery(const char *key) const override { assert(0); return {}; }
-    const json_field_t &FieldAt(uint32_t id) const override { assert(0); return {}; }
+    IJsonEntity *ObjectQuery(char const *key) const override { assert(0); return {}; }
+    json_field_t const &FieldAt(uint32_t id) const override { assert(0); return {}; }
     IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
-    const HpString &Str() const override { assert(0); return {}; }
+    HpString const &Str() const override { assert(0); return {}; }
     long double Number() const override { assert(0); return {}; }
     bool Bool() const override { assert(0); return {}; }
     uint32_t ElemCnt() const override { assert(0); return {}; }
@@ -356,7 +368,7 @@ public:
     } while (0)
 
 static IJsonEntity *parse_json_entity();
-static IJsonEntity *parse_json_entity(const token_t &first_token);
+static IJsonEntity *parse_json_entity(token_t const &first_token);
 
 static JsonObject *parse_json_object()
 {
@@ -427,7 +439,7 @@ static JsonArray *parse_json_array()
     return arr;
 }
 
-static IJsonEntity *parse_json_entity(const token_t &first_token)
+static IJsonEntity *parse_json_entity(token_t const &first_token)
 {
     PROFILED_FUNCTION;
 
@@ -614,18 +626,18 @@ int main(int argc, char **argv)
     init_profiler();
     DEFER([] { finish_profiling_and_dump_stats(printf); });
 
-    PROFILED_BLOCK("Program");
+    PROFILED_BLOCK_PF("Program");
 
     bool only_tokenize = false;
     bool only_reprint_json = false;
-    const char *json_fname = nullptr;
-    mapped_file_t checksum_f = {};
+    char const *json_fname = nullptr;
+    os_mapped_file_t checksum_f = {};
 
     DEFER([] { os_unmap_file(g_inf.f); });
     DEFER([&checksum_f] { os_unmap_file(checksum_f); });
 
     {
-        PROFILED_BLOCK("Argument parsing");
+        PROFILED_BLOCK_PF("Argument parsing");
 
         for (int i = 1; i < argc; ++i) {
             if (streq(argv[i], "-f")) {
@@ -637,7 +649,7 @@ int main(int argc, char **argv)
 
                 json_fname = argv[i];
 
-                g_inf.f = os_read_map_file(json_fname);
+                g_inf.f = map_file_try_largepages(json_fname);
                 if (!g_inf.f.data)
                     return 1;
             } else if (streq(argv[i], "-tokenize")) {
@@ -672,7 +684,7 @@ int main(int argc, char **argv)
         return 2;
 
     DEFER([root] {
-        PROFILED_BLOCK("Delete json");
+        PROFILED_BLOCK_PF("Delete json");
         delete root;
     });
 
@@ -680,7 +692,7 @@ int main(int argc, char **argv)
         return reprint_json_main(root);
 
     {
-        PROFILED_BLOCK("Misc preparation");
+        PROFILED_BLOCK_PF("Misc preparation");
 
         if (root->ElemCnt() != 1 ||
             !streq(root->FieldAt(0).name.CStr(), "points") ||
@@ -693,14 +705,14 @@ int main(int argc, char **argv)
         if (json_fname) {
             char checksum_fname[256];
             snprintf(checksum_fname, sizeof(checksum_fname), "%s.check.bin", json_fname);
-            checksum_f = os_read_map_file(checksum_fname);
+            checksum_f = map_file_try_largepages(checksum_fname);
         }
     }
 
     DynArray<point_pair_t> pairs{};
 
     {
-        PROFILED_BLOCK("Haversine parsing");
+        PROFILED_BLOCK_PF("Haversine parsing");
 
         IJsonEntity *points = root->FieldAt(0).val;
         uint32_t point_cnt = points->ElemCnt();
@@ -711,7 +723,7 @@ int main(int argc, char **argv)
                 LOGERR("Invalid point format: correct is "
                        "{ \"x0\": .f, \"y0\": .f, \"x1\": .f, \"y1\": .f }");
             };
-            auto read_float = [elem](const char *name, float &out) {
+            auto read_float = [elem](char const *name, float &out) {
                 if (IJsonEntity *d = elem->ObjectQuery(name)) {
                     if (d->IsNumber()) {
                         out = (float)d->Number();
@@ -743,12 +755,13 @@ int main(int argc, char **argv)
     float avg;
 
     {
-        PROFILED_BANDWIDTH_BLOCK("Haversine claculation", pairs.Length() * sizeof(point_pair_t));
+        PROFILED_BANDWIDTH_BLOCK_PF(
+            "Haversine claculation", pairs.Length() * sizeof(point_pair_t));
 
         sum = 0.f;
 
         for (uint32_t i = 0; i < pairs.Length(); ++i) {
-            const float dist = haversine_dist(pairs[i]);
+            float const dist = haversine_dist(pairs[i]);
 
             if (checksum_f.data) {
                 float valid = ((float *)checksum_f.data)[i];
@@ -766,7 +779,7 @@ int main(int argc, char **argv)
     }
 
     {
-        PROFILED_BLOCK("Output, validation and shutdown");
+        PROFILED_BLOCK_PF("Output, validation and shutdown");
 
         OUTPUT("Point count: %u\n", pairs.Length());
         OUTPUT("Avg dist: %f\n\n", avg);

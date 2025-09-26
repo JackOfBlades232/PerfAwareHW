@@ -4,22 +4,29 @@
 #include "util.hpp"
 #include "profiling.hpp"
 
+enum os_file_mapping_flags_bits_t {
+    e_osfmf_largepage = 1,
+};
+
+typedef uint32_t os_file_mapping_flags_t;
+
 #if _WIN32
 
 #include <windows.h>
 
-struct mapped_file_t {
+struct os_mapped_file_t {
     char *data;
     size_t len;
     HANDLE file_hnd;
     HANDLE mapping_hnd;
 };
 
-inline mapped_file_t os_read_map_file(const char *fn)
+inline os_mapped_file_t os_read_map_file(
+    const char *fn, os_file_mapping_flags_t flags = 0)
 {
     PROFILED_FUNCTION;
 
-    mapped_file_t file = {};
+    os_mapped_file_t file = {};
 
     file.file_hnd = CreateFileA(
         fn, GENERIC_READ, 0, nullptr,
@@ -31,8 +38,12 @@ inline mapped_file_t os_read_map_file(const char *fn)
     len_lo = GetFileSize(file_hnd, &len_hi);
     file.real_len = (size_t(len_hi) << 32) | size_t(len_lo);
 
+    DWORD mapping_flags = PAGE_READONLY;
+    if ((flags & e_osfmf_largepage) && g_os_proc_state.large_page_size)
+        mapping_flags |= SEC_LARGE_PAGES;
+
     file.mapping_hnd = CreateFileMappingA(
-        file_hnd, nullptr, PAGE_READONLY, 0, 0, nullptr);
+        file_hnd, nullptr, mapping_flags, 0, 0, nullptr);
     if (file.mapping_hnd == INVALID_HANDLE_VALUE) {
         CloseHandle(file.file_hnd);
         return {};
@@ -49,7 +60,7 @@ inline mapped_file_t os_read_map_file(const char *fn)
     return file;
 }
 
-inline void os_unmap_file(mapped_file_t &file)
+inline void os_unmap_file(os_mapped_file_t &file)
 {
     PROFILED_FUNCTION;
 
@@ -66,30 +77,38 @@ inline void os_unmap_file(mapped_file_t &file)
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <linux/mman.h>
 #include <unistd.h>
 #include <fcntl.h>
 
-struct mapped_file_t {
+struct os_mapped_file_t {
     char *data;
     size_t len;
     size_t mapped_len;
     int fd;
 };
 
-inline mapped_file_t os_read_map_file(const char *fn)
+inline os_mapped_file_t os_read_map_file(
+    const char *fn, os_file_mapping_flags_t flags = 0)
 {
-    PROFILED_FUNCTION;
+    if (flags & e_osfmf_largepage)
+        return {}; // Real files are not supported by hugepages
 
-    mapped_file_t file = {};
+    PROFILED_FUNCTION_PF;
+
+    os_mapped_file_t file = {};
     file.fd = open(fn, O_RDONLY, 0);
     if (file.fd < 0)
         return {};
 
+    int mmap_flags = MAP_PRIVATE;
+    size_t pagesize = size_t(getpagesize());
+
     file.len = size_t(lseek(file.fd, 0, SEEK_END));
-    file.mapped_len = round_up(file.len, size_t(getpagesize()));
+    file.mapped_len = round_up(file.len, pagesize);
 
     file.data = (char *)mmap(
-        nullptr, file.mapped_len, PROT_READ, MAP_PRIVATE, file.fd, 0);
+        nullptr, file.mapped_len, PROT_READ, mmap_flags, file.fd, 0);
     if (file.data == MAP_FAILED) {
         close(file.fd);
         return {};
@@ -98,9 +117,9 @@ inline mapped_file_t os_read_map_file(const char *fn)
     return file;
 }
 
-inline void os_unmap_file(mapped_file_t &file)
+inline void os_unmap_file(os_mapped_file_t &file)
 {
-    PROFILED_FUNCTION;
+    PROFILED_FUNCTION_PF;
 
     if (file.data) {
         munmap(file.data, file.mapped_len);
