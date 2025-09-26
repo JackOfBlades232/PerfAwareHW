@@ -7,6 +7,7 @@
 #include <profiling.hpp>
 #include <os.hpp>
 #include <util.hpp>
+#include <memory.hpp>
 #include <files.hpp>
 
 #include <cassert>
@@ -21,22 +22,162 @@
 #define LOGDBG(fmt_, ...) fprintf(stderr, "[DBG] " fmt_ "\n", ##__VA_ARGS__)
 #define LOGERR(fmt_, ...) fprintf(stderr, "[ERR] " fmt_ "\n", ##__VA_ARGS__)
 
-static os_mapped_file_t map_file_try_largepages(char const *fn)
+#define FILE_READ_MODE_FREAD 0
+#define FILE_READ_MODE_MAP 1
+#define FILE_READ_MODE_MAP_MEMCPY 2
+
+#ifndef FILE_READ_MODE
+#define FILE_READ_MODE FILE_READ_MODE_FREAD
+#endif
+#ifndef USE_LARGE_PAGES_FOR_FILEMAP
+#define USE_LARGE_PAGES_FOR_FILEMAP 1
+#endif
+#ifndef USE_LARGE_PAGES_FOR_DATA
+#define USE_LARGE_PAGES_FOR_DATA 1
+#endif
+
+static size_t get_flen(FILE *f)
 {
-#if USE_LARGE_PAGES
+    fseek(f, 0, SEEK_END);
+    size_t const len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    return len;
+}
+
+static size_t get_flen(char const *fn)
+{
+    FILE *fh = fopen(fn, "rb");
+    if (!fh)
+        return 0;
+    DEFER([fh] { fclose(fh); });
+
+    return get_flen(fh);
+}
+
+#if FILE_READ_MODE == FILE_READ_MODE_MAP
+using file_t = os_mapped_file_t;
+static file_t load_file(char const *fn)
+{
+    PROFILED_FUNCTION_PF;
+
+#if USE_LARGE_PAGES_FOR_FILEMAP
     if (os_mapped_file_t f = os_read_map_file(fn, e_osfmf_largepage); f.data) {
         LOGDBG("Mapped '%s' with large pages", fn);
         return f;
     } else
 #endif
-    {
+    if (os_mapped_file_t f = os_read_map_file(fn); f.data) {
         LOGDBG("Mapped '%s' with regular pages", fn);
-        return os_read_map_file(fn);
+        return f;
+    } else {
+        return {};
     }
 }
+static void unload_file(file_t &f)
+{
+    PROFILED_FUNCTION_PF;
+    os_unmap_file(f);
+}
+#else
+struct file_t {
+    char *data;
+    size_t len;
+    bool uses_large_pages = false;
+};
+static void unload_file(file_t &f)
+{
+    PROFILED_FUNCTION_PF;
+
+    if (f.data) {
+        (*(f.uses_large_pages ?
+            &free_os_large_pages_memory :
+            &free_os_pages_memory))(f.data, f.len);
+        f = {};
+    }
+}
+#if FILE_READ_MODE == FILE_READ_MODE_MAP_MEMCPY
+static file_t load_file(char const *fn)
+{
+#if PROFILER
+    size_t const bytes = get_flen(fn);
+#endif
+    PROFILED_BANDWIDTH_FUNCTION_PF(bytes);
+
+    os_mapped_file_t src = {};
+#if USE_LARGE_PAGES_FOR_FILEMAP
+    if ((src = os_read_map_file(fn, e_osfmf_largepage)).data)
+        LOGDBG("Mapped '%s' with large pages", fn);
+    else
+#endif
+    if ((src = os_read_map_file(fn)).data)
+        LOGDBG("Mapped '%s' with regular pages", fn);
+    else
+        return {};
+
+    DEFER([&src] { os_unmap_file(src); });
+
+    file_t f = {};
+    f.len = src.len;
+
+#if USE_LARGE_PAGES_FOR_DATA
+    if (void *data = allocate_os_large_pages_memory(f.len)) {
+        LOGDBG("Allocated '%s' with large pages", fn);
+        f.data = (char *)data;
+        f.uses_large_pages = true;
+    } else
+#endif
+    if (void *data = allocate_os_pages_memory(f.len)) {
+        LOGDBG("Allocated '%s' with regular pages", fn);
+        f.data = (char *)data;
+    } else {
+        return {};
+    }
+
+    memcpy(f.data, src.data, f.len);
+    return f;
+}
+#else
+static file_t load_file(char const *fn)
+{
+#if PROFILER
+    size_t const bytes = get_flen(fn);
+#endif
+    PROFILED_BANDWIDTH_FUNCTION_PF(bytes);
+
+    FILE *fh = fopen(fn, "rb");
+    if (!fh)
+        return {};
+    DEFER([fh] { fclose(fh); });
+
+    file_t f = {};
+    f.len = get_flen(fh);
+
+#if USE_LARGE_PAGES_FOR_DATA
+    if (void *data = allocate_os_large_pages_memory(f.len)) {
+        LOGDBG("Allocated '%s' with large pages", fn);
+        f.data = (char *)data;
+        f.uses_large_pages = true;
+    } else
+#endif
+    if (void *data = allocate_os_pages_memory(f.len)) {
+        LOGDBG("Allocated '%s' with regular pages", fn);
+        f.data = (char *)data;
+    } else {
+        return {};
+    }
+
+    if (fread(f.data, f.len, 1, fh) != 1) {
+        unload_file(f);
+        return {};
+    }
+
+    return f;
+}
+#endif
+#endif
 
 struct input_file_t {
-    os_mapped_file_t f;
+    file_t f;
     size_t pos;
 
     bool IsEof() const { return pos >= f.len; }
@@ -472,7 +613,7 @@ static IJsonEntity *parse_json_entity()
 
 static JsonObject *parse_json_input()
 {
-    PROFILED_FUNCTION;
+    PROFILED_FUNCTION_PF;
 
     JsonObject *root = nullptr;
     token_t first_token = GET_TOK();
@@ -622,6 +763,7 @@ static float haversine_dist(point_pair_t pair)
 int main(int argc, char **argv)
 {
     init_os_process_state(g_os_proc_state);
+    try_enable_large_pages(g_os_proc_state);
 
     init_profiler();
     DEFER([] { finish_profiling_and_dump_stats(printf); });
@@ -631,10 +773,10 @@ int main(int argc, char **argv)
     bool only_tokenize = false;
     bool only_reprint_json = false;
     char const *json_fname = nullptr;
-    os_mapped_file_t checksum_f = {};
+    file_t checksum_f = {};
 
-    DEFER([] { os_unmap_file(g_inf.f); });
-    DEFER([&checksum_f] { os_unmap_file(checksum_f); });
+    DEFER([] { unload_file(g_inf.f); });
+    DEFER([&checksum_f] { unload_file(checksum_f); });
 
     {
         PROFILED_BLOCK_PF("Argument parsing");
@@ -649,7 +791,7 @@ int main(int argc, char **argv)
 
                 json_fname = argv[i];
 
-                g_inf.f = map_file_try_largepages(json_fname);
+                g_inf.f = load_file(json_fname);
                 if (!g_inf.f.data)
                     return 1;
             } else if (streq(argv[i], "-tokenize")) {
@@ -705,7 +847,7 @@ int main(int argc, char **argv)
         if (json_fname) {
             char checksum_fname[256];
             snprintf(checksum_fname, sizeof(checksum_fname), "%s.check.bin", json_fname);
-            checksum_f = map_file_try_largepages(checksum_fname);
+            checksum_f = load_file(checksum_fname);
         }
     }
 

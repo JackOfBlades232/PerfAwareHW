@@ -220,7 +220,9 @@ inline void finish_profiling_and_dump_stats(TPrinter &&printer)
 #if PROFILER_PAGEFAULTS
         uint64_t const total_pagefaults =
             g_profiler.end_pagefaults - g_profiler.start_pagefaults;
-        if (slot.inclusive_pagefaults == slot.exclusive_pagefaults) {
+        if (slot.inclusive_pagefaults == 0) {
+            // skip
+        } else if (slot.inclusive_pagefaults == slot.exclusive_pagefaults) {
             printer(", %llu pfaults (%.1Lf%%)",
                 slot.inclusive_pagefaults,
                 100.l * slot.inclusive_pagefaults / total_pagefaults);

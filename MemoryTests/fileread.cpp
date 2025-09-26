@@ -36,6 +36,28 @@ static void free_file_preserve_len(file_t &f, allocator_t allocator)
 static volatile uint32_t g_mapped_file_read_sink = '\0'; // disabling optimization
 
 template <bool t_realloc>
+static void memset_rep_test(
+    char const *, file_t &mem, RepetitionTester &rt, allocator_t allocator)
+{
+    do {
+        if (!mem.Loaded())
+            mem.data = (char *)(*allocator.alloc)(mem.len);
+
+        rt.BeginTimeBlock();
+        memset(mem.data, 1, mem.len);
+        rt.EndTimeBlock();
+
+        rt.ReportProcessedBytes(mem.len);
+
+        if constexpr (t_realloc)
+            free_file_preserve_len(mem, allocator);
+    } while (rt.Tick());
+
+    if (mem.Loaded())
+        free_file_preserve_len(mem, allocator);
+}
+
+template <bool t_realloc>
 static void mem_write_rep_test(
     char const *, file_t &mem, RepetitionTester &rt, allocator_t allocator)
 {
@@ -347,6 +369,10 @@ int main(int argc, char **argv)
         bool enabled = true;
     } tests[] =
     {
+        {&memset_rep_test<false>, "memset", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&memset_rep_test<true>, "memset + malloc", {fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
+        {&memset_rep_test<true>, "memset + os alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
+        {&memset_rep_test<true>, "memset + os large alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
         {&mem_write_rep_test<false>, "mem write", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},
         {&mem_write_rep_test<true>, "mem write + malloc", {fmem.len, cpu_timer_freq, 10.f, true}, mallocator},
         {&mem_write_rep_test<true>, "mem write + os alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_page_allocator},

@@ -24,8 +24,6 @@ struct os_mapped_file_t {
 inline os_mapped_file_t os_read_map_file(
     const char *fn, os_file_mapping_flags_t flags = 0)
 {
-    PROFILED_FUNCTION;
-
     os_mapped_file_t file = {};
 
     file.file_hnd = CreateFileA(
@@ -62,8 +60,6 @@ inline os_mapped_file_t os_read_map_file(
 
 inline void os_unmap_file(os_mapped_file_t &file)
 {
-    PROFILED_FUNCTION;
-
     if (file.data) {
         UnmapViewOfFile(file.data);
         CloseHandle(file.mapping_hnd);
@@ -94,8 +90,6 @@ inline os_mapped_file_t os_read_map_file(
     if (flags & e_osfmf_largepage)
         return {}; // Real files are not supported by hugepages
 
-    PROFILED_FUNCTION_PF;
-
     os_mapped_file_t file = {};
     file.fd = open(fn, O_RDONLY, 0);
     if (file.fd < 0)
@@ -119,8 +113,6 @@ inline os_mapped_file_t os_read_map_file(
 
 inline void os_unmap_file(os_mapped_file_t &file)
 {
-    PROFILED_FUNCTION_PF;
-
     if (file.data) {
         munmap(file.data, file.mapped_len);
         close(file.fd);
