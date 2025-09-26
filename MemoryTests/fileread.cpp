@@ -209,6 +209,7 @@ static void map_file_rep_test(
         rt.ReportProcessedBytes(mem.len);
 
         UnmapViewOfFile(mem.data);
+        mem.data = nullptr;
         CloseHandle(mapping_hnd);
         CloseHandle(file_hnd);
     } while (rt.Tick());
@@ -275,6 +276,7 @@ static void map_file_rep_test(
         rt.ReportProcessedBytes(mem.len);
 
         munmap(mem.data, bytes);
+        mem.data = nullptr;
         close(fd);
     } while (rt.Tick());
 }
@@ -377,7 +379,7 @@ int main(int argc, char **argv)
         {&read_rep_test<true>, "read + os large alloc", {fmem.len, cpu_timer_freq, 10.f, true}, os_large_page_allocator, has_large_pages},
 #endif
 
-        {&map_file_rep_test, "Map file (MapViewOfFile/mmap)", {fmem.len, cpu_timer_freq, 10.f, true}},
+        {&map_file_rep_test, "Map file (MapViewOfFile/mmap)", {fmem.len, cpu_timer_freq, 0.1f, true}},
     };
 
     repetition_test_results_t results = {};

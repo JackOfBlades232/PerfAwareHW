@@ -7,6 +7,7 @@
 #include <profiling.hpp>
 #include <os.hpp>
 #include <util.hpp>
+#include <files.hpp>
 
 #include <cassert>
 #include <cstdint>
@@ -22,55 +23,8 @@
 
 // @TODO: clean up reimplemented files (as full loads)
 
-struct file_t {
-    char *data;
-    size_t len;
-
-    bool Loaded() const { return data != nullptr; }
-};
-
-static void free_file(file_t &f)
-{
-    if (f.Loaded()) {
-        delete f.data;
-        f.data = nullptr;
-        f.len = 0;
-    }
-}
-
-static file_t read_entire_file(const char *fn)
-{
-    PROFILED_FUNCTION;
-
-    // @TODO: > 4g files, aligned alloc
-    FILE *f = fopen(fn, "rb");
-    if (!f) {
-        LOGERR("Failed to open %s", fn);
-        return {};
-    }
-
-    DEFER([f] { fclose(f); });
-
-    fseek(f, 0, SEEK_END);
-    long flen = ftell(f);
-
-    file_t res = {new char[flen], size_t(flen)};
-
-    {
-        PROFILED_BANDWIDTH_BLOCK("Read file to memory", res.len);
-        fseek(f, 0, SEEK_SET);
-        if (fread(res.data, res.len, 1, f) != 1) {
-            LOGERR("Failed to read %lu bytes from %s", res.len, fn);
-            free_file(res);
-            return {};
-        }
-    }
-
-    return res;
-}
-
 struct input_file_t {
-    file_t f;
+    mapped_file_t f;
     size_t pos;
 
     bool IsEof() const { return pos >= f.len; }
@@ -665,10 +619,10 @@ int main(int argc, char **argv)
     bool only_tokenize = false;
     bool only_reprint_json = false;
     const char *json_fname = nullptr;
-    file_t checksum_f = {};
+    mapped_file_t checksum_f = {};
 
-    DEFER([] { free_file(g_inf.f); });
-    DEFER([&checksum_f] { free_file(checksum_f); });
+    DEFER([] { os_unmap_file(g_inf.f); });
+    DEFER([&checksum_f] { os_unmap_file(checksum_f); });
 
     {
         PROFILED_BLOCK("Argument parsing");
@@ -683,8 +637,8 @@ int main(int argc, char **argv)
 
                 json_fname = argv[i];
 
-                g_inf.f = read_entire_file(json_fname);
-                if (!g_inf.f.Loaded())
+                g_inf.f = os_read_map_file(json_fname);
+                if (!g_inf.f.data)
                     return 1;
             } else if (streq(argv[i], "-tokenize")) {
                 if (only_reprint_json) {
@@ -705,7 +659,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if (!g_inf.f.Loaded()) {
+    if (!g_inf.f.data) {
         LOGERR("Invalid usage: specify input file with -f <name>");
         return 1;
     }
@@ -739,7 +693,7 @@ int main(int argc, char **argv)
         if (json_fname) {
             char checksum_fname[256];
             snprintf(checksum_fname, sizeof(checksum_fname), "%s.check.bin", json_fname);
-            checksum_f = read_entire_file(checksum_fname);
+            checksum_f = os_read_map_file(checksum_fname);
         }
     }
 
@@ -796,7 +750,7 @@ int main(int argc, char **argv)
         for (uint32_t i = 0; i < pairs.Length(); ++i) {
             const float dist = haversine_dist(pairs[i]);
 
-            if (checksum_f.Loaded()) {
+            if (checksum_f.data) {
                 float valid = ((float *)checksum_f.data)[i];
                 if (dist != valid) {
                     LOGERR("Validation failed: dist #%u mismatch, claculated %f, required %f",
@@ -817,7 +771,7 @@ int main(int argc, char **argv)
         OUTPUT("Point count: %u\n", pairs.Length());
         OUTPUT("Avg dist: %f\n\n", avg);
 
-        if (checksum_f.Loaded()) {
+        if (checksum_f.data) {
             float valid = ((float *)checksum_f.data)[pairs.Length()];
             if (avg != valid) {
                 LOGERR("Validation failed: avg dist mismatch, claculated %f, required %f",
@@ -827,9 +781,6 @@ int main(int argc, char **argv)
                 OUTPUT("Validation: %f\n", valid);
         } else
             OUTPUT("Validation file not found\n");
-
-        OUTPUT("\nTODO: Make it not dogshit slow\n");
-        OUTPUT("TODO: Sort out and save the utils\n\n");
     }
 
     return 0;
