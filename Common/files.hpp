@@ -14,6 +14,49 @@ typedef uint32_t os_file_mapping_flags_t;
 
 #include <windows.h>
 
+struct os_file_t {
+    HANDLE hnd = INVALID_HANDLE_VALUE;
+    size_t len;
+};
+
+inline bool is_valid(os_file_t const &f)
+{
+    return f.hnd != INVALID_HANDLE_VALUE;
+}
+
+inline os_file_t os_read_open_file(const char *fn)
+{
+    os_file_t f = {};
+
+    f.hnd = CreateFileA(
+        fn, GENERIC_READ, 0, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (!is_valid(f))
+        return {};
+
+    DWORD len_lo = 0, len_hi = 0;
+    len_lo = GetFileSize(file_hnd, &len_hi);
+    f.len = (size_t(len_hi) << 32) | size_t(len_lo);
+
+    return f;
+}
+
+inline void os_close_file(os_file_t &f)
+{
+    if (is_valid(f)) {
+        CloseHandle(f.hnd);
+        f = {};
+    }
+}
+
+inline size_t os_file_read(os_file_t const &f, void *buf, size_t bytes)
+{
+    assert(is_valid(f));
+    size_t real_bytes;
+    BOOL res = ReadFile(f.hnd, buf, (DWORD)bytes, &real_bytes, nullptr);
+    return res ? real_bytes : 0;
+}
+
 struct os_mapped_file_t {
     char *data;
     size_t len;
@@ -34,7 +77,7 @@ inline os_mapped_file_t os_read_map_file(
 
     DWORD len_lo = 0, len_hi = 0;
     len_lo = GetFileSize(file_hnd, &len_hi);
-    file.real_len = (size_t(len_hi) << 32) | size_t(len_lo);
+    file.len = (size_t(len_hi) << 32) | size_t(len_lo);
 
     DWORD mapping_flags = PAGE_READONLY;
     if ((flags & e_osfmf_largepage) && g_os_proc_state.large_page_size)
@@ -76,6 +119,44 @@ inline void os_unmap_file(os_mapped_file_t &file)
 #include <linux/mman.h>
 #include <unistd.h>
 #include <fcntl.h>
+
+struct os_file_t {
+    int fd = -1;
+    size_t len;
+};
+
+inline bool is_valid(os_file_t const &f)
+{
+    return f.fd >= 0;
+}
+
+inline os_file_t os_read_open_file(const char *fn)
+{
+    os_file_t f = {};
+
+    f.fd = open(fn, O_RDONLY, 0);
+    if (!is_valid(f))
+        return {};
+
+    f.len = lseek(f.fd, SEEK_END, 0);
+    lseek(f.fd, SEEK_SET, 0);
+
+    return f;
+}
+
+inline void os_close_file(os_file_t &f)
+{
+    if (is_valid(f)) {
+        close(f.fd);
+        f = {};
+    }
+}
+
+inline size_t os_file_read(os_file_t const &f, void *buf, size_t bytes)
+{
+    assert(is_valid(f));
+    return read(f.fd, buf, bytes);
+}
 
 struct os_mapped_file_t {
     char *data;

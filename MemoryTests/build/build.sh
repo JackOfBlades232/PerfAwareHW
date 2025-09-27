@@ -31,4 +31,5 @@ g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../cache_autoprobe.
 g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../critical_stride.cpp critical_stride_funcs.o $@ -o critical_stride
 g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../nontemporal_demo.cpp nontemporal_funcs.o $@ -o nontemporal_demo
 g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../prefetch_demo.cpp prefetch_funcs.o $@ -o prefetch_demo
+g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ -mavx512f ../file_processing.cpp $@ -o file_processing
 popd

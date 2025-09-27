@@ -27,11 +27,6 @@ extern uint64_t ll_foreach_prefetch(const void *ll, uint64_t bytecnt, uint64_t i
 
 using test_func_t = uint64_t (*)(const void *, uint64_t, uint64_t);
 
-constexpr uint64_t clines(uint64_t cnt)
-{
-    return cnt << 6;
-}
-
 struct alignas(clines(1)) node_t {
     node_t *next = nullptr;
     float data[14] = {};

@@ -16,16 +16,6 @@ extern uint64_t run_loop_load_npot(uint64_t count, char *ptr, uint64_t sz);
 extern uint64_t run_loop_store_npot(uint64_t count, char *ptr, uint64_t sz);
 }
 
-uint64_t kb(uint64_t cnt)
-{
-    return cnt << 10;
-}
-
-uint64_t mb(uint64_t cnt)
-{
-    return cnt << 20;
-}
-
 template <class TCallable>
 static void run_test(
     TCallable &&tested, uint64_t target_bytes, RepetitionTester &rt,

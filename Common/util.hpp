@@ -3,6 +3,7 @@
 #include <cstring>
 #include <cstdint>
 #include <cstddef>
+#include <initializer_list>
 
 #define CAT_(a_, b_) a_ ## b_
 #define CAT(a_, b_) CAT_(a_, b_)
@@ -38,43 +39,43 @@ using remove_reference_t = typename RemoveReference<T>::Type;
          ++it)
 
 template <typename T>
-inline T min(T a, T b)
+inline constexpr T min(T a, T b)
 {
     return a < b ? a : b;
 }
 
 template <typename T>
-inline T max(T a, T b)
+inline constexpr T max(T a, T b)
 {
     return a > b ? a : b;
 }
 
 template <typename T>
-inline T abs(T a)
+inline constexpr T abs(T a)
 {
     return a < T{0} ? -a : a;
 }
 
 template <typename TInt, typename TFlt>
-inline TInt round_to_int(TFlt f)
+inline constexpr TInt round_to_int(TFlt f)
 {
     return TInt(f + TFlt{0.50000001});
 }
 
 template <typename T>
-inline auto mv(T &&var)
+inline constexpr auto mv(T &&var)
 {
     return (meta::remove_reference_t<decltype(var)> &&)(var);
 }
 
 template <typename T>
-inline T &&fwd(T &&var)
+inline constexpr T &&fwd(T &&var)
 {
     return (T &&)(var);
 }
 
 template <typename T, typename U>
-inline T xchg(T &var, U newval)
+inline constexpr T xchg(T &var, U newval)
 {
     T ret = mv(var);
     var = mv(newval);
@@ -82,7 +83,7 @@ inline T xchg(T &var, U newval)
 }
 
 template <typename T>
-inline void swp(T &v1, T &v2)
+inline constexpr void swp(T &v1, T &v2)
 {
     T tmp = mv(v1);
     v1 = mv(v2);
@@ -95,7 +96,7 @@ inline bool streq(const char *s1, const char *s2)
 }
 
 template <class T>
-inline T round_up(T val, T measure)
+inline constexpr T round_up(T val, T measure)
 {
     return measure * ((val - 1) / measure + 1);
 }
@@ -103,8 +104,29 @@ inline T round_up(T val, T measure)
 inline constexpr long double c_bytes_in_gb = (long double)(1u << 30);
 inline constexpr long double c_kb_in_gb = (long double)(1u << 20);
 
-inline long double gb_per_measure(long double measure, uint64_t bytes)
+inline constexpr long double gb_per_measure(long double measure, uint64_t bytes)
 {
     long double const gb = (long double)bytes / c_bytes_in_gb; 
     return gb / measure;
 };
+
+inline constexpr uint64_t kb(uint64_t cnt)
+{
+    return cnt << 10;
+}
+
+inline constexpr uint64_t mb(uint64_t cnt)
+{
+    return cnt << 20;
+}
+
+inline constexpr uint64_t gb(uint64_t cnt)
+{
+    return cnt << 30;
+}
+
+inline constexpr uint64_t clines(uint64_t cnt)
+{
+    return cnt << 6;
+}
+

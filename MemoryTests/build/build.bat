@@ -30,5 +30,6 @@ cl /Zi /std:c++20 /I..\..\Common ..\cache_autoprobe.cpp cache_bandwidth_funcs.ob
 cl /Zi /std:c++20 /I..\..\Common ..\critical_stride.cpp critical_stride_funcs.obj %* /Fe: critical_stride.exe
 cl /Zi /std:c++20 /I..\..\Common ..\nontemporal_demo.cpp nontemporal_funcs.obj %* /Fe: nontemporal_demo.exe
 cl /Zi /std:c++20 /I..\..\Common ..\prefetch_demo.cpp prefetch_funcs.obj %* /Fe: prefetch_demo.exe
+cl /Zi /std:c++20 /I..\..\Common ..\file_processing.cpp %* /Fe: file_processing.exe
 popd
 @echo on

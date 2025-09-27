@@ -140,8 +140,10 @@ class RepetitionTester {
         m_closed_blocks = 0;
 
         if (cur_ticks - m_test_start_ticks > m_try_renew_min_for_ticks) {
-            if (m_print_new_minimums)
+            if (m_print_new_minimums) {
                 RT_CLEAR(m_last_chars_printed_for_min);
+                RT_PRINTLN();
+            }
             m_state = e_st_pending;
             return false;
         }
@@ -241,4 +243,12 @@ inline void print_best_bandwidth_csv(
     RT_PRINTLN("%s,%llu,%Lf,%Lf",
         label, target_processed_bytes, min_sec,
         gb_per_measure(min_sec, target_processed_bytes));
+}
+
+inline long double best_gbps(
+    repetition_test_results_t const &results,
+    uint64_t target_processed_bytes, uint64_t cpu_timer_freq)
+{
+    long double const min_sec = (long double)results.min_ticks / cpu_timer_freq;
+    return gb_per_measure(min_sec, target_processed_bytes);
 }

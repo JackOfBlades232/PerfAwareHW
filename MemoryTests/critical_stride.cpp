@@ -15,21 +15,6 @@ extern uint64_t run_loop_load_npot_strided(
     uint64_t total_count, char *ptr, uint64_t count, uint64_t stride);
 }
 
-uint64_t kb(uint64_t cnt)
-{
-    return cnt << 10;
-}
-
-uint64_t mb(uint64_t cnt)
-{
-    return cnt << 20;
-}
-
-uint64_t clines(uint64_t cnt)
-{
-    return cnt << 6;
-}
-
 template <class TCallable>
 static void run_test(
     TCallable &&tested, uint64_t target_bytes, RepetitionTester &rt,
