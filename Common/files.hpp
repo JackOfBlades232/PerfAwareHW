@@ -6,6 +6,7 @@
 
 enum os_file_mapping_flags_bits_t {
     e_osfmf_largepage = 1,
+    e_osfmf_no_init_map = 2
 };
 
 typedef uint32_t os_file_mapping_flags_t;
@@ -35,7 +36,7 @@ inline os_file_t os_read_open_file(const char *fn)
         return {};
 
     DWORD len_lo = 0, len_hi = 0;
-    len_lo = GetFileSize(file_hnd, &len_hi);
+    len_lo = GetFileSize(f.hnd, &len_hi);
     f.len = (size_t(len_hi) << 32) | size_t(len_lo);
 
     return f;
@@ -52,9 +53,9 @@ inline void os_close_file(os_file_t &f)
 inline size_t os_file_read(os_file_t const &f, void *buf, size_t bytes)
 {
     assert(is_valid(f));
-    size_t real_bytes;
+    DWORD real_bytes;
     BOOL res = ReadFile(f.hnd, buf, (DWORD)bytes, &real_bytes, nullptr);
-    return res ? real_bytes : 0;
+    return res ? size_t(real_bytes) : 0;
 }
 
 struct os_mapped_file_t {
@@ -63,6 +64,34 @@ struct os_mapped_file_t {
     HANDLE file_hnd;
     HANDLE mapping_hnd;
 };
+
+inline bool is_valid(os_mapped_file_t const &f)
+{
+    return
+        f.file_hnd != INVALID_HANDLE_VALUE &&
+        f.mapping_hnd != INVALID_HANDLE_VALUE;
+}
+
+inline bool is_mapped(os_mapped_file_t const &f)
+{
+    return f.data != nullptr;
+}
+
+inline void os_read_map_section(
+    os_mapped_file_t &f, size_t off, size_t len)
+{
+    f.data = (char *)MapViewOfFile(
+        f.mapping_hnd, FILE_MAP_READ,
+        DWORD(off >> 32), DWORD(off & 0xFFFFFFFF), len);
+}
+
+inline void os_unmap_section(os_mapped_file_t &f)
+{
+    if (f.data) {
+        UnmapViewOfFile(f.data);
+        f.data = nullptr;
+    }
+}
 
 inline os_mapped_file_t os_read_map_file(
     const char *fn, os_file_mapping_flags_t flags = 0)
@@ -76,7 +105,7 @@ inline os_mapped_file_t os_read_map_file(
         return {};
 
     DWORD len_lo = 0, len_hi = 0;
-    len_lo = GetFileSize(file_hnd, &len_hi);
+    len_lo = GetFileSize(file.file_hnd, &len_hi);
     file.len = (size_t(len_hi) << 32) | size_t(len_lo);
 
     DWORD mapping_flags = PAGE_READONLY;
@@ -84,14 +113,16 @@ inline os_mapped_file_t os_read_map_file(
         mapping_flags |= SEC_LARGE_PAGES;
 
     file.mapping_hnd = CreateFileMappingA(
-        file_hnd, nullptr, mapping_flags, 0, 0, nullptr);
+        file.file_hnd, nullptr, mapping_flags, 0, 0, nullptr);
     if (file.mapping_hnd == INVALID_HANDLE_VALUE) {
         CloseHandle(file.file_hnd);
         return {};
     }
 
-    file.data = (char *)MapViewOfFile(
-        mapping_hnd, FILE_MAP_READ, 0, 0, file.len);
+    if (flags & e_osfmf_no_init_map)
+        return file;
+
+    os_read_map_section(file, 0, file.len);
     if (!file.data) {
         CloseHandle(file.mapping_hnd);
         CloseHandle(file.file_hnd);
@@ -103,12 +134,12 @@ inline os_mapped_file_t os_read_map_file(
 
 inline void os_unmap_file(os_mapped_file_t &file)
 {
-    if (file.data) {
-        UnmapViewOfFile(file.data);
+    os_unmap_section(file);
+    if (file.mapping_hnd != INVALID_HANDLE_VALUE)
         CloseHandle(file.mapping_hnd);
+    if (file.file_hnd != INVALID_HANDLE_VALUE)
         CloseHandle(file.file_hnd);
-        file = {};
-    }
+    file = {};
 }
 
 #else
@@ -165,6 +196,38 @@ struct os_mapped_file_t {
     int fd;
 };
 
+inline bool is_valid(os_mapped_file_t const &f)
+{
+    return f.fd >= 0;
+}
+
+inline bool is_mapped(os_mapped_file_t const &f)
+{
+    return f.data != nullptr;
+}
+
+inline void os_read_map_section(
+    os_mapped_file_t &f, size_t off, size_t len)
+{
+    int mmap_flags = MAP_PRIVATE;
+    size_t pagesize = size_t(getpagesize());
+
+    file.mapped_len = round_up(len, pagesize);
+
+    file.data = (char *)mmap(
+        nullptr, file.mapped_len, PROT_READ, mmap_flags, file.fd, off_t(off));
+    if (file.data == MAP_FAILED)
+        file.data = nullptr;
+}
+
+inline void os_unmap_section(os_mapped_file_t &f)
+{
+    if (f.data) {
+        munmap(f.data, f.mapped_len);
+        f.data = nullptr;
+    }
+}
+
 inline os_mapped_file_t os_read_map_file(
     const char *fn, os_file_mapping_flags_t flags = 0)
 {
@@ -176,15 +239,13 @@ inline os_mapped_file_t os_read_map_file(
     if (file.fd < 0)
         return {};
 
-    int mmap_flags = MAP_PRIVATE;
-    size_t pagesize = size_t(getpagesize());
-
     file.len = size_t(lseek(file.fd, 0, SEEK_END));
-    file.mapped_len = round_up(file.len, pagesize);
 
-    file.data = (char *)mmap(
-        nullptr, file.mapped_len, PROT_READ, mmap_flags, file.fd, 0);
-    if (file.data == MAP_FAILED) {
+    if (flags & e_osfmf_no_init_map)
+        return file;
+
+    os_read_map_section(file, 0, file.len);
+    if (!file.data) {
         close(file.fd);
         return {};
     }
@@ -194,11 +255,10 @@ inline os_mapped_file_t os_read_map_file(
 
 inline void os_unmap_file(os_mapped_file_t &file)
 {
-    if (file.data) {
-        munmap(file.data, file.mapped_len);
+    os_unmap_section(file);
+    if (file.fd >= 0)
         close(file.fd);
-        file = {};
-    }
+    file = {};
 }
 
 #endif

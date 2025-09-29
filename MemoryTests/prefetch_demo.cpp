@@ -5,6 +5,13 @@
         for (size_t i_ = 0; i_ < (count_); ++i_) \
             fprintf(stderr, "\b");               \
     } while (0)
+#define RT_CLEARLN(count_)                       \
+    do {                                         \
+        for (size_t i_ = 0; i_ < (count_); ++i_) \
+            fprintf(stderr, "\b");               \
+        for (size_t i_ = 0; i_ < (count_); ++i_) \
+            fprintf(stderr, " ");                \
+    } while (0)
 
 #include <repetition.hpp>
 #include <profiling.hpp>
@@ -14,6 +21,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <cstdint>
 #include <cassert>
 

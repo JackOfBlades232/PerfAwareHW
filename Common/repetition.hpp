@@ -9,12 +9,19 @@
 #define RT_PRINTLN(text_, ...) printf(text_ "\n", ##__VA_ARGS__)
 #endif
 
-#if !defined(RT_CLEAR)
+#if !defined(RT_CLEAR) || !defined(RT_CLEARLN)
 #include <cstdio>
 #define RT_CLEAR(count_)                         \
     do {                                         \
         for (size_t i_ = 0; i_ < (count_); ++i_) \
             putchar('\b');                       \
+    } while (0)
+#define RT_CLEARLN(count_)                       \
+    do {                                         \
+        for (size_t i_ = 0; i_ < (count_); ++i_) \
+            putchar('\b');                       \
+        for (size_t i_ = 0; i_ < (count_); ++i_) \
+            putchar(' ');                        \
     } while (0)
 #endif
 
@@ -140,10 +147,8 @@ class RepetitionTester {
         m_closed_blocks = 0;
 
         if (cur_ticks - m_test_start_ticks > m_try_renew_min_for_ticks) {
-            if (m_print_new_minimums) {
-                RT_CLEAR(m_last_chars_printed_for_min);
-                RT_PRINTLN();
-            }
+            if (m_print_new_minimums)
+                RT_CLEARLN(m_last_chars_printed_for_min);
             m_state = e_st_pending;
             return false;
         }
