@@ -1,13 +1,8 @@
 #pragma once
 
-#include "util.hpp"
+#include "defs.hpp"
 #include "os.hpp"
 #include "algo.hpp"
-
-#include <cassert>
-#include <cfloat>
-#include <cstddef>
-#include <cstdint>
 
 #if _WIN32
 
@@ -15,85 +10,83 @@
 #include <windows.h>
 #include <psapi.h>
 
-inline uint64_t get_os_timer_freq()
+inline u64 get_os_timer_freq()
 {
     LARGE_INTEGER freq;
     BOOL res = QueryPerformanceFrequency(&freq);
     if (!res)
-        return uint64_t(-1);
+        return u64(-1);
     return freq.QuadPart;
 }
 
-inline uint64_t read_os_timer()
+inline u64 read_os_timer()
 {
     LARGE_INTEGER ticks;
     BOOL res = QueryPerformanceCounter(&ticks);
     if (!res)
-        return uint64_t(-1);
+        return u64(-1);
     return ticks.QuadPart;
 }
 
-inline uint64_t read_process_page_faults()
+inline u64 read_process_page_faults()
 {
     // @TODO: this should always be enough, right?
     PROCESS_MEMORY_COUNTERS_EX memory_counters = {};
     memory_counters.cb = sizeof(memory_counters);
-    BOOL res = GetProcessMemoryInfo(g_os_proc_state.process_hnd,
-                                    (PROCESS_MEMORY_COUNTERS *)&memory_counters,
-                                    sizeof(memory_counters));
+    BOOL res = GetProcessMemoryInfo(
+        g_os_proc_state.process_hnd,
+        (PROCESS_MEMORY_COUNTERS *)&memory_counters,
+        sizeof(memory_counters));
     if (!res)
-        return uint64_t(-1);
-    return uint64_t(memory_counters.PageFaultCount);
+        return u64(-1);
+    return u64(memory_counters.PageFaultCount);
 }
 
 #else
 
 #include <x86intrin.h>
-#include <ctime>
-#include <cstdio>
 
-inline uint64_t get_os_timer_freq()
+inline u64 get_os_timer_freq()
 {
     return 1'000'000'000;
 }
 
-inline uint64_t read_os_timer()
+inline u64 read_os_timer()
 {
     struct timespec ts;
     int res = clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
     if (res != 0)
-        return uint64_t(-1);
+        return u64(-1);
     return ts.tv_sec * 1'000'000'000 + ts.tv_nsec;
 }
 
-inline uint64_t read_process_page_faults()
+inline u64 read_process_page_faults()
 {
     FILE *procdata_f = fopen(g_os_proc_state.stat_file_name_buf, "r");
     if (!procdata_f)
-        return uint64_t(-1);
-    unsigned long minor_fault_count;
+        return u64(-1);
+    ulong minor_fault_count;
 
     {
         char csink;
         int isink;
-        unsigned usink;
+        uint usink;
         char ssink[32]; // enough by man
-        int items = fscanf(procdata_f, "%d %s %c %d %d %d %d %d %u %lu", &isink,
-                           ssink, &csink, &isink, &isink, &isink, &isink, &isink,
-                           &usink, &minor_fault_count);
+        int items = fscanf(
+            procdata_f, "%d %s %c %d %d %d %d %d %u %lu", &isink,
+            ssink, &csink, &isink, &isink, &isink, &isink, &isink,
+            &usink, &minor_fault_count);
         if (items != 10)
-            minor_fault_count = (unsigned long)(-1);
+            minor_fault_count = ulong(-1);
     }
     fclose(procdata_f);
 
-    return minor_fault_count == (unsigned long)(-1)
-               ? uint64_t(-1)
-               : uint64_t(minor_fault_count);
+    return minor_fault_count == ulong(-1) ? u64(-1) : u64(minor_fault_count);
 }
 
 #endif
 
-inline uint64_t read_cpu_timer()
+inline u64 read_cpu_timer()
 {
     return __rdtsc();
 }
@@ -105,51 +98,51 @@ inline uint64_t read_cpu_timer()
 #define READ_PAGE_FAULT_COUNTER read_process_page_faults
 #endif
 
-inline uint64_t measure_cpu_timer_freq(long double measure_time_sec)
+inline u64 measure_cpu_timer_freq(f64 measure_time_sec)
 {
-    uint64_t os_freq = get_os_timer_freq();
-    uint64_t measure_ticks = (uint64_t)((long double)os_freq * measure_time_sec);
+    u64 os_freq = get_os_timer_freq();
+    u64 measure_ticks = u64(f64(os_freq) * measure_time_sec);
 
-    uint64_t start_cpu_tick = READ_TIMER();
-    uint64_t start_os_tick = read_os_timer();
+    u64 start_cpu_tick = READ_TIMER();
+    u64 start_os_tick = read_os_timer();
 
     while (read_os_timer() - start_os_tick < measure_ticks)
         ;
 
-    uint64_t end_cpu_ticks = READ_TIMER();
+    u64 end_cpu_ticks = READ_TIMER();
 
-    return (uint64_t)((long double)(end_cpu_ticks - start_cpu_tick) / measure_time_sec);
+    return u64(f64(end_cpu_ticks - start_cpu_tick) / measure_time_sec);
 }
 
-inline long double ticks_to_sec(uint64_t ticks, uint64_t freq)
+inline f64 ticks_to_sec(u64 ticks, u64 freq)
 {
-    return (long double)ticks / freq;
+    return large_divide(ticks, freq);
 }
 
 struct profiler_slot_t {
-    uint64_t inclusive_ticks = 0;
-    uint64_t exclusive_ticks = 0;
+    u64 inclusive_ticks = 0;
+    u64 exclusive_ticks = 0;
 #if PROFILER_PAGEFAULTS
-    uint64_t inclusive_pagefaults = 0;
-    uint64_t exclusive_pagefaults = 0;
+    u64 inclusive_pagefaults = 0;
+    u64 exclusive_pagefaults = 0;
 #endif
-    uint64_t bytes_processed = 0;
-    const char *name = nullptr;
-    uint32_t hit_count = 0;
+    u64 bytes_processed = 0;
+    char const *name = nullptr;
+    u32 hit_count = 0;
 };
 
 inline struct profiler_t {
     profiler_slot_t slots[4096] = {};
-    uint64_t start_ticks = 0;
-    uint64_t end_ticks = 0;
+    u64 start_ticks = 0;
+    u64 end_ticks = 0;
 #if PROFILER_PAGEFAULTS
-    uint64_t start_pagefaults = 0;
-    uint64_t end_pagefaults = 0;
+    u64 start_pagefaults = 0;
+    u64 end_pagefaults = 0;
 #endif
     profiler_slot_t *current_slot = &slots[0];
 } g_profiler{};
 
-inline constexpr size_t c_profiler_slots_count =
+inline constexpr usize c_profiler_slots_count =
     sizeof(g_profiler.slots) / sizeof(g_profiler.slots[0]);
 
 inline void init_profiler()
@@ -168,14 +161,14 @@ inline void finish_profiling_and_dump_stats(TPrinter &&printer)
     g_profiler.end_pagefaults = READ_PAGE_FAULT_COUNTER();
 #endif
 
-    const uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
-    const long double total_sec = ticks_to_sec(
+    u64 const cpu_timer_freq = measure_cpu_timer_freq(0.1l);
+    f64 const total_sec = ticks_to_sec(
         g_profiler.end_ticks - g_profiler.start_ticks, cpu_timer_freq);
 
     insertion_sort(
         &g_profiler.slots[0],
         &g_profiler.slots[c_profiler_slots_count],
-        [](const profiler_slot_t &s1, const profiler_slot_t &s2) {
+        [](profiler_slot_t const &s1, profiler_slot_t const &s2) {
             // Decreasing order with empty slots pushed to end
             return
                 s1.name &&
@@ -183,50 +176,48 @@ inline void finish_profiling_and_dump_stats(TPrinter &&printer)
         });
 
     printer("Profile:\n");
-    for (size_t i = 0; i < c_profiler_slots_count; ++i) {
-        const auto &slot = g_profiler.slots[i];
+    for (usize i = 0; i < c_profiler_slots_count; ++i) {
+        auto const &slot = g_profiler.slots[i];
 
         if (!slot.name)
             continue;
 
-        const long double inclusive_sec =
+        f64 const inclusive_sec =
             ticks_to_sec(slot.inclusive_ticks, cpu_timer_freq);
-        const long double exclusive_sec =
+        f64 const exclusive_sec =
             ticks_to_sec(slot.exclusive_ticks, cpu_timer_freq);
 
-        if (abs(inclusive_sec - exclusive_sec) < LDBL_EPSILON) {
-            printer("%s[%u]: %Lfs (%.1Lf%%)",
+        if (abs(inclusive_sec - exclusive_sec) < DBL_EPSILON) {
+            printer("%s[%u]: %lfs (%.1lf%%)",
                 slot.name, slot.hit_count,
                 inclusive_sec, 100.l * inclusive_sec / total_sec);
         } else {
-            printer("%s[%u]: %Lfs (%.1Lf%%) inc, %Lfs (%.1Lf%%) exc",
+            printer("%s[%u]: %lfs (%.1lf%%) inc, %lfs (%.1lf%%) exc",
                 slot.name, slot.hit_count,
                 inclusive_sec, 100.l * inclusive_sec / total_sec,
                 exclusive_sec, 100.l * exclusive_sec / total_sec);
         }
 
         if (slot.bytes_processed > 0) {
-            constexpr long double c_bytes_in_mb = (long double)(1u << 20);
-            constexpr long double c_bytes_in_gb = (long double)(1u << 30);
-            const long double mb =
-                (long double)slot.bytes_processed / c_bytes_in_mb; 
-            const long double gb =
-                (long double)slot.bytes_processed / c_bytes_in_gb; 
-            const long double gb_per_sec = gb / inclusive_sec;
+            constexpr u64 c_bytes_in_mb = 1u << 20;
+            constexpr u64 c_bytes_in_gb = 1u << 30;
+            f64 const mb = large_divide(slot.bytes_processed, c_bytes_in_mb); 
+            f64 const gb = large_divide(slot.bytes_processed, c_bytes_in_gb); 
+            f64 const gb_per_sec = gb / inclusive_sec;
 
-            printer(", %.3Lfmb (%.2Lfgb/s)", mb, gb_per_sec);
+            printer(", %.3lfmb (%.2lfgb/s)", mb, gb_per_sec);
         }
 
 #if PROFILER_PAGEFAULTS
-        uint64_t const total_pagefaults =
+        u64 const total_pagefaults =
             g_profiler.end_pagefaults - g_profiler.start_pagefaults;
         if (slot.inclusive_pagefaults == 0) {
         } else if (slot.inclusive_pagefaults == slot.exclusive_pagefaults) {
-            printer(", %llu pfaults (%.1Lf%%)",
+            printer(", %llu pfaults (%.1lf%%)",
                 slot.inclusive_pagefaults,
                 100.l * slot.inclusive_pagefaults / total_pagefaults);
         } else {
-            printer(", %llu pfaults inc (%.1Lf%%), %llu pfaults exc (%.1Lf%%)",
+            printer(", %llu pfaults inc (%.1lf%%), %llu pfaults exc (%.1lf%%)",
                 slot.inclusive_pagefaults,slot.exclusive_pagefaults,
                 100.l * slot.inclusive_pagefaults / total_pagefaults,
                 100.l * slot.exclusive_pagefaults / total_pagefaults);
@@ -235,21 +226,21 @@ inline void finish_profiling_and_dump_stats(TPrinter &&printer)
 
         printer("\n");
     }
-    printer("Total: %Lfs\n", total_sec);
+    printer("Total: %lfs\n", total_sec);
 }
 
-template <uint32_t t_slot, bool t_pagefaults>
+template <u32 t_slot, bool t_pagefaults>
 class ScopedProfile {
-    uint64_t m_ref_ticks;
-    uint64_t m_inclusive_snapshot;
+    u64 m_ref_ticks;
+    u64 m_inclusive_snapshot;
 #if PROFILER_PAGEFAULTS
-    uint64_t m_ref_pagefaults;
-    uint64_t m_inclusive_pf_snapshot;
+    u64 m_ref_pagefaults;
+    u64 m_inclusive_pf_snapshot;
 #endif
     profiler_slot_t *m_parent;
 
 public:
-    ScopedProfile(const char *name, uint64_t bytes = 0) {
+    ScopedProfile(char const *name, u64 bytes = 0) {
         auto &slot = g_profiler.slots[t_slot];
 
         slot.name = name;
@@ -267,9 +258,9 @@ public:
         m_ref_ticks = READ_TIMER();
     }
     ~ScopedProfile() {
-        uint64_t delta_ticks = READ_TIMER() - m_ref_ticks;
+        u64 delta_ticks = READ_TIMER() - m_ref_ticks;
 #if PROFILER_PAGEFAULTS
-        uint64_t delta_pagefaults = 0;
+        u64 delta_pagefaults = 0;
         if constexpr (t_pagefaults) {
             delta_pagefaults =
                 READ_PAGE_FAULT_COUNTER() - m_ref_pagefaults;
@@ -295,8 +286,8 @@ public:
         g_profiler.current_slot = m_parent;
     }
 
-    ScopedProfile(const ScopedProfile &) = delete;
-    ScopedProfile& operator=(const ScopedProfile &) = delete;
+    ScopedProfile(ScopedProfile const &) = delete;
+    ScopedProfile& operator=(ScopedProfile const &) = delete;
     ScopedProfile(ScopedProfile &&) = delete;
     ScopedProfile& operator=(ScopedProfile &&) = delete;
 };

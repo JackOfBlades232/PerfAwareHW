@@ -2,31 +2,27 @@
 #include <profiling.hpp>
 #include <memory.hpp>
 #include <os.hpp>
-#include <util.hpp>
-
-#include <cstdio>
-#include <cstdlib>
-#include <cstdint>
+#include <defs.hpp>
 
 extern "C"
 {
-extern void run_loop_load(uint64_t count, char *ptr);
-extern void run_loop_load2(uint64_t count, char *ptr);
-extern void run_loop_load3(uint64_t count, char *ptr);
-extern void run_loop_load4(uint64_t count, char *ptr);
-extern void run_loop_load2xbyte(uint64_t count, char *ptr);
-extern void run_loop_store(uint64_t count, char *ptr);
-extern void run_loop_store2(uint64_t count, char *ptr);
-extern void run_loop_store3(uint64_t count, char *ptr);
-extern void run_loop_store4(uint64_t count, char *ptr);
-extern void run_loop_store2xbyte(uint64_t count, char *ptr);
+extern void run_loop_load(u64 count, char *ptr);
+extern void run_loop_load2(u64 count, char *ptr);
+extern void run_loop_load3(u64 count, char *ptr);
+extern void run_loop_load4(u64 count, char *ptr);
+extern void run_loop_load2xbyte(u64 count, char *ptr);
+extern void run_loop_store(u64 count, char *ptr);
+extern void run_loop_store2(u64 count, char *ptr);
+extern void run_loop_store3(u64 count, char *ptr);
+extern void run_loop_store4(u64 count, char *ptr);
+extern void run_loop_store2xbyte(u64 count, char *ptr);
 }
 
 template <class TCallable>
 static void run_test(
-    TCallable &&tested, uint64_t iter_cnt,
+    TCallable &&tested, u64 iter_cnt,
     RepetitionTester &rt, repetition_test_results_t &results,
-    char const *name, uint64_t cpu_timer_freq)
+    char const *name, u64 cpu_timer_freq)
 {
     rt.ReStart(results);
     do {
@@ -47,10 +43,10 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    size_t const iter_count = atol(argv[1]);
+    usize const iter_count = atol(argv[1]);
 
     init_os_process_state(g_os_proc_state);
-    uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
+    u64 cpu_timer_freq = measure_cpu_timer_freq(0.1l);
 
     RepetitionTester rt{iter_count, cpu_timer_freq, 10.f, false};
     repetition_test_results_t results = {};

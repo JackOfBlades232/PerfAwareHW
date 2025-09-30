@@ -1,30 +1,17 @@
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <cstdint>
-#include <ctime>
-#include <cassert>
-#include <cmath>
-#include <cerrno>
+#include <defs.hpp>
+#include <logging.hpp>
 
-#define LOGERR(fmt_, ...) fprintf(stderr, "[ERR] " fmt_ "\n", ##__VA_ARGS__)
-
-static bool streq(const char *s1, const char *s2)
-{
-    return strcmp(s1, s2) == 0;
-}
-
-template <size_t t_n>
-static const char *argpref(const char *arg, const char (&val)[t_n])
+template <usize t_n>
+static char const *argpref(char const *arg, char const (&val)[t_n])
 {
     if (strncmp(arg, val, t_n - 1) != 0)
         return nullptr;
     return arg + (t_n - 1);
 }
 
-static float randflt(float min, float max)
+static f32 randflt(f32 min, f32 max)
 {
-    return ((float)rand() / RAND_MAX)*(max - min) + min;
+    return (f32(rand()) / RAND_MAX) * (max - min) + min;
 }
 
 static FILE *g_outf = stdout;
@@ -36,27 +23,27 @@ enum random_technique_t {
 };
 
 struct point_pair_t {
-    float x0, y0, x1, y1;
+    f32 x0, y0, x1, y1;
 };
 
 struct cluster_t {
-    float cx, cy;
-    float max_delta;
+    f32 cx, cy;
+    f32 max_delta;
 };
 
-static constexpr unsigned c_max_clusters = 1024;
+static constexpr uint c_max_clusters = 1024;
 
 static random_technique_t g_rand_technique = e_rt_clusters;
 
-static unsigned g_cluster_count = 6;
+static uint g_cluster_count = 6;
 static cluster_t clusters[c_max_clusters] = {};
 
-static void init_random(unsigned seed)
+static void init_random(uint seed)
 {
     srand(seed);
 
     if (g_rand_technique == e_rt_clusters) {
-        for (unsigned i = 0; i < g_cluster_count; ++i) {
+        for (uint i = 0; i < g_cluster_count; ++i) {
             clusters[i] = cluster_t{
                 randflt(-180.f, 180.f), randflt(-90.f, 90.f), // center
                 randflt(5.f, 10.f)                            // max coord delta from center
@@ -77,12 +64,12 @@ static point_pair_t generate_random_point_pair()
     case e_rt_clusters: {
         // Not "fair", but IDGAF
         // Choose first uniformly
-        int cid1 = (int)floor(randflt(0.f, g_cluster_count + 0.999f));
+        int cid1 = int(floor(randflt(0.f, g_cluster_count + 0.999f)));
         // Choose next uniformly from those remaining
-        int cid2 = (cid1 + (int)floor(randflt(0.f, g_cluster_count - 0.001f))) % g_cluster_count;
+        int cid2 = (cid1 + int(floor(randflt(0.f, g_cluster_count - 0.001f)))) % g_cluster_count;
 
-        const cluster_t &cl1 = clusters[cid1];
-        const cluster_t &cl2 = clusters[cid2];
+        cluster_t const &cl1 = clusters[cid1];
+        cluster_t const &cl2 = clusters[cid2];
 
         return point_pair_t{
             cl1.cx + randflt(-cl1.max_delta, cl1.max_delta),
@@ -96,31 +83,32 @@ static point_pair_t generate_random_point_pair()
     return point_pair_t{};
 }
 
-static void output_point_pair(const point_pair_t &pair, bool last)
+static void output_point_pair(point_pair_t const &pair, bool last)
 {
-    OUTPUT("    {\"x0\": %.13f, \"y0\": %.13f, \"x1\": %.13f, \"y1\": %.13f}%s\n",
-           pair.x0, pair.y0, pair.x1, pair.y1, last ? "" : ",");
+    OUTPUT(
+        "    {\"x0\": %.13f, \"y0\": %.13f, \"x1\": %.13f, \"y1\": %.13f}%s\n",
+        pair.x0, pair.y0, pair.x1, pair.y1, last ? "" : ",");
 }
 
 // @TODO: verify the algorithm
-static float reference_haversine_dist(const point_pair_t &pair)
+static f32 reference_haversine_dist(point_pair_t const &pair)
 {
-    constexpr float c_pi = 3.14159265359f;
+    constexpr f32 c_pi = 3.14159265359f;
 
-    auto deg2rad = [](float deg) { return deg * c_pi / 180.f; };
-    auto rad2deg = [](float rad) { return rad * 180.f / c_pi; };
+    auto deg2rad = [](f32 deg) { return deg * c_pi / 180.f; };
+    auto rad2deg = [](f32 rad) { return rad * 180.f / c_pi; };
 
-    auto haversine = [](float rad) { return (1.f - cosf(rad)) * 0.5f; };
+    auto haversine = [](f32 rad) { return (1.f - cosf(rad)) * 0.5f; };
 
-    float dx = deg2rad(fabsf(pair.x0 - pair.x1));
-    float dy = deg2rad(fabsf(pair.y0 - pair.y1));
-    float y0r = deg2rad(pair.y0);
-    float y1r = deg2rad(pair.y1);
+    f32 dx = deg2rad(fabsf(pair.x0 - pair.x1));
+    f32 dy = deg2rad(fabsf(pair.y0 - pair.y1));
+    f32 y0r = deg2rad(pair.y0);
+    f32 y1r = deg2rad(pair.y1);
 
-    float hav_of_diff =
+    f32 hav_of_diff =
         haversine(dy) + cosf(y0r)*cosf(y1r)*haversine(dx);
 
-    float rad_of_diff = acosf(1.f - 2.f*hav_of_diff);
+    f32 rad_of_diff = acosf(1.f - 2.f*hav_of_diff);
     return rad2deg(rad_of_diff);
 }
 
@@ -131,13 +119,13 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    int64_t point_count = atoll(argv[1]);
+    i64 point_count = atoll(argv[1]);
     if (point_count <= 0) {
         LOGERR("Invalid point count, must be an integer > 0");
         return 1;
     }
 
-    unsigned rand_seed = time(nullptr);
+    uint rand_seed = time(nullptr);
 
     FILE *checksum_f = nullptr;
 
@@ -150,7 +138,7 @@ int main(int argc, char **argv)
                 return 1;
             }
 
-            auto open_file_or_err = [](const char *fname, const char *mode) -> FILE * {
+            auto open_file_or_err = [](char const *fname, char const *mode) -> FILE * {
                 FILE *f = fopen(fname, mode);
                 if (!f) {
                     LOGERR("Failed to open %s for write, error: %s",
@@ -166,13 +154,13 @@ int main(int argc, char **argv)
 
             g_outf     = open_file_or_err(argv[i], "w+");
             checksum_f = open_file_or_err(checksum_fname, "wb+");
-        } else if (const char *p = argpref(argv[i], "-seed=")) {
+        } else if (char const *p = argpref(argv[i], "-seed=")) {
             rand_seed = atoi(p);
             if (rand_seed <= 0) {
                 LOGERR("Invalid arg, specify positive seed in -seed=[val]");
                 return 1;
             }
-        } else if (const char *technique = argpref(argv[i], "-random-technique=")) {
+        } else if (char const *technique = argpref(argv[i], "-random-technique=")) {
             if (streq(technique, "uniform"))
                 g_rand_technique = e_rt_uniform;
             else if (streq(technique, "clusters"))
@@ -181,7 +169,7 @@ int main(int argc, char **argv)
                 LOGERR("Invalid arg, specify one of [uniform|clusters] in -random-technique=[val]");
                 return 1;
             }
-        } else if (const char *p = argpref(argv[i], "-cluster-count=")) {
+        } else if (char const *p = argpref(argv[i], "-cluster-count=")) {
             g_cluster_count = atoi(p);
             if (g_cluster_count <= 0) {
                 LOGERR("Invalid arg, specify positive cluster_count in -cluster-count=[val]");
@@ -208,13 +196,13 @@ int main(int argc, char **argv)
     OUTPUT("{\n");
     OUTPUT("  \"points\": [\n");
 
-    float sum = 0.f;
+    f32 sum = 0.f;
 
-    for (int64_t i = 0; i < point_count; ++i) {
+    for (i64 i = 0; i < point_count; ++i) {
         point_pair_t pair = generate_random_point_pair();
         output_point_pair(pair, i == point_count - 1);
 
-        float dist = reference_haversine_dist(pair);
+        f32 dist = reference_haversine_dist(pair);
         sum += dist;
 
         if (checksum_f)
@@ -223,7 +211,7 @@ int main(int argc, char **argv)
             OUTPUT("    // dist=%.13f\n", dist);
     }
 
-    float avg = sum / point_count;
+    f32 avg = sum / point_count;
     if (checksum_f)
         fwrite(&avg, sizeof(avg), 1, checksum_f);
     else

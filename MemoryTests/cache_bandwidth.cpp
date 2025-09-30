@@ -2,31 +2,27 @@
 #include <profiling.hpp>
 #include <memory.hpp>
 #include <os.hpp>
-#include <util.hpp>
-
-#include <cstdio>
-#include <cstdlib>
-#include <cstdint>
+#include <defs.hpp>
 
 extern "C"
 {
-extern uint64_t run_loop_load_pot(uint64_t count, char *ptr, uint64_t mask);
-extern uint64_t run_loop_store_pot(uint64_t count, char *ptr, uint64_t mask);
-extern uint64_t run_loop_load_npot(uint64_t count, char *ptr, uint64_t sz);
-extern uint64_t run_loop_store_npot(uint64_t count, char *ptr, uint64_t sz);
+extern u64 run_loop_load_pot(u64 count, char *ptr, u64 mask);
+extern u64 run_loop_store_pot(u64 count, char *ptr, u64 mask);
+extern u64 run_loop_load_npot(u64 count, char *ptr, u64 sz);
+extern u64 run_loop_store_npot(u64 count, char *ptr, u64 sz);
 }
 
 template <class TCallable>
 static void run_test(
-    TCallable &&tested, uint64_t target_bytes, RepetitionTester &rt,
-    char const *name, uint64_t cpu_timer_freq, bool write_csv)
+    TCallable &&tested, u64 target_bytes, RepetitionTester &rt,
+    char const *name, u64 cpu_timer_freq, bool write_csv)
 {
     repetition_test_results_t results{};
 
     rt.ReStart(results, target_bytes);
     do {
         rt.BeginTimeBlock();
-        uint64_t byte_cnt = tested();
+        u64 byte_cnt = tested();
         rt.EndTimeBlock();
         rt.ReportProcessedBytes(byte_cnt);
     } while (rt.Tick());
@@ -44,7 +40,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    size_t const byte_count = atol(argv[1]);
+    usize const byte_count = atol(argv[1]);
     bool const write_csv = argc > 2 && streq(argv[2], "csv");
 
     if (byte_count < mb(256)) {
@@ -57,7 +53,7 @@ int main(int argc, char **argv)
     }
 
     init_os_process_state(g_os_proc_state);
-    uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
+    u64 cpu_timer_freq = measure_cpu_timer_freq(0.1l);
 
     RepetitionTester rt{byte_count, cpu_timer_freq, 10.f, false};
 

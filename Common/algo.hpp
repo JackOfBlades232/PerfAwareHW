@@ -1,8 +1,6 @@
 #pragma once
 
-#include <cstring>
-
-// @TODO: value semantics for non-memcopyable & a normal sorting algo
+#include "defs.hpp"
 
 template <class T, class TComp>
 void insertion_sort(T *start, T *end, TComp &&comp)

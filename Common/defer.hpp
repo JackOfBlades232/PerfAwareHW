@@ -1,6 +1,6 @@
 #pragma once
 
-#include <util.hpp>
+#include <defs.hpp>
 
 namespace detail
 {

@@ -2,67 +2,51 @@
 #define RT_PRINTLN(fmt_, ...) fprintf(stderr, fmt_ "\n", ##__VA_ARGS__)
 #define RT_CLEAR(count_)                         \
     do {                                         \
-        for (size_t i_ = 0; i_ < (count_); ++i_) \
+        for (usize i_ = 0; i_ < (count_); ++i_) \
             fprintf(stderr, "\b");               \
     } while (0)
 #define RT_CLEARLN(count_)                       \
     do {                                         \
-        for (size_t i_ = 0; i_ < (count_); ++i_) \
+        for (usize i_ = 0; i_ < (count_); ++i_) \
             fprintf(stderr, "\b");               \
-        for (size_t i_ = 0; i_ < (count_); ++i_) \
+        for (usize i_ = 0; i_ < (count_); ++i_) \
             fprintf(stderr, " ");                \
     } while (0)
 
 #include <os.hpp>
 #include <memory.hpp>
+#include <buffer.hpp>
 #include <files.hpp>
 #include <profiling.hpp>
 #include <repetition.hpp>
-#include <util.hpp>
+#include <defs.hpp>
 #include <defer.hpp>
 #include <intrinsics.hpp>
 #include <threads.hpp>
 
 #define RT_STOP_TIME 10.f
 
-struct buffer_t {
-    uint8_t *data;
-    size_t len;
-    bool is_large_pages;
-};
-
-static size_t get_flen(char const *fn)
+static usize get_flen(char const *fn)
 {
     FILE *fh = fopen(fn, "rb");
     if (!fh)
         return 0;
     DEFER([fh] { fclose(fh); });
     fseek(fh, 0, SEEK_END);
-    size_t const len = ftell(fh);
+    usize const len = ftell(fh);
     fseek(fh, 0, SEEK_SET);
     return len;
 }
 
-static buffer_t allocate(size_t bytes, bool large_pages = false)
+static buffer_t allocate(usize bytes, bool large_pages)
 {
-    void *data = (large_pages ?
-        &allocate_os_large_pages_memory :
-        &allocate_os_pages_memory)(bytes);
-    assert(data);
-    return{(uint8_t *)data, bytes, large_pages};
-}
-
-static void deallocate(buffer_t &buf)
-{
-    if (buf.data) {
-        (buf.is_large_pages ?
-            &free_os_large_pages_memory :
-            &free_os_pages_memory)(xchg(buf.data, nullptr), xchg(buf.len, 0));
-    }
+    buffer_t b = large_pages ? allocate_lp(bytes) : allocate(bytes);
+    assert(is_valid(b));
+    return b;
 }
 
 static char const *make_test_name(
-    char const *base, bool large_pages, bool do_work, uint64_t chunk_size)
+    char const *base, bool large_pages, bool do_work, u64 chunk_size)
 {
     static char buf[256];
     snprintf(buf, sizeof(buf), "%s, %llukb chunk%s%s",
@@ -72,7 +56,7 @@ static char const *make_test_name(
     return buf;
 }
 
-static int64_t sum_buffer(buffer_t const &buf)
+static i64 sum_buffer(buffer_t const &buf)
 {
 #if AVX512
     __m512i s1 = _mm512_setzero_si512();
@@ -80,7 +64,7 @@ static int64_t sum_buffer(buffer_t const &buf)
     __m512i s3 = _mm512_setzero_si512();
     __m512i s4 = _mm512_setzero_si512();
 
-    for (uint8_t *ptr = buf.data, *end = buf.data + buf.len;
+    for (u8 *ptr = buf.data, *end = buf.data + buf.len;
         ptr < end; ptr += 256) 
     {
         __m512i const l1 = _mm512_load_epi64(ptr);
@@ -138,8 +122,8 @@ static int64_t sum_buffer(buffer_t const &buf)
 }
 
 static void run_test(
-    auto &&test, size_t file_size, uint64_t req_workres,
-    uint64_t cpu_timer_freq, char const *name,
+    auto &&test, usize file_size, u64 req_workres,
+    u64 cpu_timer_freq, char const *name,
     RepetitionTester &rt, repetition_test_results_t &results)
 {
     rt.ReStart(results, file_size);
@@ -153,17 +137,17 @@ static void run_test(
     } while (rt.Tick());
 
     print_reptest_results(results, file_size, cpu_timer_freq, name, true);
-    printf(",%Lf", best_gbps(results, file_size, cpu_timer_freq));
+    printf(",%lf", best_gbps(results, file_size, cpu_timer_freq));
 }
 
 static auto allocate_and_touch_tester(
-    uint64_t chunk_size, bool large_pages, bool do_work)
+    u64 chunk_size, bool large_pages, bool do_work)
 {
-    static volatile uint64_t work_sink = 0;
-    return [=](size_t file_size, uint64_t) {
+    static volatile u64 work_sink = 0;
+    return [=](usize file_size, u64) {
         work_sink = 0;
         buffer_t workbuf = allocate(chunk_size, large_pages);
-        for (size_t i = 0, iters = file_size / chunk_size; i < iters; ++i) {
+        for (usize i = 0, iters = file_size / chunk_size; i < iters; ++i) {
             memset(workbuf.data, 1, chunk_size);
             if (do_work)
                 work_sink += sum_buffer(workbuf);
@@ -175,19 +159,15 @@ static auto allocate_and_touch_tester(
 }
 
 static auto allocate_and_movsb_tester(
-    uint64_t chunk_size, buffer_t const &scratch,
-    bool large_pages, bool do_work)
+    u64 chunk_size, buffer_t const &scratch, bool large_pages, bool do_work)
 {
-    static int64_t volatile work_sink = 0;
-    return [=](size_t file_size, uint64_t) {
+    static i64 volatile work_sink = 0;
+    return [=](usize file_size, u64) {
         work_sink = 0;
         buffer_t workbuf = allocate(chunk_size, large_pages);
-        uint8_t const *src = scratch.data;
-        for (size_t i = 0, iters = file_size / chunk_size; i < iters; ++i) {
-            i_movsb(
-                (unsigned char *)workbuf.data,
-                (unsigned char const *)src,
-                chunk_size);
+        u8 const *src = scratch.data;
+        for (usize i = 0, iters = file_size / chunk_size; i < iters; ++i) {
+            i_movsb((uchar *)workbuf.data, (uchar const *)src, chunk_size);
             src += chunk_size;
             if (do_work)
                 work_sink += sum_buffer(workbuf);
@@ -199,15 +179,14 @@ static auto allocate_and_movsb_tester(
 }
 
 static auto allocate_and_copy_tester(
-    uint64_t chunk_size, buffer_t const &scratch,
-    bool large_pages, bool do_work)
+    u64 chunk_size, buffer_t const &scratch, bool large_pages, bool do_work)
 {
-    static int64_t volatile work_sink = 0;
-    return [=](size_t file_size, uint64_t) {
+    static i64 volatile work_sink = 0;
+    return [=](usize file_size, u64) {
         work_sink = 0;
         buffer_t workbuf = allocate(chunk_size, large_pages);
-        uint8_t const *src = scratch.data;
-        for (size_t i = 0, iters = file_size / chunk_size; i < iters; ++i) {
+        u8 const *src = scratch.data;
+        for (usize i = 0, iters = file_size / chunk_size; i < iters; ++i) {
             memcpy(workbuf.data, src, chunk_size);
             src += chunk_size;
             if (do_work)
@@ -220,15 +199,15 @@ static auto allocate_and_copy_tester(
 }
 
 static auto os_read_tester(
-    uint64_t chunk_size, char const *fn,
+    u64 chunk_size, char const *fn,
     bool large_pages, bool do_work, bool validate_work = true)
 {
-    static int64_t volatile work_sink = 0;
-    return [=](size_t file_size, uint64_t req_workres) {
+    static i64 volatile work_sink = 0;
+    return [=](usize file_size, u64 req_workres) {
         work_sink = 0;
         buffer_t workbuf = allocate(chunk_size, large_pages);
         os_file_t f = os_read_open_file(fn);
-        for (size_t i = 0, iters = file_size / chunk_size; i < iters; ++i) {
+        for (usize i = 0, iters = file_size / chunk_size; i < iters; ++i) {
             os_file_read(f, workbuf.data, workbuf.len);
             if (do_work)
                 work_sink += sum_buffer(workbuf);
@@ -243,15 +222,15 @@ static auto os_read_tester(
 }
 
 static auto fread_tester(
-    uint64_t chunk_size, char const *fn,
+    u64 chunk_size, char const *fn,
     bool large_pages, bool do_work, bool validate_work = true)
 {
-    static int64_t volatile work_sink = 0;
-    return [=](size_t file_size, uint64_t req_workres) {
+    static i64 volatile work_sink = 0;
+    return [=](usize file_size, u64 req_workres) {
         work_sink = 0;
         buffer_t workbuf = allocate(chunk_size, large_pages);
         FILE *f = fopen(fn, "rb");
-        for (size_t i = 0, iters = file_size / chunk_size; i < iters; ++i) {
+        for (usize i = 0, iters = file_size / chunk_size; i < iters; ++i) {
             fread(workbuf.data, workbuf.len, 1, f);
             if (do_work)
                 work_sink += sum_buffer(workbuf);
@@ -277,8 +256,8 @@ struct threaded_work_buffer_t {
 
 struct threaded_work_block_t {
     threaded_work_buffer_t buffers[2];
-    int64_t volatile *output;
-    uint64_t iters;
+    i64 volatile *output;
+    u64 iters;
 };
 
 // @NOTE: here I trust modern compilers to treat _mm_mfence as a memory
@@ -288,7 +267,7 @@ static THREAD_ENTRY(work_loop, wb)
 {
     auto *work = (threaded_work_block_t *)wb;
 
-    for (uint64_t i = 0; i < work->iters; ++i) {
+    for (u64 i = 0; i < work->iters; ++i) {
         threaded_work_buffer_t &buf = work->buffers[i & 1];
 
         while (buf.state != e_bs_read)
@@ -309,14 +288,14 @@ static THREAD_ENTRY(work_loop, wb)
 }
 
 static auto os_read_threaded_work_tester(
-    uint64_t chunk_size, char const *fn,
+    u64 chunk_size, char const *fn,
     bool large_pages, bool validate_work = true)
 {
-    static int64_t volatile work_sink = 0;
-    return [=](size_t file_size, uint64_t req_workres) {
+    static i64 volatile work_sink = 0;
+    return [=](usize file_size, u64 req_workres) {
         work_sink = 0;
-        uint64_t const buf_size = chunk_size / 2;
-        uint64_t const iters = file_size / buf_size;
+        u64 const buf_size = chunk_size / 2;
+        u64 const iters = file_size / buf_size;
         threaded_work_block_t wb = {};
         wb.buffers[0].buf = allocate(buf_size, large_pages);
         wb.buffers[1].buf = allocate(buf_size, large_pages);
@@ -327,7 +306,7 @@ static auto os_read_threaded_work_tester(
         assert(is_valid(worker));
 
         os_file_t f = os_read_open_file(fn);
-        for (uint64_t i = 0; i < iters; ++i) {
+        for (u64 i = 0; i < iters; ++i) {
             threaded_work_buffer_t &buf = wb.buffers[i & 1];
 
             while (buf.state != e_bs_written)
@@ -357,16 +336,16 @@ static auto os_read_threaded_work_tester(
 }
 
 static auto map_tester(
-    uint64_t chunk_size, char const *fn, bool validate_work = true)
+    u64 chunk_size, char const *fn, bool validate_work = true)
 {
-    static int64_t volatile work_sink = 0;
-    return [=](size_t file_size, uint64_t req_workres) {
+    static i64 volatile work_sink = 0;
+    return [=](usize file_size, u64 req_workres) {
         work_sink = 0;
         os_mapped_file_t f = os_read_map_file(fn, e_osfmf_no_init_map);
-        for (size_t off = 0; off < file_size; off += chunk_size) {
+        for (usize off = 0; off < file_size; off += chunk_size) {
             os_read_map_section(f, off, chunk_size);
             work_sink += sum_buffer(
-                buffer_t{(uint8_t *)f.data, chunk_size, false});
+                buffer_t{(u8 *)f.data, chunk_size, false});
             os_unmap_section(f);
         }
         os_unmap_file(f);
@@ -386,7 +365,7 @@ int main(int argc, char **argv)
 
     init_os_process_state(g_os_proc_state);
 
-    uint64_t const cpu_timer_freq = measure_cpu_timer_freq(0.1l);
+    u64 const cpu_timer_freq = measure_cpu_timer_freq(0.1l);
     bool has_large_pages = try_enable_large_pages(g_os_proc_state);
 
     if (has_large_pages) {
@@ -405,7 +384,7 @@ int main(int argc, char **argv)
             "Failed to enable large pages, they will not be tested\n\n");
     }
 
-    constexpr uint64_t c_chunk_sizes[] = 
+    constexpr u64 c_chunk_sizes[] = 
     {
         kb(16), kb(64), kb(256), mb(1), mb(2), mb(4), mb(8), mb(16),
         mb(64), mb(128), mb(256), mb(512), gb(1),
@@ -422,9 +401,9 @@ int main(int argc, char **argv)
     };
 
     char const *fn = argv[1];
-    size_t const flen = get_flen(fn);
+    usize const flen = get_flen(fn);
 
-    uint64_t const req_divisor = c_chunk_sizes[ARR_CNT(c_chunk_sizes) - 1];
+    u64 const req_divisor = c_chunk_sizes[ARR_CNT(c_chunk_sizes) - 1];
     if (flen == 0) {
         fprintf(stderr, "Can't open '%s'.\n", fn);
         return 2;
@@ -434,7 +413,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    uint64_t const req_workres =
+    u64 const req_workres =
         os_read_tester(flen, fn, false, true, false)(flen, 0);
 
     buffer_t scratch = allocate(flen);
@@ -463,7 +442,7 @@ int main(int argc, char **argv)
     }
     printf("\n");
 
-    for (uint64_t chunk_size : c_chunk_sizes) {
+    for (u64 chunk_size : c_chunk_sizes) {
         printf("%llu", chunk_size);
         for (bool do_work : {false, true})
             for (bool large_pages : {false, true})  {

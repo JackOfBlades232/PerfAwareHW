@@ -2,14 +2,7 @@
 #include <profiling.hpp>
 #include <memory.hpp>
 #include <os.hpp>
-#include <util.hpp>
-
-#include <cstdio>
-#include <cstdlib>
-#include <cstdint>
-#include <cstring>
-#include <ctime>
-#include <cassert>
+#include <defs.hpp>
 
 #if _WIN32
 #pragma comment(lib, "Bcrypt.lib")
@@ -17,19 +10,19 @@
 
 extern "C"
 {
-extern uint64_t run_cond_loop(uint64_t count, char const *ptr);
+extern u64 run_cond_loop(u64 count, char const *ptr);
 }
 
 template <class TCallable>
 static void run_test(
     TCallable &&tested, RepetitionTester &rt,
     repetition_test_results_t &results,
-    char const *name, uint64_t cpu_timer_freq)
+    char const *name, u64 cpu_timer_freq)
 {
     rt.ReStart(results);
     do {
         rt.BeginTimeBlock();
-        uint64_t byte_cnt = tested();
+        u64 byte_cnt = tested();
         rt.EndTimeBlock();
 
         rt.ReportProcessedBytes(byte_cnt);
@@ -38,52 +31,52 @@ static void run_test(
         results, rt.GetTargetBytes(), cpu_timer_freq, name, true);
 }
 
-void fill_zeroes(char *mem, uint64_t cnt)
+void fill_zeroes(char *mem, u64 cnt)
 {
     memset(mem, 0, cnt);
 }
 
-void fill_ones(char *mem, uint64_t cnt)
+void fill_ones(char *mem, u64 cnt)
 {
     memset(mem, 1, cnt);
 }
 
-void fill_fours(char *mem, uint64_t cnt)
+void fill_fours(char *mem, u64 cnt)
 {
     memset(mem, 4, cnt);
 }
 
-void fill_every_second(char *mem, uint64_t cnt)
+void fill_every_second(char *mem, u64 cnt)
 {
     for (char *p = mem; p != mem + cnt; ++p)
         *p = ((p - mem) & 1) ? 1 : 4;
 }
 
-void fill_every_third(char *mem, uint64_t cnt)
+void fill_every_third(char *mem, u64 cnt)
 {
     for (char *p = mem; p != mem + cnt; ++p)
         *p = ((p - mem) % 3 == 0) ? 4 : 1;
 }
 
-void fill_every_fourth(char *mem, uint64_t cnt)
+void fill_every_fourth(char *mem, u64 cnt)
 {
     for (char *p = mem; p != mem + cnt; ++p)
         *p = ((p - mem) & 3) ? 1 : 4;
 }
 
-void fill_every_eighth(char *mem, uint64_t cnt)
+void fill_every_eighth(char *mem, u64 cnt)
 {
     for (char *p = mem; p != mem + cnt; ++p)
         *p = ((p - mem) & 7) ? 1 : 4;
 }
 
-void fill_c_random(char *mem, uint64_t cnt)
+void fill_c_random(char *mem, u64 cnt)
 {
     for (char *p = mem; p != mem + cnt; ++p)
-        *p = unsigned(rand()) & 0xFF;
+        *p = uint(rand()) & 0xFF;
 }
 
-void fill_os_random(char *mem, uint64_t cnt)
+void fill_os_random(char *mem, u64 cnt)
 {
 #if _WIN32
     NTSTATUS st = BCryptGenRandom(
@@ -105,10 +98,10 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    size_t const byte_count = atol(argv[1]);
+    usize const byte_count = atol(argv[1]);
 
     init_os_process_state(g_os_proc_state);
-    uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
+    u64 cpu_timer_freq = measure_cpu_timer_freq(0.1l);
 
     srand(time(nullptr));
 

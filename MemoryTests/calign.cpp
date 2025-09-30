@@ -2,35 +2,31 @@
 #include <profiling.hpp>
 #include <memory.hpp>
 #include <os.hpp>
-#include <util.hpp>
-
-#include <cstdio>
-#include <cstdlib>
-#include <cstdint>
+#include <defs.hpp>
 
 extern "C"
 {
-extern uint64_t run_loop_align64(uint64_t count, char const *ptr);
-extern uint64_t run_loop_align1(uint64_t count, char const *ptr);
-extern uint64_t run_loop_align3(uint64_t count, char const *ptr);
-extern uint64_t run_loop_align15(uint64_t count, char const *ptr);
-extern uint64_t run_loop_align31(uint64_t count, char const *ptr);
-extern uint64_t run_loop_align63(uint64_t count, char const *ptr);
-extern uint64_t run_loop_align127(uint64_t count, char const *ptr);
-extern uint64_t run_loop_align255(uint64_t count, char const *ptr);
-extern uint64_t run_loop_align4095(uint64_t count, char const *ptr);
+extern u64 run_loop_align64(u64 count, char const *ptr);
+extern u64 run_loop_align1(u64 count, char const *ptr);
+extern u64 run_loop_align3(u64 count, char const *ptr);
+extern u64 run_loop_align15(u64 count, char const *ptr);
+extern u64 run_loop_align31(u64 count, char const *ptr);
+extern u64 run_loop_align63(u64 count, char const *ptr);
+extern u64 run_loop_align127(u64 count, char const *ptr);
+extern u64 run_loop_align255(u64 count, char const *ptr);
+extern u64 run_loop_align4095(u64 count, char const *ptr);
 }
 
 template <class TCallable>
 static void run_test(
     TCallable &&tested, RepetitionTester &rt,
     repetition_test_results_t &results,
-    char const *name, uint64_t cpu_timer_freq)
+    char const *name, u64 cpu_timer_freq)
 {
     rt.ReStart(results);
     do {
         rt.BeginTimeBlock();
-        uint64_t byte_cnt = tested();
+        u64 byte_cnt = tested();
         rt.EndTimeBlock();
 
         rt.ReportProcessedBytes(byte_cnt);
@@ -46,10 +42,10 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    size_t const byte_count = atol(argv[1]);
+    usize const byte_count = atol(argv[1]);
 
     init_os_process_state(g_os_proc_state);
-    uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
+    u64 cpu_timer_freq = measure_cpu_timer_freq(0.1l);
 
     RepetitionTester rt{byte_count, cpu_timer_freq, 10.f, false};
     repetition_test_results_t results = {};

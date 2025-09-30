@@ -2,34 +2,30 @@
 #include <profiling.hpp>
 #include <memory.hpp>
 #include <os.hpp>
-#include <util.hpp>
-
-#include <cstdio>
-#include <cstdlib>
-#include <cstdint>
+#include <defs.hpp>
 
 extern "C"
 {
-extern uint64_t run_write_loop(uint64_t count, char *ptr);
-extern uint64_t run_empty_loop(uint64_t count, char *ptr);
-extern uint64_t run_nop_loop(uint64_t count, char *ptr);
-extern uint64_t run_nop3_loop(uint64_t count, char *ptr);
-extern uint64_t run_3nop1_loop(uint64_t count, char *ptr);
-extern uint64_t run_nop9_loop(uint64_t count, char *ptr);
-extern uint64_t run_3nop3_loop(uint64_t count, char *ptr);
-extern uint64_t run_9nop_loop(uint64_t count, char *ptr);
+extern u64 run_write_loop(u64 count, char *ptr);
+extern u64 run_empty_loop(u64 count, char *ptr);
+extern u64 run_nop_loop(u64 count, char *ptr);
+extern u64 run_nop3_loop(u64 count, char *ptr);
+extern u64 run_3nop1_loop(u64 count, char *ptr);
+extern u64 run_nop9_loop(u64 count, char *ptr);
+extern u64 run_3nop3_loop(u64 count, char *ptr);
+extern u64 run_9nop_loop(u64 count, char *ptr);
 }
 
 template <class TCallable>
 static void run_test(
     TCallable &&tested, RepetitionTester &rt,
     repetition_test_results_t &results,
-    char const *name, uint64_t cpu_timer_freq)
+    char const *name, u64 cpu_timer_freq)
 {
     rt.ReStart(results);
     do {
         rt.BeginTimeBlock();
-        uint64_t byte_cnt = tested();
+        u64 byte_cnt = tested();
         rt.EndTimeBlock();
 
         rt.ReportProcessedBytes(byte_cnt);
@@ -45,10 +41,10 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    size_t const byte_count = atol(argv[1]);
+    usize const byte_count = atol(argv[1]);
 
     init_os_process_state(g_os_proc_state);
-    uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
+    u64 cpu_timer_freq = measure_cpu_timer_freq(0.1l);
 
     RepetitionTester rt{byte_count, cpu_timer_freq, 10.f, false};
     repetition_test_results_t results = {};

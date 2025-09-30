@@ -1,212 +1,13 @@
-#include "string.hpp"
-#include "array.hpp"
-#include "defer.hpp"
+#include <haversine_file_io.hpp>
 
-#define PROFILE
-
+#include <string.hpp>
+#include <array.hpp>
+#include <defer.hpp>
 #include <profiling.hpp>
 #include <os.hpp>
-#include <util.hpp>
+#include <defs.hpp>
 #include <memory.hpp>
-#include <files.hpp>
 
-#include <cassert>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cerrno>
-#include <cmath>
-#include <climits>
-#include <cstring>
-
-#define LOGDBG(fmt_, ...) fprintf(stderr, "[DBG] " fmt_ "\n", ##__VA_ARGS__)
-#define LOGERR(fmt_, ...) fprintf(stderr, "[ERR] " fmt_ "\n", ##__VA_ARGS__)
-
-#define FILE_READ_MODE_FREAD 0
-#define FILE_READ_MODE_MAP 1
-#define FILE_READ_MODE_MAP_MEMCPY 2
-
-#ifndef FILE_READ_MODE
-#define FILE_READ_MODE FILE_READ_MODE_FREAD
-#endif
-#ifndef USE_LARGE_PAGES_FOR_FILEMAP
-#define USE_LARGE_PAGES_FOR_FILEMAP 1
-#endif
-#ifndef USE_LARGE_PAGES_FOR_DATA
-#define USE_LARGE_PAGES_FOR_DATA 1
-#endif
-
-static size_t get_flen(FILE *f)
-{
-    fseek(f, 0, SEEK_END);
-    size_t const len = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    return len;
-}
-
-static size_t get_flen(char const *fn)
-{
-    FILE *fh = fopen(fn, "rb");
-    if (!fh)
-        return 0;
-    DEFER([fh] { fclose(fh); });
-
-    return get_flen(fh);
-}
-
-#if FILE_READ_MODE == FILE_READ_MODE_MAP
-using file_t = os_mapped_file_t;
-static file_t load_file(char const *fn)
-{
-    PROFILED_FUNCTION_PF;
-
-#if USE_LARGE_PAGES_FOR_FILEMAP
-    if (os_mapped_file_t f = os_read_map_file(fn, e_osfmf_largepage); f.data) {
-        LOGDBG("Mapped '%s' with large pages", fn);
-        return f;
-    } else
-#endif
-    if (os_mapped_file_t f = os_read_map_file(fn); f.data) {
-        LOGDBG("Mapped '%s' with regular pages", fn);
-        return f;
-    } else {
-        return {};
-    }
-}
-static void unload_file(file_t &f)
-{
-    PROFILED_FUNCTION_PF;
-    os_unmap_file(f);
-}
-#else
-struct file_t {
-    char *data;
-    size_t len;
-    bool uses_large_pages = false;
-};
-static void unload_file(file_t &f)
-{
-    PROFILED_FUNCTION_PF;
-
-    if (f.data) {
-        (*(f.uses_large_pages ?
-            &free_os_large_pages_memory :
-            &free_os_pages_memory))(f.data, f.len);
-        f = {};
-    }
-}
-#if FILE_READ_MODE == FILE_READ_MODE_MAP_MEMCPY
-static file_t load_file(char const *fn)
-{
-#if PROFILER
-    size_t const bytes = get_flen(fn);
-#endif
-    PROFILED_BANDWIDTH_FUNCTION_PF(bytes);
-
-    os_mapped_file_t src = {};
-#if USE_LARGE_PAGES_FOR_FILEMAP
-    if ((src = os_read_map_file(fn, e_osfmf_largepage)).data)
-        LOGDBG("Mapped '%s' with large pages", fn);
-    else
-#endif
-    if ((src = os_read_map_file(fn)).data)
-        LOGDBG("Mapped '%s' with regular pages", fn);
-    else
-        return {};
-
-    DEFER([&src] { os_unmap_file(src); });
-
-    file_t f = {};
-    f.len = src.len;
-
-#if USE_LARGE_PAGES_FOR_DATA
-    if (void *data = allocate_os_large_pages_memory(f.len)) {
-        LOGDBG("Allocated '%s' with large pages", fn);
-        f.data = (char *)data;
-        f.uses_large_pages = true;
-    } else
-#endif
-    if (void *data = allocate_os_pages_memory(f.len)) {
-        LOGDBG("Allocated '%s' with regular pages", fn);
-        f.data = (char *)data;
-    } else {
-        return {};
-    }
-
-    memcpy(f.data, src.data, f.len);
-    return f;
-}
-#else
-static file_t load_file(char const *fn)
-{
-#if PROFILER
-    size_t const bytes = get_flen(fn);
-#endif
-    PROFILED_BANDWIDTH_FUNCTION_PF(bytes);
-
-    FILE *fh = fopen(fn, "rb");
-    if (!fh)
-        return {};
-    DEFER([fh] { fclose(fh); });
-
-    file_t f = {};
-    f.len = get_flen(fh);
-
-#if USE_LARGE_PAGES_FOR_DATA
-    if (void *data = allocate_os_large_pages_memory(f.len)) {
-        LOGDBG("Allocated '%s' with large pages", fn);
-        f.data = (char *)data;
-        f.uses_large_pages = true;
-    } else
-#endif
-    if (void *data = allocate_os_pages_memory(f.len)) {
-        LOGDBG("Allocated '%s' with regular pages", fn);
-        f.data = (char *)data;
-    } else {
-        return {};
-    }
-
-    if (fread(f.data, f.len, 1, fh) != 1) {
-        unload_file(f);
-        return {};
-    }
-
-    return f;
-}
-#endif
-#endif
-
-struct input_file_t {
-    file_t f;
-    size_t pos;
-
-    bool IsEof() const { return pos >= f.len; }
-};
-
-enum token_type_t {
-    tt_eof,        // eof
-    tt_string,     // string literal
-    tt_numeric,    // numeric literal
-    tt_true,       // literal true
-    tt_false,      // literal false
-    tt_null,       // literal null
-    tt_lbrace,     // {
-    tt_rbrace,     // }
-    tt_lsqbracket, // [
-    tt_rsqbracket, // ]
-    tt_comma,      // ,
-    tt_colon,      // :
-
-    tt_error = -1
-};
-
-struct token_t {
-    token_type_t type;
-    long double number;
-    HpString str;
-
-    bool IsFinal() const { return type == tt_eof || type == tt_error; }
-};
 
 static int is_eof(int c)
 {
@@ -223,7 +24,7 @@ static token_t get_next_token(input_file_t &input)
     PROFILED_FUNCTION;
 
     token_t tok = {tt_error};
-    DynArray<char> id{};
+    ResizeableArray<char> id{};
     bool is_in_string = false;
     bool token_had_string = false; // for "" tokens
     int c;
@@ -232,7 +33,7 @@ static token_t get_next_token(input_file_t &input)
     // @FEAT: place error text in str for error
 
     for (;;) {
-        c = input.IsEof() ? EOF : input.f.data[input.pos++];
+        c = input.IsEof() ? EOF : (char)input.source.data[input.pos++];
     
         if (is_in_string && is_eof(c))
             goto yield; // tok type is error
@@ -252,7 +53,7 @@ static token_t get_next_token(input_file_t &input)
                     --input.pos;
                     if (token_had_string) {
                         tok.type = tt_string;
-                        tok.str = HpString{id.Begin(), id.Length()};
+                        tok.str = HeapString{id.Begin(), id.Length()};
                     } else if (strncmp(id.Begin(), "null", 4) == 0)
                         tok.type = tt_null;
                     else if (strncmp(id.Begin(), "true", 4) == 0)
@@ -261,7 +62,7 @@ static token_t get_next_token(input_file_t &input)
                         tok.type = tt_false;
                     else {
                         tok.type = tt_numeric;
-                        HpString literal(id.Begin(), id.Length());
+                        HeapString literal(id.Begin(), id.Length());
                         char *end = nullptr;
                         tok.number = strtold(literal.CStr(), &end);
                         if (end != literal.End() ||
@@ -342,7 +143,7 @@ struct IJsonEntity {
     virtual IJsonEntity *ObjectQuery(const char *key) const = 0;
     virtual const json_field_t &FieldAt(uint32_t id) const = 0;
     virtual IJsonEntity *ArrayAt(uint32_t id) const = 0;
-    virtual const HpString &Str() const = 0;
+    virtual const HeapString &Str() const = 0;
     virtual long double Number() const = 0;
     virtual bool Bool() const = 0;
     virtual uint32_t ElemCnt() const = 0;
@@ -351,12 +152,12 @@ struct IJsonEntity {
 #define IS_STUB(name_) bool name_() const override { return false; }
 
 struct json_field_t {
-    HpString name;
+    HeapString name;
     IJsonEntity *val;
 };
 
 class JsonObject : public IJsonEntity {
-    DynArray<json_field_t> m_fields;
+    ResizeableArray<json_field_t> m_fields;
 
 public:
     JsonObject() = default;
@@ -383,13 +184,13 @@ public:
     json_field_t const &FieldAt(uint32_t id) const override { return m_fields[id]; }
     uint32_t ElemCnt() const override { return m_fields.Length(); }
     IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
-    HpString const &Str() const override { assert(0); return {}; }
+    HeapString const &Str() const override { assert(0); return {}; }
     long double Number() const override { assert(0); return {}; }
     bool Bool() const override { assert(0); return {}; }
 };
 
 class JsonArray : public IJsonEntity {
-    DynArray<IJsonEntity *> m_elements;
+    ResizeableArray<IJsonEntity *> m_elements;
 
 public:
     JsonArray() = default;
@@ -410,16 +211,16 @@ public:
     uint32_t ElemCnt() const override { return m_elements.Length(); }
     IJsonEntity *ObjectQuery(char const *key) const override { assert(0); return {}; }
     json_field_t const &FieldAt(uint32_t id) const override { assert(0); return {}; }
-    HpString const &Str() const override { assert(0); return {}; }
+    HeapString const &Str() const override { assert(0); return {}; }
     long double Number() const override { assert(0); return {}; }
     bool Bool() const override { assert(0); return {}; }
 };
 
 class JsonString : public IJsonEntity {
-    HpString m_content;
+    HeapString m_content;
 
 public:
-    JsonString(HpString &&str) : m_content{mv(str)} {}
+    JsonString(HeapString &&str) : m_content{mv(str)} {}
 
     bool IsString() const override { return true; }
     IS_STUB(IsObject)
@@ -428,7 +229,7 @@ public:
     IS_STUB(IsBool)
     IS_STUB(IsNull)
 
-    HpString const &Str() const override { return m_content; }
+    HeapString const &Str() const override { return m_content; }
     IJsonEntity *ObjectQuery(char const *key) const override { assert(0); return {}; }
     json_field_t const &FieldAt(uint32_t id) const override { assert(0); return {}; }
     IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
@@ -454,7 +255,7 @@ public:
     IJsonEntity *ObjectQuery(char const *key) const override { assert(0); return {}; }
     json_field_t const &FieldAt(uint32_t id) const override { assert(0); return {}; }
     IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
-    HpString const &Str() const override { assert(0); return {}; }
+    HeapString const &Str() const override { assert(0); return {}; }
     bool Bool() const override { assert(0); return {}; }
     uint32_t ElemCnt() const override { assert(0); return {}; }
 };
@@ -476,7 +277,7 @@ public:
     IJsonEntity *ObjectQuery(char const *key) const override { assert(0); return {}; }
     json_field_t const &FieldAt(uint32_t id) const override { assert(0); return {}; }
     IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
-    HpString const &Str() const override { assert(0); return {}; }
+    HeapString const &Str() const override { assert(0); return {}; }
     long double Number() const override { assert(0); return {}; }
     uint32_t ElemCnt() const override { assert(0); return {}; }
 };
@@ -493,7 +294,7 @@ public:
     IJsonEntity *ObjectQuery(char const *key) const override { assert(0); return {}; }
     json_field_t const &FieldAt(uint32_t id) const override { assert(0); return {}; }
     IJsonEntity *ArrayAt(uint32_t id) const override { assert(0); return {}; }
-    HpString const &Str() const override { assert(0); return {}; }
+    HeapString const &Str() const override { assert(0); return {}; }
     long double Number() const override { assert(0); return {}; }
     bool Bool() const override { assert(0); return {}; }
     uint32_t ElemCnt() const override { assert(0); return {}; }
@@ -598,7 +399,7 @@ static IJsonEntity *parse_json_entity(token_t const &first_token)
     case tt_numeric:
         return new JsonNumber{first_token.number};
     case tt_string:
-        return new JsonString{HpString::Copy(first_token.str)};
+        return new JsonString{HeapString::Copy(first_token.str)};
 
     default:
         return nullptr;
@@ -652,7 +453,7 @@ static void print_json(IJsonEntity *ent, int depth, bool indent, bool put_comma)
     else if (ent->IsBool())
         OUTPUT("%s", ent->Bool() ? "true" : "false");
     else if (ent->IsNumber())
-        OUTPUT("%Lf", ent->Number());
+        OUTPUT("%lf", ent->Number());
     else if (ent->IsString())
         OUTPUT("%.*s", ent->Str().Length(), ent->Str().CStr());
     else if (ent->IsArray()) {
@@ -689,7 +490,7 @@ static int tokenize_and_print_main()
                 OUTPUT("str(%s)", tok.str.CStr());
                 break;
             case tt_numeric:
-                OUTPUT("num(%Lf)", tok.number);
+                OUTPUT("num(%lf)", tok.number);
                 break;
             case tt_lbrace:
                 OUTPUT("({)");
@@ -773,10 +574,10 @@ int main(int argc, char **argv)
     bool only_tokenize = false;
     bool only_reprint_json = false;
     char const *json_fname = nullptr;
-    file_t checksum_f = {};
+    buffer_t checksum_data = {};
 
-    DEFER([] { unload_file(g_inf.f); });
-    DEFER([&checksum_f] { unload_file(checksum_f); });
+    DEFER([] { deallocate(g_inf.source); });
+    DEFER([&checksum_data] { deallocate(checksum_data); });
 
     {
         PROFILED_BLOCK_PF("Argument parsing");
@@ -791,9 +592,11 @@ int main(int argc, char **argv)
 
                 json_fname = argv[i];
 
-                g_inf.f = load_file(json_fname);
-                if (!g_inf.f.data)
+                g_inf.source = load_entire_file(json_fname);
+                if (!is_valid(g_inf.source)) {
+                    LOGERR("Failed to load json file '%s'", json_fname);
                     return 1;
+                }
             } else if (streq(argv[i], "-tokenize")) {
                 if (only_reprint_json) {
                     LOGERR("Invalid usage: -tokenize and -reprint are incompatible");
@@ -813,7 +616,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if (!g_inf.f.data) {
+    if (!is_valid(g_inf.source)) {
         LOGERR("Invalid usage: specify input file with -f <name>");
         return 1;
     }
@@ -847,11 +650,16 @@ int main(int argc, char **argv)
         if (json_fname) {
             char checksum_fname[256];
             snprintf(checksum_fname, sizeof(checksum_fname), "%s.check.bin", json_fname);
-            checksum_f = load_file(checksum_fname);
+            checksum_data = load_entire_file(checksum_fname);
+            if (!is_valid(checksum_data)) {
+                LOGDBG(
+                    "Failed to load checksum file from '%s', no validation",
+                    checksum_fname);
+            }
         }
     }
 
-    DynArray<point_pair_t> pairs{};
+    ResizeableArray<point_pair_t> pairs{};
 
     {
         PROFILED_BLOCK_PF("Haversine parsing");
@@ -905,11 +713,12 @@ int main(int argc, char **argv)
         for (uint32_t i = 0; i < pairs.Length(); ++i) {
             float const dist = haversine_dist(pairs[i]);
 
-            if (checksum_f.data) {
-                float valid = ((float *)checksum_f.data)[i];
+            if (is_valid(checksum_data)) {
+                float valid = ((float *)checksum_data.data)[i];
                 if (dist != valid) {
-                    LOGERR("Validation failed: dist #%u mismatch, claculated %f, required %f",
-                           i, dist, valid);
+                    LOGERR(
+                        "Validation failed: dist #%u mismatch, claculated %f, required %f",
+                        i, dist, valid);
                     return 2;
                 }
             }
@@ -926,16 +735,19 @@ int main(int argc, char **argv)
         OUTPUT("Point count: %u\n", pairs.Length());
         OUTPUT("Avg dist: %f\n\n", avg);
 
-        if (checksum_f.data) {
-            float valid = ((float *)checksum_f.data)[pairs.Length()];
+        if (is_valid(checksum_data)) {
+            float valid = ((float *)checksum_data.data)[pairs.Length()];
             if (avg != valid) {
-                LOGERR("Validation failed: avg dist mismatch, claculated %f, required %f",
-                       avg, valid);
+                LOGERR(
+                    "Validation failed: avg dist mismatch, claculated %f, required %f",
+                    avg, valid);
                 return 2;
-            } else
+            } else {
                 OUTPUT("Validation: %f\n", valid);
-        } else
+            }
+        } else {
             OUTPUT("Validation file not found\n");
+        }
     }
 
     return 0;

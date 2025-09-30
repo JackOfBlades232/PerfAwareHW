@@ -2,24 +2,17 @@
 #include <profiling.hpp>
 #include <memory.hpp>
 #include <os.hpp>
-#include <util.hpp>
-
-#include <cstdio>
-#include <cstdlib>
-#include <cstdint>
-#include <cassert>
-
-#include <fcntl.h>
+#include <files.hpp>
+#include <defs.hpp>
 
 struct allocator_t {
-    void *(*alloc)(size_t);
-    void (*free)(void *, size_t);
+    void *(*alloc)(usize);
+    void (*free)(void *, usize);
 };
 
-// @TODO: pull out as generic data buffer?
 struct file_t {
     char *data;
-    size_t len;
+    usize len;
 
     bool Loaded() const { return data != nullptr; }
 };
@@ -33,7 +26,7 @@ static void free_file_preserve_len(file_t &f, allocator_t allocator)
     }
 }
 
-static volatile uint32_t g_mapped_file_read_sink = '\0'; // disabling optimization
+static volatile u32 g_mapped_file_read_sink = '\0'; // disabling optimization
 
 template <bool t_realloc>
 static void memset_rep_test(
@@ -115,7 +108,7 @@ static void fread_rep_test(
         assert(f);
 
         rt.BeginTimeBlock();
-        size_t elems = fread(mem.data, mem.len, 1, f);
+        usize elems = fread(mem.data, mem.len, 1, f);
         rt.EndTimeBlock();
 
         if (elems != 1)
@@ -150,7 +143,7 @@ static void _read_rep_test(
         assert(err == 0);
 
         rt.BeginTimeBlock();
-        size_t bytes = _read(fh, mem.data, mem.len);
+        usize bytes = _read(fh, mem.data, mem.len);
         rt.EndTimeBlock();
 
         if (bytes != mem.len)
@@ -204,7 +197,6 @@ static void ReadFile_rep_test(
         free_file_preserve_len(mem, allocator);
 }
 
-// @TODO: test no remapping too? Maybe someday
 static void map_file_rep_test(
     char const *fn, file_t &mem, RepetitionTester &rt, allocator_t)
 {
@@ -221,7 +213,7 @@ static void map_file_rep_test(
         mem.data = (char *)MapViewOfFile(mapping_hnd, FILE_MAP_READ, 0, 0, mem.len);
         if (mem.data) {
             for (char *p = mem.data; p != mem.data + mem.len; ++p)
-                g_mapped_file_read_sink += uint32_t(*p);
+                g_mapped_file_read_sink += u32(*p);
         } else {
             rt.ReportError("Failed file mapping");
         }
@@ -256,7 +248,7 @@ static void read_rep_test(
         assert(fd >= 0);
 
         rt.BeginTimeBlock();
-        size_t bytes = read(fd, mem.data, mem.len);
+        usize bytes = read(fd, mem.data, mem.len);
         rt.EndTimeBlock();
 
         if (bytes != mem.len)
@@ -283,12 +275,12 @@ static void map_file_rep_test(
 
         rt.BeginTimeBlock();
 
-        size_t bytes = round_up(mem.len, size_t(getpagesize()));
+        usize bytes = round_up(mem.len, usize(getpagesize()));
         mem.data = (char *)mmap(nullptr, bytes, PROT_READ, MAP_PRIVATE, fd, 0);
 
         if (mem.data != MAP_FAILED) {
             for (char *p = mem.data; p != mem.data + mem.len; ++p)
-                g_mapped_file_read_sink += uint32_t(*p);
+                g_mapped_file_read_sink += u32(*p);
         } else {
             rt.ReportError("Failed file mapping");
         }
@@ -315,11 +307,11 @@ int main(int argc, char **argv)
     char const *fn = argv[1];
 
     init_os_process_state(g_os_proc_state);
-    uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
+    u64 cpu_timer_freq = measure_cpu_timer_freq(0.1l);
  
     allocator_t const mallocator = {
         .alloc = malloc,
-        .free = +[](void *ptr, size_t) { free(ptr); }
+        .free = +[](void *ptr, usize) { free(ptr); }
     };
     allocator_t const os_page_allocator = {
         .alloc = allocate_os_pages_memory,
@@ -341,7 +333,7 @@ int main(int argc, char **argv)
 
         // @NOTE: Not bothering with >4gb sizes cause some funcs can't do them.
         fseek(f, 0, SEEK_END);
-        fmem.len = (size_t)ftell(f);
+        fmem.len = usize(ftell(f));
 
         fclose(f);
     }
@@ -411,7 +403,7 @@ int main(int argc, char **argv)
     repetition_test_results_t results = {};
 
     for (;;) {
-        for (size_t i = 0; i < ARR_CNT(tests); ++i) {
+        for (usize i = 0; i < ARR_CNT(tests); ++i) {
             file_rep_test_t &test = tests[i];
             if (!test.enabled)
                 continue;

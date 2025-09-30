@@ -2,14 +2,14 @@
 #define RT_PRINTLN(fmt_, ...) fprintf(stderr, fmt_ "\n", ##__VA_ARGS__)
 #define RT_CLEAR(count_)                         \
     do {                                         \
-        for (size_t i_ = 0; i_ < (count_); ++i_) \
+        for (usize i_ = 0; i_ < (count_); ++i_) \
             fprintf(stderr, "\b");               \
     } while (0)
 #define RT_CLEARLN(count_)                       \
     do {                                         \
-        for (size_t i_ = 0; i_ < (count_); ++i_) \
+        for (usize i_ = 0; i_ < (count_); ++i_) \
             fprintf(stderr, "\b");               \
-        for (size_t i_ = 0; i_ < (count_); ++i_) \
+        for (usize i_ = 0; i_ < (count_); ++i_) \
             fprintf(stderr, " ");                \
     } while (0)
 
@@ -17,27 +17,21 @@
 #include <profiling.hpp>
 #include <memory.hpp>
 #include <os.hpp>
-#include <util.hpp>
-
-#include <cstdio>
-#include <cstdlib>
-#include <ctime>
-#include <cstdint>
-#include <cassert>
+#include <defs.hpp>
 
 #define RT_STOP_TIME 10.f
 
 extern "C"
 {
-extern uint64_t ll_foreach(const void *ll, uint64_t bytecnt, uint64_t itercnt);
-extern uint64_t ll_foreach_prefetch(const void *ll, uint64_t bytecnt, uint64_t itercnt);
+extern u64 ll_foreach(void const *ll, u64 bytecnt, u64 itercnt);
+extern u64 ll_foreach_prefetch(void const *ll, u64 bytecnt, u64 itercnt);
 }
 
-using test_func_t = uint64_t (*)(const void *, uint64_t, uint64_t);
+using test_func_t = u64 (*)(void const *, u64, u64);
 
 struct alignas(clines(1)) node_t {
     node_t *next = nullptr;
-    float data[14] = {};
+    f32 data[14] = {};
 };
 
 static_assert(sizeof(node_t) == clines(1));
@@ -49,21 +43,21 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    constexpr size_t c_work_iter_counts[] = { 1, 2, 4, 8, 32, 64, 128, 192, 256, 512, 1024 };
+    constexpr usize c_work_iter_counts[] = { 1, 2, 4, 8, 32, 64, 128, 192, 256, 512, 1024 };
 
     constexpr test_func_t c_test_funcs[] = { &ll_foreach, &ll_foreach_prefetch };
-    constexpr size_t c_test_func_count = sizeof(c_test_funcs) / sizeof(c_test_funcs[0]);
+    constexpr usize c_test_func_count = sizeof(c_test_funcs) / sizeof(c_test_funcs[0]);
 
     constexpr char const *c_test_func_names[c_test_func_count] =
         { "Regular loop", "Loop with next node prefetch" };
 
-    size_t const count = atol(argv[1]);
+    usize const count = atol(argv[1]);
     bool const write_csv = argc > 2 && streq(argv[2], "csv");
 
-    size_t const byte_count = clines(count);
+    usize const byte_count = clines(count);
 
     init_os_process_state(g_os_proc_state);
-    uint64_t cpu_timer_freq = measure_cpu_timer_freq(0.1l);
+    u64 cpu_timer_freq = measure_cpu_timer_freq(0.1l);
 
     srand(time(nullptr));
 
@@ -85,15 +79,15 @@ int main(int argc, char **argv)
             return 2;
         }
 
-        for (size_t i = 0; i < count; ++i)
+        for (usize i = 0; i < count; ++i)
             index_order[i] = int(i);
-        for (size_t i = 0; i < count - 1; ++i) {
-            size_t swi = rand() % (count - i) + i;
+        for (usize i = 0; i < count - 1; ++i) {
+            usize swi = rand() % (count - i) + i;
             assert(swi >= i && swi < count);
             swp(index_order[i], index_order[swi]);
         }
 
-        for (size_t i = 0; i < count - 1; ++i)
+        for (usize i = 0; i < count - 1; ++i)
             nodes[index_order[i]].next = &nodes[index_order[i + 1]];
         nodes[index_order[count - 1]].next = nullptr;
         head = &nodes[index_order[0]];
@@ -111,21 +105,21 @@ int main(int argc, char **argv)
         printf("\n");
     }
 
-    for (size_t iters : c_work_iter_counts) {
+    for (usize iters : c_work_iter_counts) {
         if (write_csv)
             printf("%llu", iters);
-        for (size_t fi = 0; test_func_t func : c_test_funcs) {
+        for (usize fi = 0; test_func_t func : c_test_funcs) {
             rt.ReStart(results, byte_count);
             do {
                 rt.BeginTimeBlock();
-                uint64_t real_byte_count = (*func)(head, byte_count, iters);
+                u64 real_byte_count = (*func)(head, byte_count, iters);
                 rt.EndTimeBlock();
                 rt.ReportProcessedBytes(real_byte_count);
             } while (rt.Tick());
 
             if (write_csv) {
-                printf(",%Lf", gb_per_measure(
-                    (long double)results.min_ticks / cpu_timer_freq, byte_count));
+                printf(",%lf", gb_per_measure(
+                    large_divide(results.min_ticks, cpu_timer_freq), byte_count));
             }
 
             {

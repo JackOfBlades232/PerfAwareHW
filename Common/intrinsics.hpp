@@ -1,10 +1,12 @@
 #pragma once
 
+#include "defs.hpp"
+
 #if _WIN32
 
 #include <intrin.h>
 
-inline void i_movsb(unsigned char *dst, unsigned char const *src, size_t cnt)
+inline void i_movsb(uchar *dst, uchar const *src, usize cnt)
 {
     __movsb(dst, src, cnt);
 }
@@ -19,7 +21,7 @@ inline void i_full_compiler_barrier()
 #include <x86intrin.h>
 #include <immintrin.h>
 
-inline void i_movsb(unsigned char *dst, unsigned char const *src, size_t cnt)
+inline void i_movsb(uchar *dst, uchar const *src, usize cnt)
 {
     asm volatile(
         "rep movsb" 

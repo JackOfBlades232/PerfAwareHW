@@ -1,7 +1,6 @@
 #pragma once
 
-#include <cstdint>
-#include <cstdio>
+#include "defs.hpp"
 
 #if _WIN32
 
@@ -11,8 +10,8 @@
 
 struct os_process_state_t {
     HANDLE process_hnd;
-    size_t regular_page_size = 4096;
-    size_t large_page_size = 0; // 0 means disabled
+    usize regular_page_size = 4096;
+    usize large_page_size = 0; // 0 means disabled
 };
 
 inline void init_os_process_state(os_process_state_t &st)
@@ -42,27 +41,28 @@ inline bool try_enable_large_pages(os_process_state_t &st)
     return st.large_page_size > 0;
 }
 
-inline int64_t get_last_os_error()
+inline i64 get_last_os_error()
 {
-    return int64_t(GetLastError());
+    return i64(GetLastError());
 }
 
 #else
 
 #include <unistd.h>
-#include <cerrno>
 
 struct os_process_state_t {
     pid_t pid;
-    size_t regular_page_size;
+    usize regular_page_size;
     char stat_file_name_buf[128];
 };
 
 inline void init_os_process_state(os_process_state_t &st)
 {
     st.pid = getpid();
-    st.regular_page_size = size_t(getpagesize());
-    snprintf(st.stat_file_name_buf, sizeof(st.stat_file_name_buf), "/proc/%d/stat", st.pid);
+    st.regular_page_size = usize(getpagesize());
+    snprintf(
+        st.stat_file_name_buf, sizeof(st.stat_file_name_buf),
+        "/proc/%d/stat", st.pid);
     // @TODO: verify no truncation?
 }
 
@@ -71,9 +71,9 @@ inline bool try_enable_large_pages(os_process_state_t &st)
     return true;
 }
 
-inline int64_t get_last_os_error()
+inline i64 get_last_os_error()
 {
-    return int64_t(errno);
+    return i64(errno);
 }
 
 #endif
