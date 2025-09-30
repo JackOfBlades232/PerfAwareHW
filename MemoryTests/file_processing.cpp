@@ -23,7 +23,7 @@
 #include <intrinsics.hpp>
 #include <threads.hpp>
 
-#define RT_STOP_TIME 0.2f
+#define RT_STOP_TIME 10.f
 
 struct buffer_t {
     uint8_t *data;

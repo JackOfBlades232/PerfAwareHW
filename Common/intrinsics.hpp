@@ -30,7 +30,7 @@ inline void i_movsb(unsigned char *dst, unsigned char const *src, size_t cnt)
 
 inline void i_full_compiler_barrier()
 {
-    asm volatile(::: "memory");
+    asm volatile("" ::: "memory");
 }
 
 #endif

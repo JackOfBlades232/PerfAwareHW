@@ -212,12 +212,12 @@ inline void os_read_map_section(
     int mmap_flags = MAP_PRIVATE;
     size_t pagesize = size_t(getpagesize());
 
-    file.mapped_len = round_up(len, pagesize);
+    f.mapped_len = round_up(len, pagesize);
 
-    file.data = (char *)mmap(
-        nullptr, file.mapped_len, PROT_READ, mmap_flags, file.fd, off_t(off));
-    if (file.data == MAP_FAILED)
-        file.data = nullptr;
+    f.data = (char *)mmap(
+        nullptr, f.mapped_len, PROT_READ, mmap_flags, f.fd, off_t(off));
+    if (f.data == MAP_FAILED)
+        f.data = nullptr;
 }
 
 inline void os_unmap_section(os_mapped_file_t &f)
