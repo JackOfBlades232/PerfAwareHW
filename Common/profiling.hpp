@@ -190,12 +190,12 @@ inline void finish_profiling_and_dump_stats(TPrinter &&printer)
         if (abs(inclusive_sec - exclusive_sec) < DBL_EPSILON) {
             printer("%s[%u]: %lfs (%.1lf%%)",
                 slot.name, slot.hit_count,
-                inclusive_sec, 100.l * inclusive_sec / total_sec);
+                inclusive_sec, 100.0 * inclusive_sec / total_sec);
         } else {
             printer("%s[%u]: %lfs (%.1lf%%) inc, %lfs (%.1lf%%) exc",
                 slot.name, slot.hit_count,
-                inclusive_sec, 100.l * inclusive_sec / total_sec,
-                exclusive_sec, 100.l * exclusive_sec / total_sec);
+                inclusive_sec, 100.0 * inclusive_sec / total_sec,
+                exclusive_sec, 100.0 * exclusive_sec / total_sec);
         }
 
         if (slot.bytes_processed > 0) {
@@ -215,12 +215,12 @@ inline void finish_profiling_and_dump_stats(TPrinter &&printer)
         } else if (slot.inclusive_pagefaults == slot.exclusive_pagefaults) {
             printer(", %llu pfaults (%.1lf%%)",
                 slot.inclusive_pagefaults,
-                100.l * slot.inclusive_pagefaults / total_pagefaults);
+                100.0 * slot.inclusive_pagefaults / total_pagefaults);
         } else {
             printer(", %llu pfaults inc (%.1lf%%), %llu pfaults exc (%.1lf%%)",
                 slot.inclusive_pagefaults,slot.exclusive_pagefaults,
-                100.l * slot.inclusive_pagefaults / total_pagefaults,
-                100.l * slot.exclusive_pagefaults / total_pagefaults);
+                100.0 * slot.inclusive_pagefaults / total_pagefaults,
+                100.0 * slot.exclusive_pagefaults / total_pagefaults);
         }
 #endif
 

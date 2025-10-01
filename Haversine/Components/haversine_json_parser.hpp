@@ -1,5 +1,7 @@
 #pragma once
 
+#include "haversine_common.hpp"
+
 #include <buffer.hpp>
 #include <defs.hpp>
 #include <string.hpp>
@@ -499,10 +501,11 @@ inline json_ent_t *parse_json_entity(input_file_t &inf)
     return parse_json_entity(inf, tok);
 }
 
-inline json_ent_t *parse_json_input(input_file_t &inf)
+inline json_ent_t *parse_json_input(buffer_t &source)
 {
-    PROFILED_FUNCTION_PF;
+    PROFILED_BANDWIDTH_FUNCTION_PF(source.len);
 
+    input_file_t inf = {source, 0};
     json_ent_t *root = nullptr;
     token_t first_token = GET_TOK(inf);
     DEFER([&] { cleanup(first_token); });
@@ -526,8 +529,6 @@ inline json_ent_t *parse_json_input(input_file_t &inf)
 
     return root;
 }
-
-#define OUTPUT(fmt_, ...) printf(fmt_, ##__VA_ARGS__)
 
 inline void print_json(json_ent_t *ent, int depth, bool indent, bool put_comma)
 {
@@ -576,9 +577,11 @@ inline void print_json(json_ent_t *ent, int depth, bool indent, bool put_comma)
         OUTPUT("\n");
 }
 
-inline int tokenize_and_print(input_file_t &inf)
+inline int tokenize_and_print(buffer_t source)
 {
     PROFILED_FUNCTION;
+
+    input_file_t inf = {source, 0};
 
     token_t tok;
     while (!(tok = GET_TOK(inf)).IsFinal()) {

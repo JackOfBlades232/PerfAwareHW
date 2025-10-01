@@ -1,5 +1,7 @@
 #pragma once
 
+#include "haversine_common.hpp"
+
 #include <buffer.hpp>
 #include <defer.hpp>
 #include <memory.hpp>

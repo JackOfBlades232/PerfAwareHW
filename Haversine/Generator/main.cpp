@@ -213,7 +213,7 @@ int main(int argc, char **argv)
 
     f32 avg = sum / point_count;
     if (checksum_f)
-        fwrite(&avg, sizeof(avg), 1, checksum_f);
+        fwrite(&sum, sizeof(sum), 1, checksum_f);
     else
         OUTPUT("  // avg=%.13f\n", avg);
 

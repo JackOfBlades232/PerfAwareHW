@@ -29,6 +29,15 @@ inline buffer_t allocate_lp(u64 bytes)
     return{(u8 *)data, bytes, true};
 }
 
+inline buffer_t allocate_best(u64 bytes)
+{
+    PROFILED_BANDWIDTH_FUNCTION(bytes);
+    if (buffer_t b = allocate_lp(bytes); is_valid(b))
+        return b;
+    else
+        return allocate(bytes);
+}
+
 inline void deallocate(buffer_t &buf)
 {
     if (buf.data) {

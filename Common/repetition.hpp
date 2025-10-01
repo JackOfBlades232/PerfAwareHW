@@ -4,22 +4,22 @@
 #include "profiling.hpp"
 
 #if !defined(RT_PRINT) || !defined(RT_PRINTLN)
-#define RT_PRINT(text_, ...) printf(text_, ##__VA_ARGS__)
-#define RT_PRINTLN(text_, ...) printf(text_ "\n", ##__VA_ARGS__)
+#define RT_PRINT(fmt_, ...) fprintf(stderr, fmt_, ##__VA_ARGS__)
+#define RT_PRINTLN(fmt_, ...) fprintf(stderr, fmt_ "\n", ##__VA_ARGS__)
 #endif
 
 #if !defined(RT_CLEAR) || !defined(RT_CLEARLN)
 #define RT_CLEAR(count_)                         \
     do {                                         \
         for (usize i_ = 0; i_ < (count_); ++i_) \
-            putchar('\b');                       \
+            fprintf(stderr, "\b");               \
     } while (0)
 #define RT_CLEARLN(count_)                       \
     do {                                         \
         for (usize i_ = 0; i_ < (count_); ++i_) \
-            putchar('\b');                       \
+            fprintf(stderr, "\b");               \
         for (usize i_ = 0; i_ < (count_); ++i_) \
-            putchar(' ');                        \
+            fprintf(stderr, " ");                \
     } while (0)
 #endif
 
@@ -79,9 +79,7 @@ class RepetitionTester {
             f32 seconds_for_min_renewal, bool print_minimums = false)
         : m_state{e_st_pending}
         , m_target_bytes{target_bytes}
-        // @TODO: restore
-        , m_try_renew_min_for_ticks{u64(0.1f * cpu_timer_freq)}
-        //, m_try_renew_min_for_ticks{u64(seconds_for_min_renewal * cpu_timer_freq)}
+        , m_try_renew_min_for_ticks{u64(seconds_for_min_renewal * cpu_timer_freq)}
         , m_cpu_timer_freq{cpu_timer_freq}
         , m_print_new_minimums{print_minimums}
         , m_results{nullptr} {}

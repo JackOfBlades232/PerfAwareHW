@@ -1,18 +1,3 @@
-#define RT_PRINT(fmt_, ...) fprintf(stderr, fmt_, ##__VA_ARGS__)
-#define RT_PRINTLN(fmt_, ...) fprintf(stderr, fmt_ "\n", ##__VA_ARGS__)
-#define RT_CLEAR(count_)                         \
-    do {                                         \
-        for (usize i_ = 0; i_ < (count_); ++i_) \
-            fprintf(stderr, "\b");               \
-    } while (0)
-#define RT_CLEARLN(count_)                       \
-    do {                                         \
-        for (usize i_ = 0; i_ < (count_); ++i_) \
-            fprintf(stderr, "\b");               \
-        for (usize i_ = 0; i_ < (count_); ++i_) \
-            fprintf(stderr, " ");                \
-    } while (0)
-
 #include <repetition.hpp>
 #include <profiling.hpp>
 #include <memory.hpp>
