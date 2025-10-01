@@ -1,0 +1,5 @@
+File read perf:
+- On windows, threaded perf for 1mb of file read was best
+- On linux, mmap blew everything out of the water
+
+

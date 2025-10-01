@@ -6,6 +6,8 @@
 #include <files.hpp>
 #include <logging.hpp>
 
+// @TODO: implement chunked processing for windows, mmap for linux
+
 inline usize get_file_len(char const *fn)
 {
     os_file_t f = os_read_open_file(fn);
