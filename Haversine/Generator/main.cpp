@@ -1,3 +1,5 @@
+#include <haversine_calculation.hpp>
+
 #include <defs.hpp>
 #include <logging.hpp>
 
@@ -20,10 +22,6 @@ static FILE *g_outf = stdout;
 enum random_technique_t {
     e_rt_uniform,
     e_rt_clusters
-};
-
-struct point_pair_t {
-    f32 x0, y0, x1, y1;
 };
 
 struct cluster_t {
@@ -88,28 +86,6 @@ static void output_point_pair(point_pair_t const &pair, bool last)
     OUTPUT(
         "    {\"x0\": %.13f, \"y0\": %.13f, \"x1\": %.13f, \"y1\": %.13f}%s\n",
         pair.x0, pair.y0, pair.x1, pair.y1, last ? "" : ",");
-}
-
-static f32 reference_haversine_dist(point_pair_t const &pair)
-{
-    constexpr f32 c_pi = 3.14159265359f;
-
-    auto deg2rad = [](f32 deg) { return deg * c_pi / 180.f; };
-    auto rad2deg = [](f32 rad) { return rad * 180.f / c_pi; };
-
-    auto geod = [](f32 rad) { return rad > c_pi ? 2.f * c_pi - rad : rad; };
-    auto haversine = [](f32 rad) { return (1.f - cosf(rad)) * 0.5f; };
-
-    f32 dx = geod(deg2rad(fabsf(pair.x0 - pair.x1)));
-    f32 dy = geod(deg2rad(fabsf(pair.y0 - pair.y1)));
-    f32 y0r = deg2rad(pair.y0);
-    f32 y1r = deg2rad(pair.y1);
-
-    f32 hav_of_diff =
-        haversine(dy) + cosf(y0r)*cosf(y1r)*haversine(dx);
-
-    f32 rad_of_diff = acosf(1.f - 2.f*hav_of_diff);
-    return rad2deg(rad_of_diff);
 }
 
 int main(int argc, char **argv)
@@ -202,7 +178,7 @@ int main(int argc, char **argv)
         point_pair_t pair = generate_random_point_pair();
         output_point_pair(pair, i == point_count - 1);
 
-        f32 dist = reference_haversine_dist(pair);
+        f32 dist = haversine_dist_reference(pair);
         sum += dist;
 
         if (checksum_f)
