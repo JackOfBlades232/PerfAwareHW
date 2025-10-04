@@ -2,7 +2,6 @@
 
 #include <os.hpp>
 #include <logging.hpp>
-#include <intrinsics.hpp>
 
 struct func_test_t {
     f64 in;
@@ -117,13 +116,15 @@ int main(int argc, char **argv)
 
             RTEST(sin_quad_approx, sin, -c_pi, c_pi, 1024, DBL_EPSILON),
             RTEST(cos_quad_approx, cos, -c_pi, c_pi, 1024, DBL_EPSILON),
+            RTEST(sin_quad_approx_intrin, sin, -c_pi, c_pi, 1024, DBL_EPSILON),
+            RTEST(cos_quad_approx_intrin, cos, -c_pi, c_pi, 1024, DBL_EPSILON),
 
             RTEST(sin_quad_approx, sin, -2.0 * c_pi, 2.0 * c_pi, 1024, DBL_EPSILON),
             RTEST(cos_quad_approx, cos, -2.0 * c_pi, 2.0 * c_pi, 1024, DBL_EPSILON),
 
-            RTEST(i_sqrt, sqrt, 0.0, 1.0, 1024, DBL_EPSILON),
-            RTEST(i_sqrt_dc, sqrt, 0.0, 1.0, 1024, DBL_EPSILON),
-            RTEST(i_sqrt_approx, sqrt, 0.0, 1.0, 1024, DBL_EPSILON)
+            RTEST(sqrt_s, sqrt, 0.0, 1.0, 1024, DBL_EPSILON),
+            RTEST(sqrt_dc, sqrt, 0.0, 1.0, 1024, DBL_EPSILON),
+            RTEST(sqrt_approx, sqrt, 0.0, 1.0, 1024, DBL_EPSILON)
         })
     {
         LOGVERBOSE("Reference test for %s (against %s). Allowed error=%.18lf",
