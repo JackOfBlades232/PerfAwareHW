@@ -69,7 +69,7 @@ using make_signed_t = typename MakeSigned<T>::type_t;
 
 }
 
-#ifdef _WIN32
+#ifdef _MSC_VER
 using ssize_t = meta::make_signed_t<size_t>;
 #else
 #include <sys/types.h>
@@ -82,6 +82,12 @@ using isize = ssize_t;
 #define CAT(a_, b_) CAT_(a_, b_)
 
 #define ARR_CNT(arr_) (sizeof(arr_) / sizeof((arr_)[0]))
+
+#ifdef _MSC_VER
+#define FINLINE __forceinline
+#else
+#define FINLINE __attribute__((always_inline)) inline
+#endif
 
 template <typename T>
 inline constexpr T min(T a, T b)

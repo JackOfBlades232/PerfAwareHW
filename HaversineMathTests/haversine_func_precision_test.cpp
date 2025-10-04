@@ -1,4 +1,4 @@
-#include <haversine_calculation.hpp>
+#include <haversine_math.hpp>
 
 #include <os.hpp>
 #include <logging.hpp>
@@ -113,12 +113,17 @@ int main(int argc, char **argv)
     for (auto [f, rf, tr_min, tr_max, tcnt, nm, rnm, allowed_err] :
         {
             // @TEST: just against themselves, our stuff will go here
-            RTEST(cos, cos, -c_pi, c_pi, 1024, 0.0),
             RTEST(asin, asin, 0.0, 1.0, 1024, 0.0),
 
+            RTEST(sin_quad_approx, sin, -c_pi, c_pi, 1024, DBL_EPSILON),
+            RTEST(cos_quad_approx, cos, -c_pi, c_pi, 1024, DBL_EPSILON),
+
+            RTEST(sin_quad_approx, sin, -2.0 * c_pi, 2.0 * c_pi, 1024, DBL_EPSILON),
+            RTEST(cos_quad_approx, cos, -2.0 * c_pi, 2.0 * c_pi, 1024, DBL_EPSILON),
+
             RTEST(i_sqrt, sqrt, 0.0, 1.0, 1024, DBL_EPSILON),
-            RTEST(i_sqrt_approx_via_downcast, sqrt, 0.0, 1.0, 1024, DBL_EPSILON),
-            RTEST(i_sqrt_approx_via_rsqrt, sqrt, 0.0, 1.0, 1024, DBL_EPSILON)
+            RTEST(i_sqrt_dc, sqrt, 0.0, 1.0, 1024, DBL_EPSILON),
+            RTEST(i_sqrt_approx, sqrt, 0.0, 1.0, 1024, DBL_EPSILON)
         })
     {
         LOGVERBOSE("Reference test for %s (against %s). Allowed error=%.18lf",

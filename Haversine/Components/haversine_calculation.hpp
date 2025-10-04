@@ -2,10 +2,10 @@
 
 #include "haversine_common.hpp"
 #include "haversine_state.hpp"
+#include "haversine_math.hpp"
 
 #include <defs.hpp>
 
-constexpr f64 c_pi = 3.1415926535897932384626433832795028842;
 constexpr f64 c_earth_rad = 6378.1;
 
 // @TODO: hoist to common?
