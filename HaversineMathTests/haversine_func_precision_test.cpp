@@ -2,73 +2,80 @@
 
 #include <os.hpp>
 #include <logging.hpp>
+#include <intrinsics.hpp>
 
 struct func_test_t {
-    f32 in;
-    f32 out;
+    f64 in;
+    f64 out;
 };
 
 constexpr func_test_t c_cosine_gold_standard[] =
 {
-    {0.f, 1.f},
-    {0.34906585039f, 0.93969262078f},  // pi / 9
-    {0.52359877559f, 0.86602540378f},  // pi / 6
-    {0.78539816339f, 0.70710678118f},  // pi / 4
-    {1.0471975512f,  0.5f},            // pi / 3
-    {1.57079632679f, 0.f},             // pi / 2
-    {2.09439510239f, -0.5f},           // 2pi / 3
-    {2.35619449019f, -0.70710678118f}, // 3pi / 4
-    {2.61799387799f, -0.86602540378f}, // 5pi / 6
-    {3.14159265359f, -1.f},            // pi
+    {0.0000000000000000000000000000000000000, 1.0000000000000000000000000000000000000},
+    {0.3490658503988659153847381536977228602, 0.9396926207859083840541092773247314699}, // pi / 9
+    {0.5235987755982988730771072305465838140, 0.8660254037844386467637231707529361835}, // pi / 6
+    {0.7853981633974483096156608458198757210, 0.7071067811865475244008443621048490393}, // pi / 4
+    {1.0471975511965977461542144610931676281, 0.5000000000000000000000000000000000000}, // pi / 3
+    {1.5707963267948966192313216916397514421, 0.0000000000000000000000000000000000000}, // pi / 2
+    {2.0943951023931954923084289221863352562, -0.5000000000000000000000000000000000000}, // 2pi / 3
+    {2.3561944901923449288469825374596271631, -0.7071067811865475244008443621048490393}, // 3pi / 4
+    {2.6179938779914943643855361527329190701, -0.8660254037844386467637231707529361835}, // 5pi / 6
+    {3.1415926535897932384626433832795028842, -1.0000000000000000000000000000000000000}, // pi
 };
 
 constexpr func_test_t c_arcsine_gold_standard[] =
 {
-    {-1.f,            -1.57079632679f}, // -pi/2
-    {-0.86602540378f, -1.0471975512f},  // -sqrt(3)/2 -> -pi/3
-    {-0.70710678118f, -0.78539816339f}, // -sqrt(2)/2 -> -pi/4
-    {-0.5f,           -0.52359877559f}, // -pi/6
-    { 0.f,            0.f},             // 0
-    { 0.5f,           0.52359877559f},  // pi/6
-    { 0.70710678118f, 0.78539816339f},  // sqrt(2)/2 -> pi/4
-    { 0.86602540378f, 1.0471975512f},   // sqrt(3)/2 -> pi/3
-    { 1.f,            1.57079632679f},  // pi/2
+    {-1.0000000000000000000000000000000000000, -1.5707963267948966192313216916397514421}, // -pi/2
+    {-0.8660254037844386467637231707529361835, -1.0471975511965977461542144610931676281}, // -sqrt(3)/2 -> -pi/3
+    {-0.7071067811865475244008443621048490393, -0.7853981633974483096156608458198757210}, // -sqrt(2)/2 -> -pi/4
+    {-0.5000000000000000000000000000000000000, -0.5235987755982988730771072305465838140}, // -pi/6
+    { 0.0000000000000000000000000000000000000,  0.0000000000000000000000000000000000000}, // 0
+    { 0.5000000000000000000000000000000000000,  0.5235987755982988730771072305465838140}, // pi/6
+    { 0.7071067811865475244008443621048490393,  0.7853981633974483096156608458198757210}, // sqrt(2)/2 -> pi/4
+    { 0.8660254037844386467637231707529361835,  1.0471975511965977461542144610931676281}, // sqrt(3)/2 -> pi/3
+    { 1.0000000000000000000000000000000000000,  1.5707963267948966192313216916397514421}, // pi/2
 };
 
 constexpr func_test_t c_sqrt_gold_standard[] =
 {
-    {0.f,   0.f},            // sqrt(0) = 0
-    {1.f,   1.f},            // sqrt(1) = 1
-    {2.f,   1.41421356237f}, // sqrt(2)
-    {3.f,   1.73205080757f}, // sqrt(3)
-    {4.f,   2.f},            // sqrt(4) = 2
-    {5.f,   2.2360679775f},  // sqrt(5)
-    {9.f,   3.f},            // sqrt(9) = 3
-    {16.f,  4.f},            // sqrt(16) = 4
-    {25.f,  5.f},            // sqrt(25) = 5
-    {100.f, 10.f},           // sqrt(100) = 10
+    {0.0000000000000000000000000000000000000, 0.0000000000000000000000000000000000000}, // sqrt(0) = 0
+    {1.0000000000000000000000000000000000000, 1.0000000000000000000000000000000000000}, // sqrt(1) = 1
+    {2.0000000000000000000000000000000000000, 1.4142135623730950488016887242096980786}, // sqrt(2)
+    {3.0000000000000000000000000000000000000, 1.7320508075688772935274463415058723669}, // sqrt(3)
+    {4.0000000000000000000000000000000000000, 2.0000000000000000000000000000000000000}, // sqrt(4) = 2
+    {5.0000000000000000000000000000000000000, 2.2360679774997896964091736687312762354}, // sqrt(5)
+    {9.0000000000000000000000000000000000000, 3.0000000000000000000000000000000000000}, // sqrt(9) = 3
+    {16.000000000000000000000000000000000000, 4.0000000000000000000000000000000000000}, // sqrt(16) = 4
+    {25.000000000000000000000000000000000000, 5.0000000000000000000000000000000000000}, // sqrt(25) = 5
+    {100.00000000000000000000000000000000000, 10.000000000000000000000000000000000000}, // sqrt(100) = 10
 };
 
 struct golden_test_t {
-    f32 (*f)(f32);
+    f64 (*f)(f64);
     func_test_t const *tests;
     usize test_count;
     char const *name;
-    f32 allowed_error;
+    f64 allowed_error;
 };
 
 struct reference_test_t {
-    f32 (*f)(f32);
-    f32 (*reference)(f32);
-    f32 test_range_min, test_range_max;
+    f64 (*f)(f64);
+    f64 (*reference)(f64);
+    f64 test_range_min, test_range_max;
     u32 test_count;
     char const *name, *rname;
-    f32 allowed_error;
+    f64 allowed_error;
 };
 
 #define GTEST(f_, ts_, aerr_) golden_test_t{&f_, ts_, ARR_CNT(ts_), #f_, aerr_}  
 #define RTEST(f_, rf_, trmin_, trmax_, tcnt_, aerr_) \
     reference_test_t{&f_, &rf_, (trmin_), (trmax_), (tcnt_), #f_, #rf_, aerr_}  
+
+#if VERBOSE
+#define LOGVERBOSE(...) LOGNORMAL(__VA_ARGS__)
+#else
+#define LOGVERBOSE(...)
+#endif
 
 int main(int argc, char **argv)
 {
@@ -76,25 +83,26 @@ int main(int argc, char **argv)
 
     for (auto [f, ts, ts_cnt, nm, allowed_err] :
         {
-            GTEST(cosf, c_cosine_gold_standard, FLT_EPSILON),
-            GTEST(asinf, c_arcsine_gold_standard, FLT_EPSILON),
-            GTEST(sqrtf, c_sqrt_gold_standard, FLT_EPSILON)
+            GTEST(cos, c_cosine_gold_standard, DBL_EPSILON),
+            GTEST(asin, c_arcsine_gold_standard, DBL_EPSILON),
+            GTEST(sqrt, c_sqrt_gold_standard, DBL_EPSILON)
         })
     {
         LOGNORMAL(
-            "Golden test for %s. Allowed error=%.8f", nm, allowed_err);
+            "Golden test for %s. Allowed error=%.18lf", nm, allowed_err);
         for (usize i = 0; i < ts_cnt; ++i) {
-            f32 const in = ts[i].in;
-            f32 const res = (*f)(in);
-            f32 const req = ts[i].out;
-            f32 const err = abs(req - res);
+            f64 const in = ts[i].in;
+            f64 const res = (*f)(in);
+            f64 const req = ts[i].out;
+            f64 const err = abs(req - res);
             if (err > allowed_err) {
                 LOGNORMAL(
-                    "[FAIL] %s(%.8f). Required %.8f, got %.8f. Error=%.8f",
+                    "[FAIL] %s(%.18lf). "
+                    "Required %.18lf, got %.18lf. Error=%.18lf",
                     nm, in, req, res, err);
             } else {
                 LOGNORMAL(
-                    "[OK]   %s(%.8f) = %.8f. Error=%.8f",
+                    "[OK]   %s(%.18lf) = %.18lf. Error=%.18lf",
                     nm, in, res, err);
             }
         }
@@ -102,38 +110,42 @@ int main(int argc, char **argv)
 
     LOGNORMAL("");
 
-    // @TEST: just against themselves, our stuff will go here
     for (auto [f, rf, tr_min, tr_max, tcnt, nm, rnm, allowed_err] :
         {
-            RTEST(cosf, cosf, -c_pi, c_pi, 1024, 0.f),
-            RTEST(asinf, asinf, -1.f, 1.f, 1024, 0.f),
-            RTEST(sqrtf, sqrtf, 0.f, 1000.f, 1024, 0.f)
+            // @TEST: just against themselves, our stuff will go here
+            RTEST(cos, cos, -c_pi, c_pi, 1024, 0.0),
+            RTEST(asin, asin, 0.0, 1.0, 1024, 0.0),
+
+            RTEST(i_sqrt, sqrt, 0.0, 1.0, 1024, DBL_EPSILON),
+            RTEST(i_sqrt_approx_via_downcast, sqrt, 0.0, 1.0, 1024, DBL_EPSILON),
+            RTEST(i_sqrt_approx_via_rsqrt, sqrt, 0.0, 1.0, 1024, DBL_EPSILON)
         })
     {
-        LOGNORMAL("Reference test for %s (against %s). Allowed error=%.8f",
+        LOGVERBOSE("Reference test for %s (against %s). Allowed error=%.18lf",
             nm, rnm, allowed_err);
         int errcnt = 0;
+        float max_error = 0.0;
         for (usize i = 0; i < tcnt; ++i) {
-            f32 const in = tr_min + (tr_max - tr_min) * f32(i) / (tcnt - 1);
-            f32 const res = (*f)(in);
-            f32 const req = (*rf)(in);
-            f32 const err = abs(req - res);
+            f64 const in = tr_min + (tr_max - tr_min) * f64(i) / (tcnt - 1);
+            f64 const res = (*f)(in);
+            f64 const req = (*rf)(in);
+            f64 const err = abs(req - res);
+            max_error = max(max_error, err);
             if (err > allowed_err) {
-                LOGNORMAL(
-                    "[FAIL] %s(%.8f). Reference %s(%.8f)=%.8f, "
-                    "got %.8f. Error=%.8f", nm, in, rnm, in, req, res, err);
+                LOGVERBOSE(
+                    "[FAIL] %s(%.18lf). Reference %s=%.18lf, "
+                    "got %.18lf. Error=%.18lf", nm, in, rnm, req, res, err);
                 ++errcnt;
+            } else {
+                LOGVERBOSE(
+                    "[OK]   %s(%.18lf). Reference %s=%.18lf, "
+                    "got %.18lf. Error=%.18lf", nm, in, rnm, req, res, err);
             }
         }
-        if (errcnt > 0) {
-            LOGNORMAL(
-                "[FAIL] test for %s (against %s) failed, %d/%d correct",
-                nm, rnm, tcnt - errcnt, tcnt);
-        } else {
-            LOGNORMAL(
-                "[OK]   test for %s (against %s) passed, %d/%d correct",
-                nm, rnm, tcnt, tcnt);
-        }
+        LOGNORMAL(
+            "Test for %s (against %s) done, max error %.18lf, %d/%d "
+            "under allowed error level of %.18lf",
+            nm, rnm, max_error, tcnt - errcnt, tcnt, allowed_err);
     }
 }
 

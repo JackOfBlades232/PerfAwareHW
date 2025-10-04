@@ -100,12 +100,14 @@ inline bool parse_double(string_t repr, f64 &out)
         ++p;
         if (p == end || !is_digit(*p))
             return false;
-        f64 measure = 0.1;
+        f64 measure = 1.0 / 10.0;
+        f64 frac = 0.0;
         while (p < end && is_digit(*p)) {
-            out += measure * f64(*p - '0');
-            measure *= 0.1;
+            frac += measure * f64(*p - '0');
+            measure *= 1.0 / 10.0;
             ++p;
         }
+        out += frac;
     }
     if (p < end && (*p == 'e' || *p == 'E')) {
         ++p;
@@ -555,14 +557,14 @@ inline void print_json(json_ent_t *ent, int depth, bool indent, bool put_comma)
         break;
     case e_jt_array:
         OUTPUT("[\n");
-        for (uint32_t i = 0; i < ent->arr.element_cnt; ++i)
+        for (u32 i = 0; i < ent->arr.element_cnt; ++i)
             print_json(ent->arr.elements[i], depth + 1, true, true);
         output_indent(depth);
         OUTPUT("]");
         break;
     case e_jt_object:
         OUTPUT("{\n");
-        for (uint32_t i = 0; i < ent->obj.field_cnt; ++i) {
+        for (u32 i = 0; i < ent->obj.field_cnt; ++i) {
             json_field_t const &f = ent->obj.fields[i];
             output_indent(depth + 1);
             OUTPUT("\"%.*s\": ", int(f.name.len), f.name.s);

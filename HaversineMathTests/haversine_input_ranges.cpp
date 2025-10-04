@@ -30,10 +30,10 @@ int main(int argc, char **argv)
     if (!validate_haversine_distances(state))
         return 3;
 
-    LOGNORMAL("Cos: [%f, %f]",
+    LOGNORMAL("Cos: [%lf, %lf]",
         ranges.cos_input_range.min, ranges.cos_input_range.max);
-    LOGNORMAL("Asin: [%f, %f]",
+    LOGNORMAL("Asin: [%lf, %lf]",
         ranges.asin_input_range.min, ranges.asin_input_range.max);
-    LOGNORMAL("Sqrt: [%f, %f]",
+    LOGNORMAL("Sqrt: [%lf, %lf]",
         ranges.sqrt_input_range.min, ranges.sqrt_input_range.max);
 }

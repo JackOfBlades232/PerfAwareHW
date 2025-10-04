@@ -9,7 +9,7 @@
 #include <profiling.hpp>
 
 struct point_pair_t {
-    f32 x0, y0, x1, y1;
+    f64 x0, y0, x1, y1;
 };
 
 struct haversine_state_t {
@@ -23,13 +23,13 @@ struct haversine_state_t {
     json_ent_t *parsed_json_root;
 
     point_pair_t *pairs;
-    f32 *answers;
+    f64 *answers;
     u64 pair_cnt;
 
-    f32 sum_answer;
+    f64 sum_answer;
 
-    f32 *validation_answers;
-    f32 validation_sum;
+    f64 *validation_answers;
+    f64 validation_sum;
 
     bool valid;
 };
@@ -101,17 +101,17 @@ bool setup_haversine_state(
     s.parsed_pairs_buffer = allocate_best(s.pair_cnt * sizeof(point_pair_t));
     s.pairs = (point_pair_t *)s.parsed_pairs_buffer.data;
 
-    s.answers_buffer = allocate_best(s.pair_cnt * sizeof(f32));
-    s.answers = (f32 *)s.answers_buffer.data;
+    s.answers_buffer = allocate_best(s.pair_cnt * sizeof(f64));
+    s.answers = (f64 *)s.answers_buffer.data;
 
     if (is_valid(s.checksum_buffer)) {
-        if (s.checksum_buffer.len != (s.pair_cnt + 1) * sizeof(f32)) {
+        if (s.checksum_buffer.len != (s.pair_cnt + 1) * sizeof(f64)) {
             LOGERR("Invalid checksum file '%s.check.bin'", json_fn);
             cleanup_haversine_state(s);
             return false;
         }
         
-        s.validation_answers = (f32 *)s.checksum_buffer.data;
+        s.validation_answers = (f64 *)s.checksum_buffer.data;
         s.validation_sum = s.validation_answers[s.pair_cnt];
     }
 
@@ -131,20 +131,20 @@ bool setup_haversine_state(
                 return false;
             }
 
-            auto read_f32 = [elem](char const *name, f32 &out) {
+            auto read_f64 = [elem](char const *name, f64 &out) {
                 if (json_ent_t const *d = json_object_query(*elem, name)) {
                     if (d->type == e_jt_number) {
-                        out = f32(d->num);
+                        out = d->num;
                         return true;
                     }
                 }
                 return false;
             };
-            f32 x0, y0, x1, y1;
-            if (!read_f32("x0", x0) ||
-                !read_f32("y0", y0) ||
-                !read_f32("x1", x1) ||
-                !read_f32("y1", y1))
+            f64 x0, y0, x1, y1;
+            if (!read_f64("x0", x0) ||
+                !read_f64("y0", y0) ||
+                !read_f64("x1", x1) ||
+                !read_f64("y1", y1))
             {
                 print_point_format_error();
                 cleanup_haversine_state(s);

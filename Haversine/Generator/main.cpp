@@ -11,9 +11,9 @@ static char const *argpref(char const *arg, char const (&val)[t_n])
     return arg + (t_n - 1);
 }
 
-static f32 randflt(f32 min, f32 max)
+static f64 randflt(f64 min, f64 max)
 {
-    return (f32(rand()) / RAND_MAX) * (max - min) + min;
+    return (f64(rand()) / RAND_MAX) * (max - min) + min;
 }
 
 static FILE *g_outf = stdout;
@@ -25,8 +25,8 @@ enum random_technique_t {
 };
 
 struct cluster_t {
-    f32 cx, cy;
-    f32 max_delta;
+    f64 cx, cy;
+    f64 max_delta;
 };
 
 static constexpr uint c_max_clusters = 1024;
@@ -43,8 +43,8 @@ static void init_random(uint seed)
     if (g_rand_technique == e_rt_clusters) {
         for (uint i = 0; i < g_cluster_count; ++i) {
             clusters[i] = cluster_t{
-                randflt(-180.f, 180.f), randflt(-90.f, 90.f), // center
-                randflt(5.f, 10.f)                            // max coord delta from center
+                randflt(-180.0, 180.0), randflt(-90.0, 90.0), // center
+                randflt(5.0, 10.0)                            // max coord delta from center
             };
         }
     }
@@ -55,16 +55,16 @@ static point_pair_t generate_random_point_pair()
     switch (g_rand_technique) {
     case e_rt_uniform:
         return point_pair_t{
-            randflt(-180.f, 180.f), randflt(-90.f, 90.f),
-            randflt(-180.f, 180.f), randflt(-90.f, 90.f)
+            randflt(-180.0, 180.0), randflt(-90.0, 90.0),
+            randflt(-180.0, 180.0), randflt(-90.0, 90.0)
         };
 
     case e_rt_clusters: {
         // Not "fair", but IDGAF
         // Choose first uniformly
-        int cid1 = int(floor(randflt(0.f, g_cluster_count + 0.999f)));
+        int cid1 = int(floor(randflt(0.0, g_cluster_count + 0.999)));
         // Choose next uniformly from those remaining
-        int cid2 = (cid1 + int(floor(randflt(0.f, g_cluster_count - 0.001f)))) % g_cluster_count;
+        int cid2 = (cid1 + int(floor(randflt(0.0, g_cluster_count - 0.001)))) % g_cluster_count;
 
         cluster_t const &cl1 = clusters[cid1];
         cluster_t const &cl2 = clusters[cid2];
@@ -84,7 +84,8 @@ static point_pair_t generate_random_point_pair()
 static void output_point_pair(point_pair_t const &pair, bool last)
 {
     OUTPUT(
-        "    {\"x0\": %.13f, \"y0\": %.13f, \"x1\": %.13f, \"y1\": %.13f}%s\n",
+        "    "
+        "{\"x0\": %.18lf, \"y0\": %.18lf, \"x1\": %.18lf, \"y1\": %.18lf}%s\n",
         pair.x0, pair.y0, pair.x1, pair.y1, last ? "" : ",");
 }
 
@@ -172,26 +173,26 @@ int main(int argc, char **argv)
     OUTPUT("{\n");
     OUTPUT("  \"points\": [\n");
 
-    f32 sum = 0.f;
+    f64 sum = 0.0;
 
     for (i64 i = 0; i < point_count; ++i) {
         point_pair_t pair = generate_random_point_pair();
         output_point_pair(pair, i == point_count - 1);
 
-        f32 dist = haversine_dist_reference(pair);
+        f64 dist = haversine_dist_reference(pair);
         sum += dist;
 
         if (checksum_f)
             fwrite(&dist, sizeof(dist), 1, checksum_f);
         else
-            OUTPUT("    // dist=%.13f\n", dist);
+            OUTPUT("    // dist=%.18lf\n", dist);
     }
 
-    f32 avg = sum / point_count;
+    f64 avg = sum / point_count;
     if (checksum_f)
         fwrite(&sum, sizeof(sum), 1, checksum_f);
     else
-        OUTPUT("  // avg=%.13f\n", avg);
+        OUTPUT("  // avg=%.18lf\n", avg);
 
     OUTPUT("  ]\n");
     OUTPUT("}\n");
