@@ -115,6 +115,16 @@ int main(int argc, char **argv)
 
             RTEST(sin_quad_approx, sin, -2.0 * c_pi, 2.0 * c_pi, 1024, f64(FLT_EPSILON)),
             RTEST(cos_quad_approx, cos, -2.0 * c_pi, 2.0 * c_pi, 1024, f64(FLT_EPSILON)),
+            RTEST(sin_taylor_approx<2>, sin, -2.0 * c_pi, 2.0 * c_pi, 1024, f64(FLT_EPSILON)),
+            RTEST(cos_taylor_approx<2>, cos, -2.0 * c_pi, 2.0 * c_pi, 1024, f64(FLT_EPSILON)),
+            RTEST(sin_taylor_approx<4>, sin, -2.0 * c_pi, 2.0 * c_pi, 1024, f64(FLT_EPSILON)),
+            RTEST(cos_taylor_approx<4>, cos, -2.0 * c_pi, 2.0 * c_pi, 1024, f64(FLT_EPSILON)),
+            RTEST(sin_taylor_approx<8>, sin, -2.0 * c_pi, 2.0 * c_pi, 1024, f64(FLT_EPSILON)),
+            RTEST(cos_taylor_approx<8>, cos, -2.0 * c_pi, 2.0 * c_pi, 1024, f64(FLT_EPSILON)),
+            RTEST(sin_taylor_approx<16>, sin, -2.0 * c_pi, 2.0 * c_pi, 1024, f64(FLT_EPSILON)),
+            RTEST(cos_taylor_approx<16>, cos, -2.0 * c_pi, 2.0 * c_pi, 1024, f64(FLT_EPSILON)),
+            RTEST(sin_taylor_approx<32>, sin, -2.0 * c_pi, 2.0 * c_pi, 1024, f64(FLT_EPSILON)),
+            RTEST(cos_taylor_approx<32>, cos, -2.0 * c_pi, 2.0 * c_pi, 1024, f64(FLT_EPSILON)),
 
             RTEST(sqrt_s, sqrt, 0.0, 1.0, 1024, f64(FLT_EPSILON)),
             RTEST(sqrt_dc, sqrt, 0.0, 1.0, 1024, f64(FLT_EPSILON)),
