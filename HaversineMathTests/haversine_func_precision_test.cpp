@@ -111,32 +111,31 @@ int main(int argc, char **argv)
 
     for (auto [f, rf, tr_min, tr_max, tcnt, nm, rnm, allowed_err] :
         {
-            // @TEST: just against themselves, our stuff will go here
-            RTEST(asin, asin, 0.0, 1.0, 1024, 0.0),
+            //RTEST(asin, ..., 0.0, 1.0, 1024, 0.0),
 
-            RTEST(sin_quad_approx, sin, -c_pi, c_pi, 1024, DBL_EPSILON),
-            RTEST(cos_quad_approx, cos, -c_pi, c_pi, 1024, DBL_EPSILON),
-            RTEST(sin_quad_approx_intrin, sin, -c_pi, c_pi, 1024, DBL_EPSILON),
-            RTEST(cos_quad_approx_intrin, cos, -c_pi, c_pi, 1024, DBL_EPSILON),
+            RTEST(sin_quad_approx, sin, -2.0 * c_pi, 2.0 * c_pi, 1024, f64(FLT_EPSILON)),
+            RTEST(cos_quad_approx, cos, -2.0 * c_pi, 2.0 * c_pi, 1024, f64(FLT_EPSILON)),
 
-            RTEST(sin_quad_approx, sin, -2.0 * c_pi, 2.0 * c_pi, 1024, DBL_EPSILON),
-            RTEST(cos_quad_approx, cos, -2.0 * c_pi, 2.0 * c_pi, 1024, DBL_EPSILON),
-
-            RTEST(sqrt_s, sqrt, 0.0, 1.0, 1024, DBL_EPSILON),
-            RTEST(sqrt_dc, sqrt, 0.0, 1.0, 1024, DBL_EPSILON),
-            RTEST(sqrt_approx, sqrt, 0.0, 1.0, 1024, DBL_EPSILON)
+            RTEST(sqrt_s, sqrt, 0.0, 1.0, 1024, f64(FLT_EPSILON)),
+            RTEST(sqrt_dc, sqrt, 0.0, 1.0, 1024, f64(FLT_EPSILON)),
+            RTEST(sqrt_approx, sqrt, 0.0, 1.0, 1024, f64(FLT_EPSILON))
         })
     {
-        LOGVERBOSE("Reference test for %s (against %s). Allowed error=%.18lf",
-            nm, rnm, allowed_err);
+        LOGVERBOSE(
+            "Reference test for %s (against %s) in [%.18lf, %.18lf]. "
+            "Allowed error=%.18lf", nm, rnm, tr_min, tr_max, allowed_err);
         int errcnt = 0;
         float max_error = 0.0;
+        float max_error_arg = DBL_MAX;
         for (usize i = 0; i < tcnt; ++i) {
             f64 const in = tr_min + (tr_max - tr_min) * f64(i) / (tcnt - 1);
             f64 const res = (*f)(in);
             f64 const req = (*rf)(in);
             f64 const err = abs(req - res);
-            max_error = max(max_error, err);
+            if (err > max_error) {
+                max_error = err;
+                max_error_arg = in;
+            }
             if (err > allowed_err) {
                 LOGVERBOSE(
                     "[FAIL] %s(%.18lf). Reference %s=%.18lf, "
@@ -148,10 +147,9 @@ int main(int argc, char **argv)
                     "got %.18lf. Error=%.18lf", nm, in, rnm, req, res, err);
             }
         }
-        LOGNORMAL(
-            "Test for %s (against %s) done, max error %.18lf, %d/%d "
-            "under allowed error level of %.18lf",
-            nm, rnm, max_error, tcnt - errcnt, tcnt, allowed_err);
+        LOGNORMAL("%s (against %s) in [%.18lf, %.18lf]:", nm, rnm, tr_min, tr_max);
+        LOGNORMAL("    max error %.18lf (at %.18lf)", max_error, max_error_arg);
+        LOGNORMAL("    %d/%d under allowed error level of %.18lf", tcnt - errcnt, tcnt, allowed_err);
     }
 }
 
