@@ -13,7 +13,7 @@ static char const *argpref(char const *arg, char const (&val)[t_n])
 
 static f64 randflt(f64 min, f64 max)
 {
-    return (f64(rand()) / RAND_MAX) * (max - min) + min;
+    return clamp((f64(rand()) / RAND_MAX) * (max - min) + min, min, max);
 }
 
 static FILE *g_outf = stdout;
@@ -62,7 +62,7 @@ static point_pair_t generate_random_point_pair()
     case e_rt_clusters: {
         // Not "fair", but IDGAF
         // Choose first uniformly
-        int cid1 = int(floor(randflt(0.0, g_cluster_count + 0.999)));
+        int cid1 = int(floor(randflt(0.0, g_cluster_count + 0.999))) % g_cluster_count;
         // Choose next uniformly from those remaining
         int cid2 = (cid1 + int(floor(randflt(0.0, g_cluster_count - 0.001)))) % g_cluster_count;
 

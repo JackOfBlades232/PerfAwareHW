@@ -102,9 +102,22 @@ inline constexpr T max(T a, T b)
 }
 
 template <typename T>
+inline constexpr T clamp(T a, T b, T c)
+{
+    assert(b < c);
+    return a < b ? b : (a > c ? c : a);
+}
+
+template <typename T>
 inline constexpr T abs(T a)
 {
     return a < T{0} ? -a : a;
+}
+
+template <typename T>
+inline constexpr T sgn(T a)
+{
+    return a < T{0} ? -T{1} : T{1};
 }
 
 template <typename TInt, typename TFlt>

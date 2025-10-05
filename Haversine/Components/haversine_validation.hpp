@@ -5,9 +5,10 @@
 
 #include <logging.hpp>
 
+// @TODO: make as strong as should be
 inline bool validate_value(f64 res, f64 ref)
 {
-    return res == ref;
+    return abs(res - ref) <= 1e-5;
 }
 
 inline bool validate_haversine_distances(

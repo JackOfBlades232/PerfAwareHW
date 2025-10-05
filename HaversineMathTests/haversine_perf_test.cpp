@@ -32,6 +32,7 @@ int main(int argc, char **argv)
     constexpr tested_calc_func_t c_test_funcs[] =
     {
         TEST_FUNC(calculate_haversine_distances_naive),
+        TEST_FUNC(calculate_haversine_distances_our_funcs),
     };
 
     printf("File,Size");

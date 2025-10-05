@@ -24,36 +24,36 @@ FINLINE f64 sqrt_approx(f64 in)
     return f64(_mm_cvtss_f32(sqrt_xmm));
 }
 
-constexpr f64 c_pi_quat = 0.78539816339744830961566084581987572104929234984377645524373614807695410157155224965700870633552926699553702162832057666177346115238764555793133985203212027936257102567548463027638991115573723873259549;
+constexpr f64 c_pi_quat64 = 0.78539816339744830961566084581987572104929234984377645524373614807695410157155224965700870633552926699553702162832057666177346115238764555793133985203212027936257102567548463027638991115573723873259549;
 
 // -3.0 / (c_pi * c_pi)
-constexpr f64 c_sin_quad_a = -0.30396355092701331433163838962918291671307632401673964653682709568251936288670632357362782177686551284086673328455715874504218580295825523720801065449044977915856290581184826954827935928637383859959077;
+constexpr f64 c_sin_quad_a64 = -0.30396355092701331433163838962918291671307632401673964653682709568251936288670632357362782177686551284086673328455715874504218580295825523720801065449044977915856290581184826954827935928637383859959077;
 // 7.0 / (2.0 * c_pi)
-constexpr f64 c_sin_quad_b = 1.1140846016432673503821863436076005342412175201831951412336714084122775834395857456307966193637716016925098990873057062582503829228020505701457718751218988746046797685618635430115442247784771538210218;
-constexpr f64 c_sin_seg_size = c_pi_half;
+constexpr f64 c_sin_quad_b64 = 1.1140846016432673503821863436076005342412175201831951412336714084122775834395857456307966193637716016925098990873057062582503829228020505701457718751218988746046797685618635430115442247784771538210218;
+constexpr f64 c_sin_seg_size64 = c_pi_half64;
 
 FINLINE f64 sin_range_reduction(f64 in, auto &&calc)
 {
     __m128d xin = _mm_set_sd(in);
-    __m128d segsz = _mm_set_sd(c_sin_seg_size);
+    __m128d segsz = _mm_set_sd(c_sin_seg_size64);
     __m128d xwseg = _mm_div_sd(xin, segsz);
     __m128d xseg = _mm_floor_sd(xwseg, xwseg);
     u64 seg = u64(_mm_cvtsd_si64(xseg));
     f64 inseg = _mm_cvtsd_f64(_mm_sub_sd(xin, _mm_mul_sd(xseg, segsz)));
     f64 ysign = seg & 0b10 ? -1.0 : 1.0;
-    f64 x = seg & 0b01 ? c_pi_half - inseg : inseg;
+    f64 x = seg & 0b01 ? c_pi_half64 - inseg : inseg;
     return ysign * calc(x);
 }
 
 FINLINE f64 sin_quad_approx(f64 in)
 {
     return sin_range_reduction(in,
-        [](f64 x) { return c_sin_quad_a * x * x + c_sin_quad_b * x; });
+        [](f64 x) { return c_sin_quad_a64 * x * x + c_sin_quad_b64 * x; });
 }
 
 FINLINE f64 cos_quad_approx(f64 in)
 {
-    return sin_quad_approx(in + c_pi_half);
+    return sin_quad_approx(in + c_pi_half64);
 }
 
 template <usize t_n>
@@ -135,14 +135,14 @@ inline SinePolyCoeffs<t_n> calc_sine_minimax_coeffs()
 template <sine_poly_coeff_technique_t t_tech, usize t_n>
 inline SinePolyCoeffs<t_n> const c_sine_poly_coeffs =
     t_tech == e_spct_taylor_pi_quat ?
-        calc_sine_taylor_coeffs<c_pi_quat, t_n>() :
+        calc_sine_taylor_coeffs<c_pi_quat64, t_n>() :
         calc_sine_minimax_coeffs<t_n>();
 
 template <sine_poly_coeff_technique_t t_tech>
 inline f64 calc_sine_base(f64 in)
 {
     if constexpr (t_tech == e_spct_taylor_pi_quat)
-        return in - c_pi_quat;
+        return in - c_pi_quat64;
     else
         return in;
 }
@@ -155,7 +155,7 @@ FINLINE f64 sin_taylor_approx_no_fmadd(f64 in)
         [](f64 x) {
             auto const &coeffs = c_sine_poly_coeffs<e_spct_taylor_pi_quat, t_n>;
             f64 res = coeffs.cs[t_n];
-            f64 base = x - c_pi_quat;
+            f64 base = x - c_pi_quat64;
             for (usize i = t_n; i > 0; --i) {
                 res *= base;
                 res += coeffs.cs[i - 1];
@@ -171,7 +171,7 @@ FINLINE f64 sin_taylor_approx_no_horner(f64 in)
         [](f64 x) {
             auto const &coeffs = c_sine_poly_coeffs<e_spct_taylor_pi_quat, t_n>;
             f64 res = coeffs.cs[0];
-            f64 base = x - c_pi_quat;
+            f64 base = x - c_pi_quat64;
             f64 next = base;
             for (usize i = 0; i < t_n; ++i) {
                 res += next * coeffs.cs[i + 1];
@@ -188,7 +188,7 @@ FINLINE f64 sin_taylor_approx_bw(f64 in)
         [](f64 x) {
             auto const &coeffs = c_sine_poly_coeffs<e_spct_taylor_pi_quat, t_n>;
             f64 res = 0.0;
-            f64 base = x - c_pi_quat;
+            f64 base = x - c_pi_quat64;
             for (isize i = t_n; i >= 0; --i) {
                 f64 next = 1.0;
                 for (usize j = 0; j < i; ++j)
@@ -202,7 +202,7 @@ FINLINE f64 sin_taylor_approx_bw(f64 in)
 template <usize t_n>
 FINLINE f64 cos_taylor_approx_no_fmadd(f64 in)
 {
-    return sin_taylor_approx_no_fmadd<t_n>(in + c_pi_half);
+    return sin_taylor_approx_no_fmadd<t_n>(in + c_pi_half64);
 }
 
 // Real stuff
@@ -223,7 +223,7 @@ FINLINE f64 sin_approx_templ(f64 in)
 template <sine_poly_coeff_technique_t t_tech, usize t_n>
 FINLINE f64 cos_approx_templ(f64 in)
 {
-    return sin_approx_templ<t_tech, t_n>(in + c_pi_half);
+    return sin_approx_templ<t_tech, t_n>(in + c_pi_half64);
 }
 
 template <usize t_n>
@@ -316,7 +316,7 @@ FINLINE f64 asin_approx_templ(f64 in)
 {
     f64 ysign = in >= 0.0 ? 1.0 : -1.0;
     f64 ain = in * ysign;
-    b32 cvt_range = ain > c_1oversqrt2;
+    b32 cvt_range = ain > c_1oversqrt2_64;
     __m128d insin = _mm_set_sd(ain);
     __m128d insin2 = _mm_mul_sd(insin, insin);
     __m128d one = _mm_set_sd(1.0);
@@ -332,7 +332,7 @@ FINLINE f64 asin_approx_templ(f64 in)
     res = _mm_mul_sd(res, x);
 
     f64 fres = _mm_cvtsd_f64(res);
-    return ysign * (cvt_range ? c_pi_half - fres : fres);
+    return ysign * (cvt_range ? c_pi_half64 - fres : fres);
 }
 
 template <usize t_n>

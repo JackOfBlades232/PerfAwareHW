@@ -3,9 +3,17 @@
 #include <defs.hpp>
 #include <intrinsics.hpp>
 
-constexpr f64 c_pi = 3.141592653589793238462643383279502884197169399375105820974944592307816406286208998628034825342117067982148086513282306647093844609550582231725359408128481117450284102701938521105559644622948954930382;
-constexpr f64 c_pi_half = 1.570796326794896619231321691639751442098584699687552910487472296153908203143104499314017412671058533991074043256641153323546922304775291115862679704064240558725142051350969260552779822311474477465191;
-constexpr f64 c_1oversqrt2 = 0.70710678118654752440084436210484903928483593768847403658833986899536623923105351942519376716382078636750692311545614851246241802792536860632206074854996791570661133296375279637789997525057639103028574;
+constexpr f64 c_pi64 = 3.141592653589793238462643383279502884197169399375105820974944592307816406286208998628034825342117067982148086513282306647093844609550582231725359408128481117450284102701938521105559644622948954930382;
+constexpr f64 c_pi_half64 = 1.570796326794896619231321691639751442098584699687552910487472296153908203143104499314017412671058533991074043256641153323546922304775291115862679704064240558725142051350969260552779822311474477465191;
+constexpr f64 c_2pi64 = 6.2831853071795864769252867665590057683943387987502116419498891846156328125724179972560696506842341359642961730265646132941876892191011644634507188162569622349005682054038770422111192892458979098607639;
+constexpr f64 c_1oversqrt2_64 = 0.70710678118654752440084436210484903928483593768847403658833986899536623923105351942519376716382078636750692311545614851246241802792536860632206074854996791570661133296375279637789997525057639103028574;
+constexpr f64 c_earth_rad64 = 6378.1;
+
+FINLINE __m128d bool2mask_sd(bool b)
+{
+    u64 mask = u64(-i64(b));
+    return _mm_castsi128_pd(_mm_set_epi64x(mask, mask));
+}
 
 FINLINE f64 sqrt_e(f64 in)
 {
@@ -16,20 +24,14 @@ FINLINE f64 sqrt_e(f64 in)
 
 FINLINE f64 sin_a(f64 in)
 {
-    auto ternary = [](u64 cond, f64 l, f64 r) {
-        u64 mask = u64(-i64(cond != 0));
-        __m128d xmm_mask = _mm_castsi128_pd(_mm_set_epi64x(mask, mask));
-        return _mm_blendv_pd(_mm_set_sd(r), _mm_set_sd(l), xmm_mask);
+    auto ternary = [](bool cond, f64 l, f64 r) {
+        return _mm_blendv_pd(_mm_set_sd(r), _mm_set_sd(l), bool2mask_sd(cond));
     };
 
     __m128d xin = _mm_set_sd(in);
-    __m128d segsz = _mm_set_sd(c_pi_half);
-    __m128d xwseg = _mm_div_sd(xin, segsz);
-    __m128d xseg = _mm_floor_sd(xwseg, xwseg);
-    u64 seg = u64(_mm_cvtsd_si64(xseg));
-    f64 inseg = _mm_cvtsd_f64(_mm_sub_sd(xin, _mm_mul_sd(xseg, segsz)));
-    __m128d ysign = ternary(seg & 0b10, -1.0, 1.0);
-    __m128d x = ternary(seg & 0b01, c_pi_half - inseg, inseg);
+    __m128d ysign = ternary(in < 0.0, -1.0, 1.0);
+    f64 inseg = _mm_cvtsd_f64(_mm_mul_sd(xin, ysign));
+    __m128d x = ternary(inseg > c_pi_half64, c_pi64 - inseg, inseg);
     __m128d x2 = _mm_mul_sd(x, x);
 
     __m128d r = _mm_set_sd(0x1.883c1c5deffbep-49);
@@ -46,17 +48,19 @@ FINLINE f64 sin_a(f64 in)
     return _mm_cvtsd_f64(_mm_mul_sd(ysign, r));
 }
 
+FINLINE f64 cos_a(f64 in)
+{
+    return sin_a(in + c_pi_half64);
+}
+
 FINLINE f64 asin_a(f64 in)
 {
-    bool cvt = in > c_1oversqrt2;
-    u64 cvt_mask_u = u64(-i64(cvt));
-    __m128d cvt_mask = _mm_castsi128_pd(_mm_set_epi64x(cvt_mask_u, cvt_mask_u));
+    __m128d cvt_mask = bool2mask_sd(in > c_1oversqrt2_64);
 
     __m128d insin = _mm_set_sd(in);
     __m128d insin2 = _mm_mul_sd(insin, insin);
     __m128d one = _mm_set_sd(1.0);
     __m128d incos2 = _mm_sub_sd(one, insin2);
-    // @TODO: chosen sqrt here
     __m128d incos = _mm_sqrt_sd(incos2, incos2);
 
     __m128d x = _mm_blendv_pd(insin, incos, cvt_mask);
@@ -82,11 +86,41 @@ FINLINE f64 asin_a(f64 in)
     r = _mm_fmadd_sd(r, x2, _mm_set_sd(0x1.fffffffffffffp-1));
     r = _mm_mul_sd(r, x);
 
-    __m128d cr = _mm_sub_sd(_mm_set_sd(c_pi_half), r);
+    __m128d cr = _mm_sub_sd(_mm_set_sd(c_pi_half64), r);
     return _mm_cvtsd_f64(_mm_blendv_pd(r, cr, cvt_mask));
 }
 
-FINLINE f64 cos_a(f64 in)
+// Range test stuff
+struct function_input_range_t {
+    f64 min = DBL_MAX, max = -DBL_MAX;
+};
+
+inline void update(function_input_range_t &rng, f64 val)
 {
-    return sin_a(in + c_pi_half);
+    rng.min = min(rng.min, val);
+    rng.max = max(rng.max, val);
+}
+
+struct haversine_function_input_ranges_t {
+    function_input_range_t cos_input_range = {};
+    function_input_range_t asin_input_range = {};
+    function_input_range_t sqrt_input_range = {};
+};
+
+inline f64 range_cos(f64 a, void *rng)
+{
+    update(((haversine_function_input_ranges_t *)rng)->cos_input_range, a);
+    return cos(a);
+}
+
+inline f64 range_asin(f64 a, void *rng)
+{
+    update(((haversine_function_input_ranges_t *)rng)->asin_input_range, a);
+    return asin(a);
+}
+
+inline f64 range_sqrt(f64 a, void *rng)
+{
+    update(((haversine_function_input_ranges_t *)rng)->sqrt_input_range, a);
+    return sqrt(a);
 }
