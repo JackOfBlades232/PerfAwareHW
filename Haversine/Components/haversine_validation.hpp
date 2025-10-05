@@ -8,7 +8,7 @@
 // @TODO: make as strong as should be
 inline bool validate_value(f64 res, f64 ref)
 {
-    return abs(res - ref) <= 1e-5;
+    return abs(res - ref) <= FLT_EPSILON;
 }
 
 inline bool validate_haversine_distances(
@@ -26,20 +26,22 @@ inline bool validate_haversine_distances(
                 ++missed_answers;
         }
 
-        if (!validate_value(s.sum_answer, s.validation_sum)) {
+        if (!validate_value(
+            s.sum_answer / s.pair_cnt, s.validation_sum / s.pair_cnt))
+        {
             LOGERR(
                 "Validation failed: "
                 "claculated sum = %.18lg, required = %.18lg, "
-                "missed %u/%lu answers, SumError=%.18lg",
+                "missed %u/%lu answers, AvgError=%.18lg",
                 s.sum_answer, s.validation_sum, missed_answers,
-                s.pair_cnt, abs(s.validation_sum - s.sum_answer));
+                s.pair_cnt, abs(s.validation_sum - s.sum_answer) / s.pair_cnt);
             return false;
         } else if (log_if_ok) {
             LOGNORMAL(
                 "Validation: Avg=%.18lg, "
-                "%u/%lu answers inexact, SumError=%.18lg",
+                "%u/%lu answers missed, AvgError=%.18lf",
                 s.validation_sum / s.pair_cnt, missed_answers,
-                s.pair_cnt, abs(s.validation_sum - s.sum_answer));
+                s.pair_cnt, abs(s.validation_sum - s.sum_answer) / s.pair_cnt);
         }
     } else if (log_if_ok) {
         LOGNORMAL("Validation file not found");

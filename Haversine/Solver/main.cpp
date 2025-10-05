@@ -77,7 +77,7 @@ int main(int argc, char **argv)
     if (only_reprint_json)
         return reprint_json(state.parsed_json_root);
 
-    calculate_haversine_distances(state, haversine_dist_naive);
+    calculate_haversine_distances_our_funcs(state);
 
     if (!validate_haversine_distances(state, true))
         return 1;

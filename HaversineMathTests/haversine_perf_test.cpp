@@ -33,6 +33,7 @@ int main(int argc, char **argv)
     {
         TEST_FUNC(calculate_haversine_distances_naive),
         TEST_FUNC(calculate_haversine_distances_our_funcs),
+        TEST_FUNC(calculate_haversine_distances_inline),
     };
 
     printf("File,Size");

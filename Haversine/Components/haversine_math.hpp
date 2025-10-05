@@ -24,6 +24,7 @@ FINLINE f64 sqrt_e(f64 in)
 
 FINLINE f64 sin_a(f64 in)
 {
+#if 1
     auto ternary = [](bool cond, f64 l, f64 r) {
         return _mm_blendv_pd(_mm_set_sd(r), _mm_set_sd(l), bool2mask_sd(cond));
     };
@@ -46,6 +47,24 @@ FINLINE f64 sin_a(f64 in)
     r = _mm_mul_sd(r, x);
 
     return _mm_cvtsd_f64(_mm_mul_sd(ysign, r));
+#else
+    f64 posx = abs(in);
+    f64 x = posx > c_pi_half64 ? c_pi64 - posx : posx;
+    f64 x2 = x * x;
+
+    f64 r = 0x1.883c1c5deffbep-49;
+    r = fma(r, x2, -0x1.ae43dc9bf8ba7p-41);
+    r = fma(r, x2, 0x1.6123ce513b09fp-33);
+    r = fma(r, x2, -0x1.ae6454d960ac4p-26);
+    r = fma(r, x2, 0x1.71de3a52aab96p-19);
+    r = fma(r, x2, -0x1.a01a01a014eb6p-13);
+    r = fma(r, x2, 0x1.11111111110c9p-7);
+    r = fma(r, x2, -0x1.5555555555555p-3);
+    r = fma(r, x2, 0x1p0);
+    r *= x;
+
+    return in < 0.0 ? -r : r;
+#endif
 }
 
 FINLINE f64 cos_a(f64 in)
@@ -55,6 +74,7 @@ FINLINE f64 cos_a(f64 in)
 
 FINLINE f64 asin_a(f64 in)
 {
+#if 1
     __m128d cvt_mask = bool2mask_sd(in > c_1oversqrt2_64);
 
     __m128d insin = _mm_set_sd(in);
@@ -88,6 +108,33 @@ FINLINE f64 asin_a(f64 in)
 
     __m128d cr = _mm_sub_sd(_mm_set_sd(c_pi_half64), r);
     return _mm_cvtsd_f64(_mm_blendv_pd(r, cr, cvt_mask));
+#else
+    bool flip = in > c_1oversqrt2_64;
+    f64 x = flip ? sqrt_e(1.0 - in * in) : in;
+    f64 x2 = x * x;
+
+    f64 r = 0x1.7f820d52c2775p-1;
+    r = fma(r, x2, -0x1.4d84801ff1aa1p1);
+    r = fma(r, x2, 0x1.14672d35db97ep2);
+    r = fma(r, x2, -0x1.188f223fe5f34p2);
+    r = fma(r, x2, 0x1.86bbff2a6c7b6p1);
+    r = fma(r, x2, -0x1.83633c76e4551p0);
+    r = fma(r, x2, 0x1.224c4dbe13cbdp-1);
+    r = fma(r, x2, -0x1.2ab04ba9012e3p-3);
+    r = fma(r, x2, 0x1.5565a3d3908b9p-5);
+    r = fma(r, x2, 0x1.b1b8d27cd7e72p-8);
+    r = fma(r, x2, 0x1.dc086c5d99cdcp-7);
+    r = fma(r, x2, 0x1.1b8cc838ee86ep-6);
+    r = fma(r, x2, 0x1.6e96be6dbe49ep-6);
+    r = fma(r, x2, 0x1.f1c6b0ea300d7p-6);
+    r = fma(r, x2, 0x1.6db6dca9f82d4p-5);
+    r = fma(r, x2, 0x1.3333333148aa7p-4);
+    r = fma(r, x2, 0x1.555555555683fp-3);
+    r = fma(r, x2, 0x1.fffffffffffffp-1);
+    r *= x;
+    
+    return flip ? c_pi_half64 - r : r;
+#endif
 }
 
 // Range test stuff
