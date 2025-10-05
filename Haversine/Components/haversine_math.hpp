@@ -98,28 +98,67 @@ template <f64 t_point, usize t_n>
 inline SineTaylorSeriesCoeffs<t_n> const c_sine_taylor_series_coeffs =
     calc_sine_taylor_coeffs<t_point, t_n>();
 
-template <f64 t_point, usize t_n>
-inline void fill_taylor_series_degrees(f64 x, f64 *coeffs)
-{
-    f64 base = x - t_point;
-    f64 next = base;
-    for (usize i = 0; i < t_n; ++i) {
-        coeffs[i] = next;
-        next *= base;
-    }
-}
-
 template <usize t_n>
 FINLINE f64 sin_taylor_approx(f64 in)
 {
     return sin_range_reduction(in,
         [](f64 x) {
             auto const &coeffs = c_sine_taylor_series_coeffs<c_pi_quat, t_n>;
-            f64 args[t_n];
-            fill_taylor_series_degrees<c_pi_quat, t_n>(x, args);
+            f64 res = coeffs.cs[t_n];
+            f64 base = x - c_pi_quat;
+            for (usize i = t_n; i > 0; --i) {
+                res *= base;
+                res += coeffs.cs[i - 1];
+            }
+            return res;
+        });
+}
+
+template <usize t_n>
+FINLINE f64 sin_taylor_approx_fmadd(f64 in)
+{
+    return sin_range_reduction(in,
+        [](f64 x) {
+            auto const &coeffs = c_sine_taylor_series_coeffs<c_pi_quat, t_n>;
+            __m128d res = _mm_load_sd(&coeffs.cs[t_n]);
+            __m128d base = _mm_set_sd(x - c_pi_quat);
+            for (usize i = t_n; i > 0; --i)
+                res = _mm_fmadd_sd(res, base, _mm_load_sd(&coeffs.cs[i - 1]));
+            return _mm_cvtsd_f64(res);
+        });
+}
+
+template <usize t_n>
+FINLINE f64 sin_taylor_approx_no_horner(f64 in)
+{
+    return sin_range_reduction(in,
+        [](f64 x) {
+            auto const &coeffs = c_sine_taylor_series_coeffs<c_pi_quat, t_n>;
             f64 res = coeffs.cs[0];
-            for (usize i = 0; i < t_n; ++i)
-                res += args[i] * coeffs.cs[i + 1];
+            f64 base = x - c_pi_quat;
+            f64 next = base;
+            for (usize i = 0; i < t_n; ++i) {
+                res += next * coeffs.cs[i + 1];
+                next *= base;
+            }
+            return res;
+        });
+}
+
+template <usize t_n>
+FINLINE f64 sin_taylor_approx_bw(f64 in)
+{
+    return sin_range_reduction(in,
+        [](f64 x) {
+            auto const &coeffs = c_sine_taylor_series_coeffs<c_pi_quat, t_n>;
+            f64 res = 0.0;
+            f64 base = x - c_pi_quat;
+            for (isize i = t_n; i >= 0; --i) {
+                f64 next = 1.0;
+                for (usize j = 0; j < i; ++j)
+                    next *= base;
+                res += next * coeffs.cs[i];
+            }
             return res;
         });
 }
@@ -128,4 +167,10 @@ template <usize t_n>
 FINLINE f64 cos_taylor_approx(f64 in)
 {
     return sin_taylor_approx<t_n>(in + c_pi_half);
+}
+
+template <usize t_n>
+FINLINE f64 cos_taylor_approx_fmadd(f64 in)
+{
+    return sin_taylor_approx_fmadd<t_n>(in + c_pi_half);
 }
