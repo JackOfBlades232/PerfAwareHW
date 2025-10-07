@@ -1,6 +1,6 @@
 #!/bin/bash
 
 pushd build
-g++ -g -std=c++20 -I ../../Common/ -I ../Components/ ../Generator/*.cpp $@ -o generate
-g++ -g -std=c++20 -I ../../Common/ -I ../Components/ -Wno-return-local-addr ../Solver/*.cpp $@ -o solve
+g++ -g -std=c++20 -mfma -I ../../Common/ -I ../Components/ ../Generator/*.cpp $@ -o generate
+g++ -g -std=c++20 -mfma -I ../../Common/ -I ../Components/ -Wno-return-local-addr ../Solver/*.cpp $@ -o solve
 popd
