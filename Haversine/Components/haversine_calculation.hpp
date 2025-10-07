@@ -89,8 +89,10 @@ inline void calculate_haversine_distances_inline(haversine_state_t &s)
 {
     PROFILED_BANDWIDTH_FUNCTION_PF(s.pair_cnt * sizeof(point_pair_t));
 
-    constexpr f64 c_deg2rad = c_pi64 / 180.0;
-    constexpr f64 c_rad_coeff = c_earth_rad64 * 2.0;
+    static constexpr f64 c_deg2rad = c_pi64 / 180.0;
+    static constexpr f64 c_rad_coeff = c_earth_rad64 * 2.0;
+    static __m128d const absmask =
+        _mm_castsi128_pd(_mm_set1_epi64x(0x7FFFFFFFFFFFFFFF));
 
     s.sum_answer = 0.0;
 
@@ -102,18 +104,22 @@ inline void calculate_haversine_distances_inline(haversine_state_t &s)
         return _mm_cvtsd_f64(_mm_blendv_pd(
             _mm_set_sd(r), _mm_set_sd(l), bool2mask_sd(cond)));
     };
+    // @TODO: definitely should pull this out
+    auto toabs = [](f64 d) {
+        return _mm_cvtsd_f64(_mm_and_pd(_mm_set_sd(d), absmask));
+    };
 
     for (u32 i = 0; i < s.pair_cnt; ++i, ++src) {
-        f64 xr0 = c_deg2rad * src->x0 + c_pi_half64;
-        f64 xr1 = c_deg2rad * src->x1 + c_pi_half64;
+        f64 xr0 = fmadd(src->x0, c_deg2rad, c_pi_half64);
+        f64 xr1 = fmadd(src->x1, c_deg2rad, c_pi_half64);
         f64 yr0 = c_deg2rad * src->y0;
         f64 yr1 = c_deg2rad * src->y1;
 
         f64 dxr = xr0 - xr1;
         f64 dyr = yr0 - yr1;
-        f64 adxr = ternary(dxr < 0.0, -dxr, dxr);
+        f64 adxr = toabs(dxr);
         f64 dx = ternary(adxr > c_pi64, c_2pi64 - adxr, adxr);
-        f64 dy = ternary(dyr < 0.0, -dyr, dyr); // Already from -pi to pi
+        f64 dy = toabs(dyr); // Already from -pi to pi
 
         __m256d a = _mm256_set_pd(
             c_pi_half64 - dy,
@@ -137,12 +143,7 @@ inline void calculate_haversine_distances_inline(haversine_state_t &s)
         f64 cosdx = _mm256_cvtsd_f64(_mm256_permute4x64_pd(cosines, 0b10101010));
         f64 cosdy = _mm256_cvtsd_f64(_mm256_permute4x64_pd(cosines, 0b11111111));
 
-        f64 cosx0_cosx1 = cosx0 * cosx1;
-        f64 m1_cosdy = 1.0 - cosdy;
-        f64 mterm = cosx0_cosx1 * m1_cosdy;
-        f64 sterm = 1.0 - cosdx + mterm;
-
-        f64 hsterm = sterm * 0.5;
+        f64 hsterm = 0.5 * fmadd(cosx0 * cosx1, 1.0 - cosdy, 1.0 - cosdx);
 
         __m128d cvt_mask = bool2mask_sd(hsterm > 0.5);
         __m128d angle_x2 = _mm_blendv_pd(
