@@ -55,7 +55,7 @@ static FINLINE void writesim(auto &v)
 #if __clang__ || __GNUC__
     asm volatile("" : "=x"(v));
 #else
-    (void)p;
+    (void)v;
 #endif
 }
 
@@ -64,7 +64,16 @@ static FINLINE void readsim(auto const &v)
 #if __clang__ || __GNUC__
     asm volatile("" :: "x"(v));
 #else
-    (void)p;
+    (void)v;
+#endif
+}
+
+static FINLINE void writesim_mov(auto &v)
+{
+#if __clang__ || __GNUC__
+    asm volatile("mov %1, %0" : "=r"(v) : "r"(v));
+#else
+    (void)v;
 #endif
 }
 
@@ -94,6 +103,17 @@ static void bench_rwsim(usize rep_count)
     }
 }
 
+// And this fixes it with one (justified) mov
+static void bench_rwsim_mov(usize rep_count)
+{
+    for (usize i = 0; i < rep_count; ++i) {
+        f64 value = 0.5;
+        writesim_mov(value);
+        f64 result = asin_a_core(value);
+        readsim(result);
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -110,6 +130,7 @@ int main(int argc, char **argv)
     {
         TEST_FUNC(bench_escape),
         TEST_FUNC(bench_rwsim),
+        TEST_FUNC(bench_rwsim_mov),
     };
 
     RepetitionTester rt{rep_count, cpu_timer_freq, RT_STOP_TIME, true};
