@@ -22,18 +22,18 @@ namespace dag
 {
 
 template <class _To, class _From>
-  requires(sizeof(_To) == sizeof(_From))
+requires(sizeof(_To) == sizeof(_From))
 [[nodiscard]] constexpr _To bit_cast(const _From &_Val) noexcept
 {
-  return __builtin_bit_cast(_To, _Val);
+    return __builtin_bit_cast(_To, _Val);
 }
 
 } // namespace dag
 
-template <typename To, typename From>
-__forceinline To bitwise_cast(const From &from) // To consider: may be just make it alias to `dag::bit_cast`?
+    template <typename To, typename From>
+__forceinline To bitwise_cast(const From &from)
 {
-  return dag::bit_cast<To>(from);
+    return dag::bit_cast<To>(from);
 }
 
 
@@ -139,7 +139,7 @@ int main(int argc, char **argv)
         f64 max_error = 0.0;
         f64 avg_rel_error = 0.0;
         f64 max_rel_error = 0.0;
-        
+
         for (usize i = 0; i < uns_count; ++i) {
             f64 sr = s.f(uns_input[i]);
             f64 er = e.f(uns_input[i]);
@@ -154,8 +154,8 @@ int main(int argc, char **argv)
         avg_rel_error /= f64(uns_count);
 
         printf(
-            "%s (vs %s, nonneg): AErr=%lf, MErr=%lf, ARErr=%lf, MRErr=%lf\n",
-            s.name, e.name, avg_error, max_error, avg_rel_error, max_rel_error);
+                "%s (vs %s, nonneg): AErr=%lf, MErr=%lf, ARErr=%lf, MRErr=%lf\n",
+                s.name, e.name, avg_error, max_error, avg_rel_error, max_rel_error);
     }
 
     for (auto [s, e] : c_ver_funcs_sn) {
@@ -163,7 +163,7 @@ int main(int argc, char **argv)
         f64 max_error = 0.0;
         f64 avg_rel_error = 0.0;
         f64 max_rel_error = 0.0;
-        
+
         for (usize i = 0; i < sn_count; ++i) {
             f64 sr = s.f(sn_input[i]);
             f64 er = e.f(sn_input[i]);
@@ -178,8 +178,8 @@ int main(int argc, char **argv)
         avg_rel_error /= f64(sn_count);
 
         printf(
-            "%s (vs %s): AErr=%lf, MErr=%lf, ARErr=%lf, MRErr=%lf\n",
-            s.name, e.name, avg_error, max_error, avg_rel_error, max_rel_error);
+                "%s (vs %s): AErr=%lf, MErr=%lf, ARErr=%lf, MRErr=%lf\n",
+                s.name, e.name, avg_error, max_error, avg_rel_error, max_rel_error);
     }
 
     constexpr tested_func_t c_test_funcs_uns[] =
@@ -215,10 +215,10 @@ int main(int argc, char **argv)
             {
                 char namebuf[256];
                 snprintf(
-                    namebuf, sizeof(namebuf), "%s (%llu nonnegative f32s)",
-                    name, uns_count);
+                        namebuf, sizeof(namebuf), "%s (%llu nonnegative f32s)",
+                        name, uns_count);
                 print_reptest_results(
-                    results, byte_count, cpu_timer_freq, namebuf, true);
+                        results, byte_count, cpu_timer_freq, namebuf, true);
             }
         }
     }
@@ -242,10 +242,10 @@ int main(int argc, char **argv)
             {
                 char namebuf[256];
                 snprintf(
-                    namebuf, sizeof(namebuf), "%s (%llu f32s)",
-                    name, sn_count);
+                        namebuf, sizeof(namebuf), "%s (%llu f32s)",
+                        name, sn_count);
                 print_reptest_results(
-                    results, byte_count, cpu_timer_freq, namebuf, true);
+                        results, byte_count, cpu_timer_freq, namebuf, true);
             }
         }
     }
