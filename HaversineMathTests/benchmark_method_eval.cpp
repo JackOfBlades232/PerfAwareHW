@@ -4,8 +4,9 @@
 #include <profiling.hpp>
 #include <logging.hpp>
 #include <repetition.hpp>
+#include <benchmark.hpp>
 
-#define RT_STOP_TIME 10.f
+#define RT_STOP_TIME 10.0f
 
 struct tested_calc_func_t {
     void (*f)(usize);
@@ -71,7 +72,7 @@ static FINLINE void readsim(auto const &v)
 static FINLINE void writesim_mov(auto &v)
 {
 #if __clang__ || __GNUC__
-    asm volatile("mov %1, %0" : "=r"(v) : "r"(v));
+    asm volatile("mov %0, %1" : "=r"(v) : "r"(v));
 #else
     (void)v;
 #endif
@@ -114,6 +115,26 @@ static void bench_rwsim_mov(usize rep_count)
     }
 }
 
+static void bench_macros_clobber(usize rep_count)
+{
+    for (usize i = 0; i < rep_count; ++i) {
+        f64 value = 0.5;
+        BENCHMARK_CLOBBER_F64(value);
+        f64 result = asin_a_core(value);
+        BENCHMARK_CONSUME(result);
+    }
+}
+
+static void bench_macros_set(usize rep_count)
+{
+    for (usize i = 0; i < rep_count; ++i) {
+        f64 value = 0.5;
+        BENCHMARK_SET_F64(value, 0.5);
+        f64 result = asin_a_core(value);
+        BENCHMARK_CONSUME(result);
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -131,6 +152,8 @@ int main(int argc, char **argv)
         TEST_FUNC(bench_escape),
         TEST_FUNC(bench_rwsim),
         TEST_FUNC(bench_rwsim_mov),
+        TEST_FUNC(bench_macros_clobber),
+        TEST_FUNC(bench_macros_set),
     };
 
     RepetitionTester rt{rep_count, cpu_timer_freq, RT_STOP_TIME, true};

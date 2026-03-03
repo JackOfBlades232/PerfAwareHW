@@ -19,17 +19,17 @@ mv ../cache_bandwidth_funcs.o ./
 mv ../critical_stride_funcs.o ./
 mv ../nontemporal_funcs.o ./
 mv ../prefetch_funcs.o ./
-g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../fileread.cpp $@ -o fileread
-g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../pagefaults.cpp $@ -o pagefaults
-g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../bandwidth.cpp bandwidth_funcs.o $@ -o bandwidth
-g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../branch.cpp branch_funcs.o $@ -o branch
-g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../calign.cpp calign_funcs.o $@ -o calign
-g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../exprt.cpp exprt_funcs.o $@ -o exprt
-g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../bandwidth_nocache.cpp bandwidth_nocache_funcs.o $@ -o bandwidth_nocache
-g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../cache_bandwidth.cpp cache_bandwidth_funcs.o $@ -o cache_bandwidth
-g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../cache_autoprobe.cpp cache_bandwidth_funcs.o $@ -o cache_autoprobe
-g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../critical_stride.cpp critical_stride_funcs.o $@ -o critical_stride
-g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../nontemporal_demo.cpp nontemporal_funcs.o $@ -o nontemporal_demo
-g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../prefetch_demo.cpp prefetch_funcs.o $@ -o prefetch_demo
-g++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ -mavx512f -DAVX512=1 ../file_processing.cpp $@ -o file_processing
+clang++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../fileread.cpp $@ -o fileread
+clang++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../pagefaults.cpp $@ -o pagefaults
+clang++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../bandwidth.cpp bandwidth_funcs.o $@ -o bandwidth
+clang++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../branch.cpp branch_funcs.o $@ -o branch
+clang++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../calign.cpp calign_funcs.o $@ -o calign
+clang++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../exprt.cpp exprt_funcs.o $@ -o exprt
+clang++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../bandwidth_nocache.cpp bandwidth_nocache_funcs.o $@ -o bandwidth_nocache
+clang++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../cache_bandwidth.cpp cache_bandwidth_funcs.o $@ -o cache_bandwidth
+clang++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../cache_autoprobe.cpp cache_bandwidth_funcs.o $@ -o cache_autoprobe
+clang++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../critical_stride.cpp critical_stride_funcs.o $@ -o critical_stride
+clang++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../nontemporal_demo.cpp nontemporal_funcs.o $@ -o nontemporal_demo
+clang++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ ../prefetch_demo.cpp prefetch_funcs.o $@ -o prefetch_demo
+clang++ -g -std=c++20 -Wno-format -Wno-volatile -I ../../Common/ -mavx512f -DAVX512=1 ../file_processing.cpp $@ -o file_processing
 popd
