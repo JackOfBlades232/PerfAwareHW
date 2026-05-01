@@ -6,7 +6,9 @@
 #include <repetition.hpp>
 #include <benchmark.hpp>
 
+#ifndef RT_STOP_TIME
 #define RT_STOP_TIME 10.0f
+#endif
 
 struct tested_calc_func_t {
     void (*f)(usize);

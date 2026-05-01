@@ -254,3 +254,9 @@ inline f64 best_gbps(
     f64 const min_sec = large_divide(results.min_ticks, cpu_timer_freq);
     return gb_per_measure(min_sec, target_processed_bytes);
 }
+
+inline f64 best_bptick(
+    repetition_test_results_t const &results, u64 target_processed_bytes)
+{
+    return large_divide(target_processed_bytes, results.min_ticks);
+}

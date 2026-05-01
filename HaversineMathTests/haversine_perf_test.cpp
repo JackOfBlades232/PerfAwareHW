@@ -7,7 +7,9 @@
 #include <logging.hpp>
 #include <repetition.hpp>
 
-#define RT_STOP_TIME 10.f
+#ifndef RT_STOP_TIME
+#define RT_STOP_TIME 10.0f
+#endif
 
 struct tested_calc_func_t {
     void (*f)(haversine_state_t &);
