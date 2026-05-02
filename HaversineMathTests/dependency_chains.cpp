@@ -7,7 +7,7 @@
 #include <benchmark.hpp>
 
 #ifndef RT_STOP_TIME
-#define RT_STOP_TIME 10.0f
+#define RT_STOP_TIME 10.f
 #endif
 
 extern "C"
@@ -17,18 +17,20 @@ extern void fma_depchain_interleaved2_asm(u64 chain_count, u64 chain_len);
 extern void fma_depchain_interleaved4_asm(u64 chain_count, u64 chain_len);
 extern void fma_depchain_interleaved8_asm(u64 chain_count, u64 chain_len);
 extern void fma_depchain_interleaved8x2_asm(u64 chain_count, u64 chain_len);
+extern void fma_depchain_block8_asm(u64 chain_count, u64 chain_len);
+extern void fma_depchain_block16_asm(u64 chain_count, u64 chain_len);
 }
 
 static void fma_depchain(u64 chain_count, u64 chain_len)
 {
     for (u64 chain_id = 0; chain_id < chain_count; ++chain_id) {
-        f64 x2 = 0.0;
-        f64 m = 0.0;
-        f64 r0 = 0.0;
+        f64 x2 = 1.001;
+        f64 m = 0.01;
+        f64 r0 = 1.01;
 
-        BENCHMARK_CLOBBER_F64(x2);
-        BENCHMARK_CLOBBER_F64(m);
-        BENCHMARK_CLOBBER_F64(r0);
+        BENCHMARK_PRODUCE(x2);
+        BENCHMARK_PRODUCE(m);
+        BENCHMARK_PRODUCE(r0);
 
         for (u64 iter = 0; iter < chain_len; iter += 8) {
             r0 = fmadd(r0, x2, m);
@@ -48,15 +50,15 @@ static void fma_depchain(u64 chain_count, u64 chain_len)
 static void fma_depchain_interleaved2(u64 chain_count, u64 chain_len)
 {
     for (u64 chain_id = 0; chain_id < chain_count; chain_id += 2) {
-        f64 x2 = 0.0;
-        f64 m = 0.0;
-        f64 r0 = 0.0;
-        f64 r1 = 0.0;
+        f64 x2 = 1.001;
+        f64 m = 0.01;
+        f64 r0 = 1.01;
+        f64 r1 = 1.01;
 
-        BENCHMARK_CLOBBER_F64(x2);
-        BENCHMARK_CLOBBER_F64(m);
-        BENCHMARK_CLOBBER_F64(r0);
-        BENCHMARK_CLOBBER_F64(r1);
+        BENCHMARK_PRODUCE(x2);
+        BENCHMARK_PRODUCE(m);
+        BENCHMARK_PRODUCE(r0);
+        BENCHMARK_PRODUCE(r1);
 
         for (u64 iter = 0; iter < chain_len; iter += 4) {
             r0 = fmadd(r0, x2, m);
@@ -77,19 +79,19 @@ static void fma_depchain_interleaved2(u64 chain_count, u64 chain_len)
 static void fma_depchain_interleaved4(u64 chain_count, u64 chain_len)
 {
     for (u64 chain_id = 0; chain_id < chain_count; chain_id += 4) {
-        f64 x2 = 0.0;
-        f64 m = 0.0;
-        f64 r0 = 0.0;
-        f64 r1 = 0.0;
-        f64 r2 = 0.0;
-        f64 r3 = 0.0;
+        f64 x2 = 1.001;
+        f64 m = 0.01;
+        f64 r0 = 1.01;
+        f64 r1 = 1.01;
+        f64 r2 = 1.01;
+        f64 r3 = 1.01;
 
-        BENCHMARK_CLOBBER_F64(x2);
-        BENCHMARK_CLOBBER_F64(m);
-        BENCHMARK_CLOBBER_F64(r0);
-        BENCHMARK_CLOBBER_F64(r1);
-        BENCHMARK_CLOBBER_F64(r2);
-        BENCHMARK_CLOBBER_F64(r3);
+        BENCHMARK_PRODUCE(x2);
+        BENCHMARK_PRODUCE(m);
+        BENCHMARK_PRODUCE(r0);
+        BENCHMARK_PRODUCE(r1);
+        BENCHMARK_PRODUCE(r2);
+        BENCHMARK_PRODUCE(r3);
 
         for (u64 iter = 0; iter < chain_len; iter += 2) {
             r0 = fmadd(r0, x2, m);
@@ -112,27 +114,27 @@ static void fma_depchain_interleaved4(u64 chain_count, u64 chain_len)
 static void fma_depchain_interleaved8(u64 chain_count, u64 chain_len)
 {
     for (u64 chain_id = 0; chain_id < chain_count; chain_id += 8) {
-        f64 x2 = 0.0;
-        f64 m = 0.0;
-        f64 r0 = 0.0;
-        f64 r1 = 0.0;
-        f64 r2 = 0.0;
-        f64 r3 = 0.0;
-        f64 r4 = 0.0;
-        f64 r5 = 0.0;
-        f64 r6 = 0.0;
-        f64 r7 = 0.0;
+        f64 x2 = 1.001;
+        f64 m = 0.01;
+        f64 r0 = 1.01;
+        f64 r1 = 1.01;
+        f64 r2 = 1.01;
+        f64 r3 = 1.01;
+        f64 r4 = 1.01;
+        f64 r5 = 1.01;
+        f64 r6 = 1.01;
+        f64 r7 = 1.01;
 
-        BENCHMARK_CLOBBER_F64(x2);
-        BENCHMARK_CLOBBER_F64(m);
-        BENCHMARK_CLOBBER_F64(r0);
-        BENCHMARK_CLOBBER_F64(r1);
-        BENCHMARK_CLOBBER_F64(r2);
-        BENCHMARK_CLOBBER_F64(r3);
-        BENCHMARK_CLOBBER_F64(r4);
-        BENCHMARK_CLOBBER_F64(r5);
-        BENCHMARK_CLOBBER_F64(r6);
-        BENCHMARK_CLOBBER_F64(r7);
+        BENCHMARK_PRODUCE(x2);
+        BENCHMARK_PRODUCE(m);
+        BENCHMARK_PRODUCE(r0);
+        BENCHMARK_PRODUCE(r1);
+        BENCHMARK_PRODUCE(r2);
+        BENCHMARK_PRODUCE(r3);
+        BENCHMARK_PRODUCE(r4);
+        BENCHMARK_PRODUCE(r5);
+        BENCHMARK_PRODUCE(r6);
+        BENCHMARK_PRODUCE(r7);
 
         for (u64 iter = 0; iter < chain_len; iter += 1) {
             r0 = fmadd(r0, x2, m);
@@ -159,27 +161,27 @@ static void fma_depchain_interleaved8(u64 chain_count, u64 chain_len)
 static void fma_depchain_interleaved8x2(u64 chain_count, u64 chain_len)
 {
     for (u64 chain_id = 0; chain_id < chain_count; chain_id += 8) {
-        f64 x2 = 0.0;
-        f64 m = 0.0;
-        f64 r0 = 0.0;
-        f64 r1 = 0.0;
-        f64 r2 = 0.0;
-        f64 r3 = 0.0;
-        f64 r4 = 0.0;
-        f64 r5 = 0.0;
-        f64 r6 = 0.0;
-        f64 r7 = 0.0;
+        f64 x2 = 1.001;
+        f64 m = 0.01;
+        f64 r0 = 1.01;
+        f64 r1 = 1.01;
+        f64 r2 = 1.01;
+        f64 r3 = 1.01;
+        f64 r4 = 1.01;
+        f64 r5 = 1.01;
+        f64 r6 = 1.01;
+        f64 r7 = 1.01;
 
-        BENCHMARK_CLOBBER_F64(x2);
-        BENCHMARK_CLOBBER_F64(m);
-        BENCHMARK_CLOBBER_F64(r0);
-        BENCHMARK_CLOBBER_F64(r1);
-        BENCHMARK_CLOBBER_F64(r2);
-        BENCHMARK_CLOBBER_F64(r3);
-        BENCHMARK_CLOBBER_F64(r4);
-        BENCHMARK_CLOBBER_F64(r5);
-        BENCHMARK_CLOBBER_F64(r6);
-        BENCHMARK_CLOBBER_F64(r7);
+        BENCHMARK_PRODUCE(x2);
+        BENCHMARK_PRODUCE(m);
+        BENCHMARK_PRODUCE(r0);
+        BENCHMARK_PRODUCE(r1);
+        BENCHMARK_PRODUCE(r2);
+        BENCHMARK_PRODUCE(r3);
+        BENCHMARK_PRODUCE(r4);
+        BENCHMARK_PRODUCE(r5);
+        BENCHMARK_PRODUCE(r6);
+        BENCHMARK_PRODUCE(r7);
 
         for (u64 iter = 0; iter < chain_len; iter += 2) {
             r0 = fmadd(r0, x2, m);
@@ -211,9 +213,97 @@ static void fma_depchain_interleaved8x2(u64 chain_count, u64 chain_len)
     }
 }
 
+template <u64 t_blocksize>
+static void fma_depchain_block(u64 chain_count, u64 chain_len)
+{
+    f64 init_buffer[t_blocksize] = {};
+    f64 tmp_buffer[t_blocksize] = {};
+
+    for (f64 &v : init_buffer)
+        v = 1.01;
+
+    for (u64 chain_id = 0; chain_id < chain_count; chain_id += t_blocksize) {
+        f64 x2 = 1.001;
+        f64 m = 0.01;
+
+        BENCHMARK_PRODUCE(x2);
+        BENCHMARK_PRODUCE(m);
+
+        f64 *source = init_buffer;
+        f64 *dest = tmp_buffer;
+
+        for (u64 block = 0; block < t_blocksize; ++block)
+            BENCHMARK_PRODUCE(source[block]);
+
+        for (u64 iter = 0; iter < chain_len; iter += 8) {
+            for (u64 block = 0; block < t_blocksize; ++block) {
+                f64 r0 = source[block];
+                r0 = fmadd(r0, x2, m);
+                r0 = fmadd(r0, x2, m);
+                r0 = fmadd(r0, x2, m);
+                r0 = fmadd(r0, x2, m);
+                r0 = fmadd(r0, x2, m);
+                r0 = fmadd(r0, x2, m);
+                r0 = fmadd(r0, x2, m);
+                r0 = fmadd(r0, x2, m);
+                dest[block] = r0;
+            }
+
+            source = dest; // link the dependency chain
+        }
+
+        for (u64 block = 0; block < t_blocksize; ++block)
+            BENCHMARK_CONSUME(dest[block]);
+    }
+}
+
+template <u64 t_blocksize>
+static void fma_depchain_block_mm(u64 chain_count, u64 chain_len)
+{
+    __m128d init_buffer[t_blocksize] = {};
+    __m128d tmp_buffer[t_blocksize] = {};
+
+    for (__m128d &v : init_buffer)
+        v = _mm_set_sd(1.01);
+
+    for (u64 chain_id = 0; chain_id < chain_count; chain_id += t_blocksize) {
+        __m128d x2 = _mm_set_sd(1.001);
+        __m128d m = _mm_set_sd(0.01);
+
+        BENCHMARK_PRODUCE(x2);
+        BENCHMARK_PRODUCE(m);
+
+        __m128d *source = init_buffer;
+        __m128d *dest = tmp_buffer;
+
+        for (u64 block = 0; block < t_blocksize; ++block)
+            BENCHMARK_PRODUCE(source[block]);
+
+        for (u64 iter = 0; iter < chain_len; iter += 8) {
+            for (u64 block = 0; block < t_blocksize; ++block) {
+                __m128d r0 = source[block];
+                r0 = _mm_fmadd_sd(r0, x2, m);
+                r0 = _mm_fmadd_sd(r0, x2, m);
+                r0 = _mm_fmadd_sd(r0, x2, m);
+                r0 = _mm_fmadd_sd(r0, x2, m);
+                r0 = _mm_fmadd_sd(r0, x2, m);
+                r0 = _mm_fmadd_sd(r0, x2, m);
+                r0 = _mm_fmadd_sd(r0, x2, m);
+                r0 = _mm_fmadd_sd(r0, x2, m);
+                dest[block] = r0; 
+            }
+
+            source = dest; // link the dependency chain
+        }
+
+        for (u64 block = 0; block < t_blocksize; ++block)
+            BENCHMARK_CONSUME(dest[block]);
+    }
+}
+
 static void run_test(
     RepetitionTester &rt, repetition_test_results_t &results,
-    u32 rep_count, u64 cpu_timer_freq, char const *name, auto &&f)
+    u64 rep_count, u64 cpu_timer_freq, char const *name, auto &&f)
 {
     printf("%s", name);
     for (u64 chain_len = 8; chain_len <= 256; chain_len += 8) {
@@ -249,6 +339,7 @@ int main(int argc, char **argv)
 
     init_os_process_state(g_os_proc_state);
     u64 cpu_timer_freq = measure_cpu_timer_freq(0.1l);
+    fprintf(stderr, "CPU FREQ: %lfGHZ\n", f64(cpu_timer_freq) * 1e-9);
 
     RepetitionTester rt{rep_count, cpu_timer_freq, RT_STOP_TIME, true};
     repetition_test_results_t results{};
@@ -267,4 +358,11 @@ int main(int argc, char **argv)
     run_test(rt, results, rep_count, cpu_timer_freq, "8-interleaved cpp", &fma_depchain_interleaved8);
     run_test(rt, results, rep_count, cpu_timer_freq, "8x2-interleaved asm", &fma_depchain_interleaved8x2_asm);
     run_test(rt, results, rep_count, cpu_timer_freq, "8x2-interleaved cpp", &fma_depchain_interleaved8x2);
+
+    run_test(rt, results, rep_count, cpu_timer_freq, "8-block asm", &fma_depchain_block8_asm);
+    run_test(rt, results, rep_count, cpu_timer_freq, "8-block cpp", &fma_depchain_block<8>);
+    run_test(rt, results, rep_count, cpu_timer_freq, "8-block cpp-mm", &fma_depchain_block_mm<8>);
+    run_test(rt, results, rep_count, cpu_timer_freq, "16-block asm", &fma_depchain_block16_asm);
+    run_test(rt, results, rep_count, cpu_timer_freq, "16-block cpp", &fma_depchain_block<16>);
+    run_test(rt, results, rep_count, cpu_timer_freq, "16-block cpp-mm", &fma_depchain_block_mm<16>);
 }

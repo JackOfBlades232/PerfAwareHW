@@ -3,6 +3,8 @@ global fma_depchain_interleaved2_asm
 global fma_depchain_interleaved4_asm
 global fma_depchain_interleaved8_asm
 global fma_depchain_interleaved8x2_asm
+global fma_depchain_block8_asm
+global fma_depchain_block16_asm
 
 %ifdef _WIN32
 %define PARAM0 rcx
@@ -16,12 +18,20 @@ global fma_depchain_interleaved8x2_asm
 %define PARAM3 rcx
 %endif
 
+%macro CONST4X 1
+dq %1, %1, %1, %1
+%endmacro
+
 section .text
 
+mul_a:          CONST4X 1.01
+mul_b:          CONST4X 1.001
+addend:         CONST4X 0.01
+
 fma_depchain_asm:
-.loop:          vpxor       xmm0, xmm0
-                vpxor       xmm1, xmm1
-                vpxor       xmm2, xmm2
+                vmovdqu     xmm0, [rel mul_b]
+                vmovdqu     xmm1, [rel addend]
+.loop:          vmovdqu     xmm2, [rel mul_a]
                 mov         r10, PARAM1
 .inner_loop:    vfmadd213sd xmm2, xmm0, xmm1
                 vfmadd213sd xmm2, xmm0, xmm1
@@ -38,10 +48,10 @@ fma_depchain_asm:
                 ret
 
 fma_depchain_interleaved2_asm:
-.loop:          vpxor       xmm0, xmm0
-                vpxor       xmm1, xmm1
-                vpxor       xmm2, xmm2
-                vpxor       xmm3, xmm3
+                vmovdqu     xmm0, [rel mul_b]
+                vmovdqu     xmm1, [rel addend]
+.loop:          vmovdqu     xmm2, [rel mul_a]
+                vmovdqu     xmm3, xmm2
                 mov         r10, PARAM1
 .inner_loop:    vfmadd213sd xmm2, xmm0, xmm1
                 vfmadd213sd xmm3, xmm0, xmm1
@@ -58,12 +68,12 @@ fma_depchain_interleaved2_asm:
                 ret
 
 fma_depchain_interleaved4_asm:
-.loop:          vpxor       xmm0, xmm0
-                vpxor       xmm1, xmm1
-                vpxor       xmm2, xmm2
-                vpxor       xmm3, xmm3
-                vpxor       xmm4, xmm4
-                vpxor       xmm5, xmm5
+                vmovdqu     xmm0, [rel mul_b]
+                vmovdqu     xmm1, [rel addend]
+.loop:          vmovdqu     xmm2, [rel mul_a]
+                vmovdqu     xmm3, xmm2
+                vmovdqu     xmm4, xmm2
+                vmovdqu     xmm5, xmm2
                 mov         r10, PARAM1
 .inner_loop:    vfmadd213sd xmm2, xmm0, xmm1
                 vfmadd213sd xmm3, xmm0, xmm1
@@ -84,16 +94,16 @@ fma_depchain_interleaved8_asm:
                 vmovdqu     [rsp - 0x20], xmm7
                 vmovdqu     [rsp - 0x30], xmm8
                 vmovdqu     [rsp - 0x40], xmm9
-.loop:          vpxor       xmm0, xmm0
-                vpxor       xmm1, xmm1
-                vpxor       xmm2, xmm2
-                vpxor       xmm3, xmm3
-                vpxor       xmm4, xmm4
-                vpxor       xmm5, xmm5
-                vpxor       xmm6, xmm6
-                vpxor       xmm7, xmm7
-                vpxor       xmm8, xmm8
-                vpxor       xmm9, xmm9
+                vmovdqu     xmm0, [rel mul_b]
+                vmovdqu     xmm1, [rel addend]
+.loop:          vmovdqu     xmm2, [rel mul_a]
+                vmovdqu     xmm3, xmm2
+                vmovdqu     xmm4, xmm2
+                vmovdqu     xmm5, xmm2
+                vmovdqu     xmm6, xmm2
+                vmovdqu     xmm7, xmm2
+                vmovdqu     xmm8, xmm2
+                vmovdqu     xmm9, xmm2
                 mov         r10, PARAM1
 .inner_loop:    vfmadd213sd xmm2, xmm0, xmm1
                 vfmadd213sd xmm3, xmm0, xmm1
@@ -118,16 +128,16 @@ fma_depchain_interleaved8x2_asm:
                 vmovdqu     [rsp - 0x20], xmm7
                 vmovdqu     [rsp - 0x30], xmm8
                 vmovdqu     [rsp - 0x40], xmm9
-.loop:          vpxor       xmm0, xmm0
-                vpxor       xmm1, xmm1
-                vpxor       xmm2, xmm2
-                vpxor       xmm3, xmm3
-                vpxor       xmm4, xmm4
-                vpxor       xmm5, xmm5
-                vpxor       xmm6, xmm6
-                vpxor       xmm7, xmm7
-                vpxor       xmm8, xmm8
-                vpxor       xmm9, xmm9
+                vmovdqu     xmm0, [rel mul_b]
+                vmovdqu     xmm1, [rel addend]
+.loop:          vmovdqu     xmm2, [rel mul_a]
+                vmovdqu     xmm3, xmm2
+                vmovdqu     xmm4, xmm2
+                vmovdqu     xmm5, xmm2
+                vmovdqu     xmm6, xmm2
+                vmovdqu     xmm7, xmm2
+                vmovdqu     xmm8, xmm2
+                vmovdqu     xmm9, xmm2
                 mov         r10, PARAM1
 .inner_loop:    vfmadd213sd xmm2, xmm0, xmm1
                 vfmadd213sd xmm3, xmm0, xmm1
@@ -153,4 +163,82 @@ fma_depchain_interleaved8x2_asm:
                 vmovdqu     xmm7, [rsp - 0x20]
                 vmovdqu     xmm8, [rsp - 0x30]
                 vmovdqu     xmm9, [rsp - 0x40]
+                ret
+
+fma_depchain_block8_asm:
+                lea         rax, [rsp - 8*0x10]
+                and         rax, ~0xF
+                mov         r11, rax
+                sub         r11, 8*0x10
+                vmovdqu     xmm2, [rel mul_a]
+                mov         r10, 8
+.clear_loop:    vmovdqu     [rax], xmm2
+                add         rax, 0x10
+                dec         r10
+                jg          .clear_loop
+                vmovdqu     xmm0, [rel mul_b]
+                vmovdqu     xmm1, [rel addend]
+.loop:          mov         rax, r11
+                add         rax, 8*0x10
+                mov         r10, PARAM1
+.inner_loop:    mov         r9, 8
+.block_loop:    vmovdqu     xmm2, [rax]
+                add         rax, 0x10
+                vfmadd213sd xmm2, xmm0, xmm1
+                vfmadd213sd xmm2, xmm0, xmm1
+                vfmadd213sd xmm2, xmm0, xmm1
+                vfmadd213sd xmm2, xmm0, xmm1
+                vfmadd213sd xmm2, xmm0, xmm1
+                vfmadd213sd xmm2, xmm0, xmm1
+                vfmadd213sd xmm2, xmm0, xmm1
+                vfmadd213sd xmm2, xmm0, xmm1
+                vmovdqu     [r11], xmm2
+                add         r11, 0x10
+                dec         r9
+                jg          .block_loop
+                sub         r11, 8*0x10
+                mov         rax, r11
+                sub         r10, 8
+                jg          .inner_loop
+                sub         PARAM0, 8
+                jg          .loop
+                ret
+
+fma_depchain_block16_asm:
+                lea         rax, [rsp - 16*0x10]
+                and         rax, ~0xF
+                mov         r11, rax
+                sub         r11, 16*0x10
+                vmovdqu     xmm2, [rel mul_a]
+                mov         r10, 16
+.clear_loop:    vmovdqu     [rax], xmm2
+                add         rax, 0x10
+                dec         r10
+                jg          .clear_loop
+                vmovdqu     xmm0, [rel mul_b]
+                vmovdqu     xmm1, [rel addend]
+.loop:          mov         rax, r11
+                add         rax, 16*0x10
+                mov         r10, PARAM1
+.inner_loop:    mov         r9, 16
+.block_loop:    vmovdqu     xmm2, [rax]
+                add         rax, 0x10
+                vfmadd213sd xmm2, xmm0, xmm1
+                vfmadd213sd xmm2, xmm0, xmm1
+                vfmadd213sd xmm2, xmm0, xmm1
+                vfmadd213sd xmm2, xmm0, xmm1
+                vfmadd213sd xmm2, xmm0, xmm1
+                vfmadd213sd xmm2, xmm0, xmm1
+                vfmadd213sd xmm2, xmm0, xmm1
+                vfmadd213sd xmm2, xmm0, xmm1
+                vmovdqu     [r11], xmm2
+                add         r11, 0x10
+                dec         r9
+                jg          .block_loop
+                sub         r11, 16*0x10
+                mov         rax, r11
+                sub         r10, 8
+                jg          .inner_loop
+                sub         PARAM0, 16
+                jg          .loop
                 ret

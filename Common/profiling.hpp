@@ -54,7 +54,7 @@ inline u64 get_os_timer_freq()
 inline u64 read_os_timer()
 {
     struct timespec ts;
-    int res = clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+    int res = clock_gettime(CLOCK_MONOTONIC, &ts);
     if (res != 0)
         return u64(-1);
     return ts.tv_sec * 1'000'000'000 + ts.tv_nsec;

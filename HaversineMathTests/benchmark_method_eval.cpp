@@ -121,7 +121,7 @@ static void bench_macros_clobber(usize rep_count)
 {
     for (usize i = 0; i < rep_count; ++i) {
         f64 value = 0.5;
-        BENCHMARK_CLOBBER_F64(value);
+        BENCHMARK_CLEAR_F64(value);
         f64 result = asin_a_core(value);
         BENCHMARK_CONSUME(result);
     }
@@ -132,6 +132,16 @@ static void bench_macros_set(usize rep_count)
     for (usize i = 0; i < rep_count; ++i) {
         f64 value = 0.5;
         BENCHMARK_SET_F64(value, 0.5);
+        f64 result = asin_a_core(value);
+        BENCHMARK_CONSUME(result);
+    }
+}
+
+static void bench_macros_proper_dep(usize rep_count)
+{
+    for (usize i = 0; i < rep_count; ++i) {
+        f64 value = 0.5;
+        BENCHMARK_PRODUCE(value);
         f64 result = asin_a_core(value);
         BENCHMARK_CONSUME(result);
     }
@@ -156,6 +166,7 @@ int main(int argc, char **argv)
         TEST_FUNC(bench_rwsim_mov),
         TEST_FUNC(bench_macros_clobber),
         TEST_FUNC(bench_macros_set),
+        TEST_FUNC(bench_macros_proper_dep),
     };
 
     RepetitionTester rt{rep_count, cpu_timer_freq, RT_STOP_TIME, true};
