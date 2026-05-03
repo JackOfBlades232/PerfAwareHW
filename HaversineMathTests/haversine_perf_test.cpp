@@ -80,8 +80,7 @@ int main(int argc, char **argv)
                     results, byte_count, cpu_timer_freq, namebuf, true);
             }
 
-            printf(",%lf", gb_per_measure(
-                large_divide(results.min_ticks, cpu_timer_freq), byte_count));
+            printf(",%lf", best_gps(results, byte_count, cpu_timer_freq));
         }
 
         printf("\n");

@@ -169,7 +169,7 @@ int main(int argc, char **argv)
         TEST_FUNC(bench_macros_proper_dep),
     };
 
-    RepetitionTester rt{rep_count, cpu_timer_freq, RT_STOP_TIME, true};
+    RepetitionTester rt{rep_count, cpu_timer_freq, RT_STOP_TIME, true, e_rtu_ops};
     repetition_test_results_t results{};
 
     for (auto [f, name] : c_test_funcs) {
@@ -179,7 +179,7 @@ int main(int argc, char **argv)
             (*f)(rep_count);
             rt.EndTimeBlock();
 
-            rt.ReportProcessedBytes(rep_count);
+            rt.ReportProcessedUnits(rep_count);
         } while (rt.Tick());
 
         print_reptest_results(results, rep_count, cpu_timer_freq, name, true);

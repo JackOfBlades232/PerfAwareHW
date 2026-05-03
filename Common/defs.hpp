@@ -184,7 +184,7 @@ inline constexpr u64 c_kb_in_gb = 1u << 20;
 
 inline constexpr f64 gb_per_measure(f64 measure, u64 bytes)
 {
-    f64 const gb = large_divide(bytes, c_bytes_in_gb); 
+    f64 const gb = large_divide(bytes, c_bytes_in_gb);
     return gb / measure;
 };
 
@@ -208,3 +208,26 @@ inline constexpr u64 clines(u64 cnt)
     return cnt << 6;
 }
 
+inline constexpr u64 c_ops_in_gop = 1'000'000'000;
+inline constexpr u64 c_kops_in_gop = 1'000'000;
+
+inline constexpr f64 gops_per_measure(f64 measure, u64 ops)
+{
+    f64 const gops = large_divide(ops, c_ops_in_gop);
+    return gops / measure;
+};
+
+inline constexpr u64 kops(u64 cnt)
+{
+    return cnt * 1'000;
+}
+
+inline constexpr u64 mops(u64 cnt)
+{
+    return cnt * 1'000'000;
+}
+
+inline constexpr u64 gops(u64 cnt)
+{
+    return cnt * 1'000'000'000;
+}

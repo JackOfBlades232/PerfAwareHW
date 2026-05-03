@@ -9,7 +9,9 @@
 #include <intrinsics.hpp>
 #include <threads.hpp>
 
+#ifndef RT_STOP_TIME
 #define RT_STOP_TIME 10.f
+#endif
 
 static usize get_flen(char const *fn)
 {
@@ -122,7 +124,7 @@ static void run_test(
     } while (rt.Tick());
 
     print_reptest_results(results, file_size, cpu_timer_freq, name, true);
-    printf(",%lf", best_gbps(results, file_size, cpu_timer_freq));
+    printf(",%lf", best_gps(results, file_size, cpu_timer_freq));
 }
 
 static auto allocate_and_touch_tester(

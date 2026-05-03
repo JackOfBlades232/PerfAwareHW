@@ -319,11 +319,11 @@ static void run_test(
             f(chain_count, chain_len);
             rt.EndTimeBlock();
 
-            rt.ReportProcessedBytes(real_rep_count);
+            rt.ReportProcessedUnits(real_rep_count);
         } while (rt.Tick());
 
         print_reptest_results(results, real_rep_count, cpu_timer_freq, namebuf, true);
-        printf(",%lf", best_bptick(results, real_rep_count));
+        printf(",%lf", best_ptick(results, real_rep_count));
     }
     printf("\n");
 }
@@ -341,7 +341,7 @@ int main(int argc, char **argv)
     u64 cpu_timer_freq = measure_cpu_timer_freq(0.1l);
     fprintf(stderr, "CPU FREQ: %lfGHZ\n", f64(cpu_timer_freq) * 1e-9);
 
-    RepetitionTester rt{rep_count, cpu_timer_freq, RT_STOP_TIME, true};
+    RepetitionTester rt{rep_count, cpu_timer_freq, RT_STOP_TIME, true, e_rtu_ops};
     repetition_test_results_t results{};
 
     for (u64 chain_len = 8; chain_len <= 256; chain_len += 8)
