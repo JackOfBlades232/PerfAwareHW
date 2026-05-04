@@ -2,6 +2,7 @@
 
 #include "defs.hpp"
 #include "profiling.hpp"
+#include "buffer.hpp"
 
 #if !defined(RT_PRINT) || !defined(RT_PRINTLN)
 #define RT_PRINT(fmt_, ...) fprintf(stderr, fmt_, ##__VA_ARGS__)
@@ -65,6 +66,7 @@ inline constexpr u64 c_rtu_kilo_in_giga[e_rtu_count] =
 struct repetition_test_results_t {
     u64 test_count = 0;
     u64 total_units = 0;
+    u64 target_units = 0;
     u64 min_ticks = u64(-1);
     u64 max_ticks = 0;
     u64 total_ticks = 0;
@@ -139,6 +141,7 @@ class RepetitionTester {
         m_results = &out_results;
         *m_results = repetition_test_results_t{};
         m_results->unit_type = m_unit_type;
+        m_results->target_units = m_target_units;
         m_ticks = 0;
         m_page_faults = 0;
         m_units = 0;
@@ -297,7 +300,7 @@ inline void print_reptest_results(
     RT_PRINTLN("");
 }
 
-// @NOTE: leaving for old code
+// @NOTE: leaving for old code, legacy
 inline void print_best_bandwidth_csv(
     repetition_test_results_t const &results,
     u64 target_processed_units, u64 cpu_timer_freq,
@@ -321,4 +324,172 @@ inline f64 best_ptick(
     repetition_test_results_t const &results, u64 target_processed_units)
 {
     return large_divide(target_processed_units, results.min_ticks);
+}
+
+inline f64 best_pfpk(
+    repetition_test_results_t const &results, u64 target_processed_units)
+{
+    return c_rtu_kilo_in_giga[results.unit_type] *
+        c_rtu_giga_per_measure_funcs[results.unit_type](f64(results.min_test_page_faults), target_processed_units);
+}
+
+struct repetition_test_series_label_t {
+    char namebuf[64];
+};
+
+struct repetition_test_series_t {
+    repetition_test_series_label_t *rows_master_label;
+    repetition_test_series_label_t *row_labels;
+    repetition_test_series_label_t *col_labels;
+    repetition_test_results_t *results;
+    u32 col_count;
+    u32 max_row_count;
+    u32 current_row;
+    u32 current_col;
+    buffer_t membuf;
+};
+
+inline bool is_valid(repetition_test_series_t const &series)
+{
+    return is_valid(series.membuf);
+}
+
+inline repetition_test_series_t allocate_reptest_series(
+    u32 col_count, u32 max_row_count)
+{
+    repetition_test_series_t series = {};
+
+    u32 total_mem =
+        sizeof(*series.rows_master_label) +
+        sizeof(*series.row_labels) * max_row_count +
+        sizeof(*series.col_labels) * col_count +
+        sizeof(*series.results) * max_row_count * col_count;
+    series.membuf = allocate_best(total_mem);
+    if (!is_valid(series.membuf))
+        return {};
+
+    u8 *p = series.membuf.data;
+    series.rows_master_label = (repetition_test_series_label_t *)p;
+    p += sizeof(*series.rows_master_label);
+    series.row_labels = (repetition_test_series_label_t *)p;
+    p += sizeof(*series.row_labels) * max_row_count;
+    series.col_labels = (repetition_test_series_label_t *)p;
+    p += sizeof(*series.col_labels) * col_count;
+    series.results = (repetition_test_results_t *)p;
+
+    series.col_count = col_count;
+    series.max_row_count = max_row_count;
+
+    series.current_row = 0;
+    series.current_col = 0;
+
+    return series;
+}
+
+inline void free_reptest_series(repetition_test_series_t &series)
+{
+    if (!is_valid(series))
+        return;
+    deallocate(series.membuf);
+    series = {};
+}
+
+inline void set_reptest_series_rows_master_label(
+    repetition_test_series_t &series, char const *fmt, ...)
+{
+    assert(is_valid(series));
+    series.current_col = series.col_count;
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(
+        series.rows_master_label->namebuf,
+        sizeof(series.rows_master_label->namebuf),
+        fmt, args);
+    va_end(args);
+}
+
+inline void set_reptest_series_row_label(
+    repetition_test_series_t &series, char const *fmt, ...)
+{
+    assert(is_valid(series));
+    assert(series.current_row < series.max_row_count);
+    assert(series.current_col == series.col_count);
+    repetition_test_series_label_t
+        *next_label = &series.row_labels[series.current_row++];
+    series.current_col = 0;
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(next_label->namebuf, sizeof(next_label->namebuf), fmt, args);
+    va_end(args);
+}
+
+inline void set_reptest_series_col_label(
+    repetition_test_series_t &series, char const *fmt, ...)
+{
+    assert(is_valid(series));
+    assert(series.current_col < series.col_count);
+    repetition_test_series_label_t
+        *next_label = &series.col_labels[series.current_col++];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(next_label->namebuf, sizeof(next_label->namebuf), fmt, args);
+    va_end(args);
+}
+
+inline void add_reptest_result_to_series(
+    repetition_test_series_t &series, repetition_test_results_t const &result)
+{
+    assert(is_valid(series));
+    assert(series.current_col > 0);
+    assert(series.current_row > 0);
+    assert(series.current_col <= series.col_count);
+    assert(series.current_row <= series.max_row_count);
+
+    u32 rowid = series.current_row - 1;
+    u32 colid = series.current_col - 1;
+    repetition_test_results_t
+        *slot = &series.results[rowid * series.col_count + colid];
+
+    *slot = result;
+}
+
+enum repetition_test_quantity_t {
+    e_rtq_best_units_per_tick,
+    e_rtq_best_gunits_per_sec,
+    e_rtq_best_pfaults_per_kb
+};
+
+inline void dump_reptest_series_as_csv(
+    repetition_test_series_t const &series,
+    repetition_test_quantity_t quantity,
+    u64 cpu_timer_freq,
+    FILE *outfile = stdout)
+{
+    assert(is_valid(series));
+    assert(series.current_col == series.col_count);
+    fprintf(outfile, "%s", series.rows_master_label->namebuf);
+    for (u32 i = 0; i < series.col_count; ++i)
+        fprintf(outfile, ",%s", series.col_labels[i].namebuf);
+    fprintf(outfile, "\n");
+    for (u32 i = 0; i < series.current_row; ++i) {
+        fprintf(outfile, "%s", series.row_labels[i].namebuf);
+        for (u32 j = 0; j < series.col_count; ++j) {
+            repetition_test_results_t const &res =
+                series.results[i * series.col_count + j];
+            f64 q = 0.0;
+            switch (quantity) {
+            case e_rtq_best_units_per_tick:
+                q = best_ptick(res, res.target_units);
+                break;
+            case e_rtq_best_gunits_per_sec:
+                q = best_gps(res, res.target_units, cpu_timer_freq);
+                break;
+            case e_rtq_best_pfaults_per_kb:
+                q = best_pfpk(res, res.target_units);
+                break;
+            }
+            fprintf(outfile, ",%lf", q);
+        }
+        fprintf(outfile, "\n");
+    }
 }

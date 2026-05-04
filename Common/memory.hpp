@@ -80,6 +80,6 @@ inline void free_os_large_pages_memory(void *mem, usize bytes)
 inline void page_memory_in(void *mem, usize bytes)
 {
     char *m = (char *)mem;
-    for (char *p = m; p < m + bytes; p += 8)
-        *p = char(m - p);
+    for (char *p = m; p < m + bytes; p += g_os_proc_state.regular_page_size)
+        *p = 0;
 }

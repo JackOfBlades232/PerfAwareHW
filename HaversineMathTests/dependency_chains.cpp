@@ -303,29 +303,25 @@ static void fma_depchain_block_mm(u64 chain_count, u64 chain_len)
 
 static void run_test(
     RepetitionTester &rt, repetition_test_results_t &results,
-    u64 rep_count, u64 cpu_timer_freq, char const *name, auto &&f)
+    u64 rep_count, u64 cpu_timer_freq, u64 chain_len,
+    char const *name, auto &&f)
 {
-    printf("%s", name);
-    for (u64 chain_len = 8; chain_len <= 256; chain_len += 8) {
-        char namebuf[128];
-        snprintf(namebuf, sizeof(namebuf), "%u %s", chain_len, name);
+    char namebuf[128];
+    snprintf(namebuf, sizeof(namebuf), "%u %s", chain_len, name);
 
-        u64 chain_count = rep_count / chain_len;
-        u64 real_rep_count = chain_count * chain_len;
+    u64 chain_count = rep_count / chain_len;
+    u64 real_rep_count = chain_count * chain_len;
 
-        rt.ReStart(results, real_rep_count);
-        do {
-            rt.BeginTimeBlock();
-            f(chain_count, chain_len);
-            rt.EndTimeBlock();
+    rt.ReStart(results, real_rep_count);
+    do {
+        rt.BeginTimeBlock();
+        f(chain_count, chain_len);
+        rt.EndTimeBlock();
 
-            rt.ReportProcessedUnits(real_rep_count);
-        } while (rt.Tick());
+        rt.ReportProcessedUnits(real_rep_count);
+    } while (rt.Tick());
 
-        print_reptest_results(results, real_rep_count, cpu_timer_freq, namebuf, true);
-        printf(",%lf", best_ptick(results, real_rep_count));
-    }
-    printf("\n");
+    print_reptest_results(results, real_rep_count, cpu_timer_freq, namebuf, true);
 }
 
 int main(int argc, char **argv)
@@ -341,28 +337,47 @@ int main(int argc, char **argv)
     u64 cpu_timer_freq = measure_cpu_timer_freq(0.1l);
     fprintf(stderr, "CPU FREQ: %lfGHZ\n", f64(cpu_timer_freq) * 1e-9);
 
+    constexpr struct {
+        void (*f)(u64, u64);
+        char const *name;
+    } c_test_funcs[] =
+    {
+        {&fma_depchain_asm, "linear asm"},
+        {&fma_depchain, "linear cpp"},
+        {&fma_depchain_interleaved2_asm, "2-interleaved asm"},
+        {&fma_depchain_interleaved2, "2-interleaved cpp"},
+        {&fma_depchain_interleaved4_asm, "4-interleaved asm"},
+        {&fma_depchain_interleaved4, "4-interleaved cpp"},
+        {&fma_depchain_interleaved8_asm, "8-interleaved asm"},
+        {&fma_depchain_interleaved8, "8-interleaved cpp"},
+        {&fma_depchain_interleaved8x2_asm, "8x2-interleaved asm"},
+        {&fma_depchain_interleaved8x2, "8x2-interleaved cpp"},
+        {&fma_depchain_block8_asm, "8-block asm"},
+        {&fma_depchain_block16_asm, "16-block asm"},
+        {&fma_depchain_block<8>, "8-block cpp"},
+        {&fma_depchain_block_mm<8>, "8-block cpp-mm"},
+        {&fma_depchain_block<16>, "16-block cpp"},
+        {&fma_depchain_block_mm<16>, "16-block cpp-mm"},
+    };
+
     RepetitionTester rt{rep_count, cpu_timer_freq, RT_STOP_TIME, true, e_rtu_ops};
     repetition_test_results_t results{};
 
+    repetition_test_series_t test_series = allocate_reptest_series(ARR_CNT(c_test_funcs), 1024);
+
+    set_reptest_series_rows_master_label(test_series, "Chain count");
     for (u64 chain_len = 8; chain_len <= 256; chain_len += 8)
-        printf(",%u", chain_len);
-    printf("\n");
+    {
+        set_reptest_series_row_label(test_series, "%u", chain_len);
 
-    run_test(rt, results, rep_count, cpu_timer_freq, "linear asm", &fma_depchain_asm);
-    run_test(rt, results, rep_count, cpu_timer_freq, "linear cpp", &fma_depchain);
-    run_test(rt, results, rep_count, cpu_timer_freq, "2-interleaved asm", &fma_depchain_interleaved2_asm);
-    run_test(rt, results, rep_count, cpu_timer_freq, "2-interleaved cpp", &fma_depchain_interleaved2);
-    run_test(rt, results, rep_count, cpu_timer_freq, "4-interleaved asm", &fma_depchain_interleaved4_asm);
-    run_test(rt, results, rep_count, cpu_timer_freq, "4-interleaved cpp", &fma_depchain_interleaved4);
-    run_test(rt, results, rep_count, cpu_timer_freq, "8-interleaved asm", &fma_depchain_interleaved8_asm);
-    run_test(rt, results, rep_count, cpu_timer_freq, "8-interleaved cpp", &fma_depchain_interleaved8);
-    run_test(rt, results, rep_count, cpu_timer_freq, "8x2-interleaved asm", &fma_depchain_interleaved8x2_asm);
-    run_test(rt, results, rep_count, cpu_timer_freq, "8x2-interleaved cpp", &fma_depchain_interleaved8x2);
+        for (const auto &[f, name] : c_test_funcs)
+        {
+            set_reptest_series_col_label(test_series, name);
+            run_test(rt, results, rep_count, cpu_timer_freq, chain_len, name, f);
+            add_reptest_result_to_series(test_series, results);
+        }
+    }
 
-    run_test(rt, results, rep_count, cpu_timer_freq, "8-block asm", &fma_depchain_block8_asm);
-    run_test(rt, results, rep_count, cpu_timer_freq, "8-block cpp", &fma_depchain_block<8>);
-    run_test(rt, results, rep_count, cpu_timer_freq, "8-block cpp-mm", &fma_depchain_block_mm<8>);
-    run_test(rt, results, rep_count, cpu_timer_freq, "16-block asm", &fma_depchain_block16_asm);
-    run_test(rt, results, rep_count, cpu_timer_freq, "16-block cpp", &fma_depchain_block<16>);
-    run_test(rt, results, rep_count, cpu_timer_freq, "16-block cpp-mm", &fma_depchain_block_mm<16>);
+    dump_reptest_series_as_csv(test_series, e_rtq_best_units_per_tick, cpu_timer_freq);
+    free_reptest_series(test_series);
 }
