@@ -51,15 +51,12 @@ int main(int argc, char **argv)
             return 2;
         DEFER([&] { cleanup_haversine_state(state); });
 
-        u64 const byte_count = state.pair_cnt * sizeof(point_pair_t);
-
-        printf("%s,%lu", json_fn, byte_count);
-
-        RepetitionTester rt{byte_count, cpu_timer_freq, RT_STOP_TIME, true};
+        RepetitionTester rt{
+            state.pair_cnt, cpu_timer_freq, RT_STOP_TIME, true, e_rtu_ops};
         repetition_test_results_t results{};
 
         for (auto [f, name] : c_test_funcs) {
-            rt.ReStart(results, byte_count);
+            rt.ReStart(results, state.pair_cnt);
             do {
                 rt.BeginTimeBlock();
                 (*f)(state);
@@ -68,21 +65,15 @@ int main(int argc, char **argv)
                 if (!validate_haversine_distances(state))
                     return 3;
 
-                rt.ReportProcessedBytes(byte_count);
+                rt.ReportProcessedUnits(state.pair_cnt);
             } while (rt.Tick());
 
-            {
-                char namebuf[256];
-                snprintf(
-                    namebuf, sizeof(namebuf), "%s (%llukb)",
-                    name, byte_count >> 10);
-                print_reptest_results(
-                    results, byte_count, cpu_timer_freq, namebuf, true);
-            }
-
-            printf(",%lf", best_gps(results, byte_count, cpu_timer_freq));
+            char namebuf[256];
+            snprintf(
+                namebuf, sizeof(namebuf), "%s (%llu pairs)",
+                name, state.pair_cnt);
+            print_reptest_results(
+                results, state.pair_cnt, cpu_timer_freq, namebuf, true);
         }
-
-        printf("\n");
     }
 }
