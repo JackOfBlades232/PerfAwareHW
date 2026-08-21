@@ -24,8 +24,6 @@
     } while (0)
 #endif
 
-#define RT_PRESERVE_UNITS_TARGET u64(0)
-
 enum repetition_test_units_t {
     e_rtu_bytes,
     e_rtu_ops,
@@ -63,18 +61,37 @@ inline constexpr u64 c_rtu_kilo_in_giga[e_rtu_count] =
     c_kops_in_gop,
 };
 
-struct repetition_test_results_t {
-    u64 test_count = 0;
+struct repetition_test_processed_units_record_t {
     u64 total_units = 0;
     u64 target_units = 0;
+};
+
+struct repetition_test_results_t {
+    u64 test_count = 0;
     u64 min_ticks = u64(-1);
     u64 max_ticks = 0;
     u64 total_ticks = 0;
     u64 min_test_page_faults = 0;
     u64 max_test_page_faults = 0;
     u64 total_page_faults = 0;
-    repetition_test_units_t unit_type = e_rtu_bytes;
+    repetition_test_processed_units_record_t unit_results[e_rtu_count] = {};
 };
+
+inline void set_rtr_target_units(
+    repetition_test_results_t &results, repetition_test_units_t type, u64 value)
+{
+    results.unit_results[type].target_units = value;
+}
+
+inline void set_rtr_target_bytes(repetition_test_results_t &results, u64 bytes)
+{
+    set_rtr_target_units(results, e_rtu_bytes, bytes);
+}
+
+inline void set_rtr_target_ops(repetition_test_results_t &results, u64 ops)
+{
+    set_rtr_target_units(results, e_rtu_ops, ops);
+}
 
 class RepetitionTester {
     enum state_t {
@@ -83,16 +100,14 @@ class RepetitionTester {
         e_st_error
     } m_state;
 
-    u64 m_target_units = 0;
     u64 m_try_renew_min_for_ticks = 0;
     u64 m_test_start_ticks = 0;
     u64 m_cpu_timer_freq = 0;
 
     u64 m_ticks = 0;
     u64 m_page_faults = 0;
-    u64 m_units = 0;
 
-    repetition_test_units_t m_unit_type = e_rtu_bytes;
+    u64 m_units[e_rtu_count] = {};
 
     u32 m_open_blocks = 0;
     u32 m_closed_blocks = 0;
@@ -117,38 +132,34 @@ class RepetitionTester {
 
   public:
     RepetitionTester(
-            u64 target_bytes, u64 cpu_timer_freq,
+            u64 cpu_timer_freq,
             f32 seconds_for_min_renewal,
-            bool print_minimums = false,
-            repetition_test_units_t unit_type = e_rtu_bytes)
+            bool print_minimums = false)
             // @NOTE: I dislike this arg order, but I don't wanna correct code
         : m_state{e_st_pending}
-        , m_target_units{target_bytes}
         , m_try_renew_min_for_ticks{u64(seconds_for_min_renewal * cpu_timer_freq)}
         , m_cpu_timer_freq{cpu_timer_freq}
-        , m_unit_type{unit_type}
         , m_print_new_minimums{print_minimums}
         , m_results{nullptr} {}
 
-    void ReStart(
-        repetition_test_results_t &out_results,
-        u64 new_target_units = RT_PRESERVE_UNITS_TARGET)
+    void ReStart(repetition_test_results_t &out_results)
     {
         if (m_state != e_st_pending)
             RT_ERR("Start called on non-pending rep tester");
-        if (new_target_units != RT_PRESERVE_UNITS_TARGET)
-            m_target_units = new_target_units;
         m_results = &out_results;
+        u64 saved_targets[e_rtu_count] = {};
+        for (u32 i = 0; i < e_rtu_count; ++i)
+            saved_targets[i] = m_results->unit_results[i].target_units;
         *m_results = repetition_test_results_t{};
-        m_results->unit_type = m_unit_type;
-        m_results->target_units = m_target_units;
+        for (u32 i = 0; i < e_rtu_count; ++i)
+            m_results->unit_results[i].target_units = saved_targets[i];
         m_ticks = 0;
         m_page_faults = 0;
-        m_units = 0;
         m_open_blocks = 0;
         m_closed_blocks = 0;
         m_last_chars_printed_for_min = 0;
         m_state = e_st_active;
+        memset(m_units, 0, sizeof(m_units));
         m_test_start_ticks = READ_TIMER();
     }
 
@@ -162,12 +173,18 @@ class RepetitionTester {
         if (m_open_blocks) {
             if (m_open_blocks != m_closed_blocks)
                 RT_ERRET(false, "Not all timed blocks closed in rep tester");
-            if (m_units != m_target_units)
-                RT_ERRET(false, "Bytes processed in test not equal to target bytes");
+            for (u32 i = 0; i < e_rtu_count; ++i) {
+                repetition_test_processed_units_record_t *slot =
+                    &m_results->unit_results[i];
+                if (m_units[i] != slot->target_units) {
+                    RT_ERRET(false,
+                        "Bytes processed in test not equal to target bytes");
+                }
+                slot->total_units += m_units[i];
+            }
 
             ++m_results->test_count;
             m_results->total_ticks += m_ticks;
-            m_results->total_units += m_units;
             m_results->total_page_faults += m_page_faults;
             if (m_results->max_ticks < m_ticks) {
                 m_results->max_ticks = m_ticks;
@@ -187,10 +204,10 @@ class RepetitionTester {
         }
 
         m_ticks = 0;
-        m_units = 0;
         m_page_faults = 0;
         m_open_blocks = 0;
         m_closed_blocks = 0;
+        memset(m_units, 0, sizeof(m_units));
 
         if (cur_ticks - m_test_start_ticks > m_try_renew_min_for_ticks) {
             if (m_print_new_minimums)
@@ -214,20 +231,14 @@ class RepetitionTester {
         ++m_closed_blocks;
     }
 
-    void ReportProcessedUnits(u64 units) { m_units += units; }
+    void ReportProcessedUnits(repetition_test_units_t type, u64 value)
+        { m_units[type] += value; }
+    void ReportProcessedBytes(u64 bytes)
+        { ReportProcessedUnits(e_rtu_bytes, bytes); }
+    void ReportProcessedOps(u64 ops)
+        { ReportProcessedUnits(e_rtu_ops, ops); }
+
     void ReportError(char const *text) { RT_ERR("%s", text); }
-
-    u64 GetTargetUnits() const { return m_target_units; }
-
-    // @NOTE: for compat with older code
-    void ReportProcessedBytes(u64 bytes) {
-        assert(m_unit_type == e_rtu_bytes);
-        ReportProcessedUnits(bytes);
-    }
-    u64 GetTargetBytes() const {
-        assert(m_unit_type == e_rtu_bytes);
-        return GetTargetUnits();
-    }
 
 #undef RT_ERR
 #undef RT_ERRET
@@ -236,7 +247,6 @@ class RepetitionTester {
 
 inline void print_reptest_results(
     repetition_test_results_t const &results,
-    u64 target_processed_units,
     u64 cpu_timer_freq, char const *name,
     bool print_units_per_tick)
 {
@@ -246,91 +256,111 @@ inline void print_reptest_results(
     u64 const avg_ticks = results.total_ticks / results.test_count;
     f64 const avg_sec = large_divide(results.total_ticks, results.test_count) / cpu_timer_freq;
 
-    auto gpm = c_rtu_giga_per_measure_funcs[results.unit_type];
-    char const *mn = c_rtu_shorthand_names_plural[results.unit_type];
-    char const *kmn = c_rtu_kilo_shorthand_names_plural[results.unit_type];
-    char const *gmn = c_rtu_giga_shorthand_names_plural[results.unit_type];
-    u64 kilo_in_giga = c_rtu_kilo_in_giga[results.unit_type];
-
     RT_PRINTLN("");
     RT_PRINTLN("--- %s ---", name);
 
-    RT_PRINT(
-        "Min: %lf (%llu), %lf%s/s", min_sec, results.min_ticks,
-        gpm(min_sec, target_processed_units), gmn);
-    if (print_units_per_tick) {
-        RT_PRINT(" (%.2lf%s/tick)",
-            large_divide(target_processed_units, results.min_ticks), mn);
+    RT_PRINT("Min: %lf (%llu)", min_sec, results.min_ticks);
+    for (u32 i = 0; i < e_rtu_count; ++i) {
+        u64 const  target = results.unit_results[i].target_units;
+        if (!target)
+            continue;
+        RT_PRINT(" %lf%s/s",
+            c_rtu_giga_per_measure_funcs[i](min_sec, target),
+            c_rtu_giga_shorthand_names_plural[i]);
+        if (print_units_per_tick) {
+            RT_PRINT(" (%.2lf%s/tick)",
+                large_divide(target, results.min_ticks),
+                c_rtu_shorthand_names_plural[i]);
+        }
     }
     if (results.min_test_page_faults > 0) {
-        RT_PRINT(
-            " PF: %llu faults (%.3lf%s/fault)", results.min_test_page_faults,
-            kilo_in_giga * gpm(f64(results.min_test_page_faults), target_processed_units), kmn);
+        RT_PRINT(" PF: %llu faults", results.min_test_page_faults);
+        for (u32 i = 0; i < e_rtu_count; ++i) {
+            u64 const  target = results.unit_results[i].target_units;
+            if (!target)
+                continue;
+            RT_PRINT(
+                " (%.3lf%s/fault)",
+                c_rtu_kilo_in_giga[i] * c_rtu_giga_per_measure_funcs[i](
+                    f64(results.min_test_page_faults), target),
+                c_rtu_kilo_shorthand_names_plural[i]);
+        }
     }
     RT_PRINTLN("");
 
-    RT_PRINT(
-        "Max: %lf (%llu), %lf%s/s", max_sec, results.max_ticks,
-        gpm(max_sec, target_processed_units), gmn);
-    if (print_units_per_tick) {
-        RT_PRINT(" (%.2lf%s/tick)",
-            large_divide(target_processed_units, results.max_ticks), mn);
+    RT_PRINT("Max: %lf (%llu)", max_sec, results.max_ticks);
+    for (u32 i = 0; i < e_rtu_count; ++i) {
+        u64 const  target = results.unit_results[i].target_units;
+        if (!target)
+            continue;
+        RT_PRINT(" %lf%s/s",
+            c_rtu_giga_per_measure_funcs[i](max_sec, target),
+            c_rtu_giga_shorthand_names_plural[i]);
+        if (print_units_per_tick) {
+            RT_PRINT(" (%.2lf%s/tick)",
+                large_divide(target, results.max_ticks),
+                c_rtu_shorthand_names_plural[i]);
+        }
     }
     if (results.max_test_page_faults > 0) {
-        RT_PRINT(
-            " PF: %llu faults (%.3lf%s/fault)", results.max_test_page_faults,
-            kilo_in_giga * gpm(f64(results.max_test_page_faults), target_processed_units), kmn);
+        RT_PRINT(" PF: %llu faults", results.max_test_page_faults);
+        for (u32 i = 0; i < e_rtu_count; ++i) {
+            u64 const  target = results.unit_results[i].target_units;
+            if (!target)
+                continue;
+            RT_PRINT(
+                " (%.3lf%s/fault)",
+                c_rtu_kilo_in_giga[i] * c_rtu_giga_per_measure_funcs[i](
+                    f64(results.max_test_page_faults), target),
+                c_rtu_kilo_shorthand_names_plural[i]);
+        }
     }
     RT_PRINTLN("");
 
-    RT_PRINT(
-        "Avg: %lf (%llu), %lf%s/s", avg_sec, avg_ticks,
-        gb_per_measure(avg_sec, target_processed_units), gmn);
-    if (print_units_per_tick) {
-        RT_PRINT(" (%.2lf%s/tick)", large_divide(target_processed_units, avg_ticks), mn);
-    }
-    if (results.total_page_faults > 0) {
-        u64 const avg_page_faults = results.total_page_faults / results.test_count;
-        RT_PRINT(
-            " PF: %llu faults (%.3lf%s/fault)", avg_page_faults,
-            kilo_in_giga * gpm(f64(avg_page_faults), target_processed_units), kmn);
+    RT_PRINT("Avg: %lf (%llu)", avg_sec, avg_ticks);
+    for (u32 i = 0; i < e_rtu_count; ++i) {
+        u64 const  target = results.unit_results[i].target_units;
+        if (!target)
+            continue;
+        RT_PRINT(" %lf%s/s",
+            c_rtu_giga_per_measure_funcs[i](avg_sec, target),
+            c_rtu_giga_shorthand_names_plural[i]);
+        if (print_units_per_tick) {
+            RT_PRINT(" (%.2lf%s/tick)",
+                large_divide(target, avg_ticks),
+                c_rtu_shorthand_names_plural[i]);
+        }
     }
     RT_PRINTLN("");
 
     RT_PRINTLN("");
-}
-
-// @NOTE: leaving for old code, legacy
-inline void print_best_bandwidth_csv(
-    repetition_test_results_t const &results,
-    u64 target_processed_units, u64 cpu_timer_freq,
-    char const *label)
-{
-    f64 const min_sec = large_divide(results.min_ticks, cpu_timer_freq);
-    RT_PRINTLN("%s,%llu,%lf,%lf",
-        label, target_processed_units, min_sec,
-        c_rtu_giga_per_measure_funcs[results.unit_type](min_sec, target_processed_units));
 }
 
 inline f64 best_gps(
     repetition_test_results_t const &results,
-    u64 target_processed_units, u64 cpu_timer_freq)
+    repetition_test_units_t units,
+    u64 cpu_timer_freq)
 {
     f64 const min_sec = large_divide(results.min_ticks, cpu_timer_freq);
-    return c_rtu_giga_per_measure_funcs[results.unit_type](min_sec, target_processed_units);
+    return c_rtu_giga_per_measure_funcs[units](
+        min_sec, results.unit_results[units].target_units);
 }
 
 inline f64 best_ptick(
-    repetition_test_results_t const &results, u64 target_processed_units)
+    repetition_test_results_t const &results,
+    repetition_test_units_t units)
 {
-    return large_divide(target_processed_units, results.min_ticks);
+    return large_divide(
+        results.unit_results[units].target_units, results.min_ticks);
 }
 
 inline f64 best_pfpk(
-    repetition_test_results_t const &results, u64 target_processed_units)
+    repetition_test_results_t const &results,
+    repetition_test_units_t units)
 {
-    return c_rtu_kilo_in_giga[results.unit_type] *
-        c_rtu_giga_per_measure_funcs[results.unit_type](f64(results.min_test_page_faults), target_processed_units);
+    return c_rtu_kilo_in_giga[units] * c_rtu_giga_per_measure_funcs[units](
+        f64(results.min_test_page_faults),
+        results.unit_results[units].target_units);
 }
 
 struct repetition_test_series_label_t {
@@ -461,6 +491,7 @@ enum repetition_test_quantity_t {
 
 inline void dump_reptest_series_as_csv(
     repetition_test_series_t const &series,
+    repetition_test_units_t units,
     repetition_test_quantity_t quantity,
     u64 cpu_timer_freq,
     FILE *outfile = stdout)
@@ -479,13 +510,13 @@ inline void dump_reptest_series_as_csv(
             f64 q = 0.0;
             switch (quantity) {
             case e_rtq_best_units_per_tick:
-                q = best_ptick(res, res.target_units);
+                q = best_ptick(res, units);
                 break;
             case e_rtq_best_gunits_per_sec:
-                q = best_gps(res, res.target_units, cpu_timer_freq);
+                q = best_gps(res, units, cpu_timer_freq);
                 break;
             case e_rtq_best_pfaults_per_kb:
-                q = best_pfpk(res, res.target_units);
+                q = best_pfpk(res, units);
                 break;
             }
             fprintf(outfile, ",%lf", q);

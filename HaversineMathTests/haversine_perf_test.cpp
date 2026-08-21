@@ -38,11 +38,6 @@ int main(int argc, char **argv)
         TEST_FUNC(calculate_haversine_distances_naive),
     };
 
-    printf("File,Size");
-    for (auto [_, name] : c_test_funcs)
-        printf(",%s", name);
-    printf("\n");
-
     for (int json_id = 0; json_id < json_fn_cnt; ++json_id) {
         char const *json_fn = json_fns[json_id];
 
@@ -51,12 +46,16 @@ int main(int argc, char **argv)
             return 2;
         DEFER([&] { cleanup_haversine_state(state); });
 
-        RepetitionTester rt{
-            state.pair_cnt, cpu_timer_freq, RT_STOP_TIME, true, e_rtu_ops};
+        u64 const byte_count = state.pair_cnt * sizeof(point_pair_t);
+
+        RepetitionTester rt{cpu_timer_freq, RT_STOP_TIME, true};
+
         repetition_test_results_t results{};
+        set_rtr_target_ops(results, state.pair_cnt);
+        set_rtr_target_bytes(results, byte_count);
 
         for (auto [f, name] : c_test_funcs) {
-            rt.ReStart(results, state.pair_cnt);
+            rt.ReStart(results);
             do {
                 rt.BeginTimeBlock();
                 (*f)(state);
@@ -65,15 +64,15 @@ int main(int argc, char **argv)
                 if (!validate_haversine_distances(state))
                     return 3;
 
-                rt.ReportProcessedUnits(state.pair_cnt);
+                rt.ReportProcessedOps(state.pair_cnt);
+                rt.ReportProcessedBytes(byte_count);
             } while (rt.Tick());
 
             char namebuf[256];
             snprintf(
                 namebuf, sizeof(namebuf), "%s (%llu pairs)",
                 name, state.pair_cnt);
-            print_reptest_results(
-                results, state.pair_cnt, cpu_timer_freq, namebuf, true);
+            print_reptest_results(results, cpu_timer_freq, namebuf, true);
         }
     }
 }
