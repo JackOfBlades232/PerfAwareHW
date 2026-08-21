@@ -55,17 +55,19 @@ int main(int argc, char **argv)
         set_rtr_target_bytes(results, byte_count);
 
         for (auto [f, name] : c_test_funcs) {
+            haversine_validation_result_t validation = {};
+
             rt.ReStart(results);
             do {
                 rt.BeginTimeBlock();
                 (*f)(state);
                 rt.EndTimeBlock();
 
-                if (!validate_haversine_distances(state))
-                    return 3;
-
                 rt.ReportProcessedOps(state.pair_cnt);
                 rt.ReportProcessedBytes(byte_count);
+
+                merge_worst_haversine_validation_result(
+                    validation, validate_haversine_distances(state));
             } while (rt.Tick());
 
             char namebuf[256];
@@ -73,6 +75,8 @@ int main(int argc, char **argv)
                 namebuf, sizeof(namebuf), "%s (%llu pairs)",
                 name, state.pair_cnt);
             print_reptest_results(results, cpu_timer_freq, namebuf, true);
+            print_haversine_validation_results(validation);
+            fprintf(stderr, "\n");
         }
     }
 }

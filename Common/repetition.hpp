@@ -4,25 +4,18 @@
 #include "profiling.hpp"
 #include "buffer.hpp"
 
-#if !defined(RT_PRINT) || !defined(RT_PRINTLN)
-#define RT_PRINT(fmt_, ...) fprintf(stderr, fmt_, ##__VA_ARGS__)
-#define RT_PRINTLN(fmt_, ...) fprintf(stderr, fmt_ "\n", ##__VA_ARGS__)
-#endif
+inline void rt_clear(FILE *f, usize len)
+{
+    for (usize i = 0; i < len; ++i)
+        fprintf(f, "\b");
+}
 
-#if !defined(RT_CLEAR) || !defined(RT_CLEARLN)
-#define RT_CLEAR(count_)                         \
-    do {                                         \
-        for (usize i_ = 0; i_ < (count_); ++i_) \
-            fprintf(stderr, "\b");               \
-    } while (0)
-#define RT_CLEARLN(count_)                       \
-    do {                                         \
-        for (usize i_ = 0; i_ < (count_); ++i_) \
-            fprintf(stderr, "\b");               \
-        for (usize i_ = 0; i_ < (count_); ++i_) \
-            fprintf(stderr, " ");                \
-    } while (0)
-#endif
+inline void rt_clearln(FILE *f, usize len)
+{
+    rt_clear(f, len);
+    for (usize i = 0; i < len; ++i)
+        fprintf(f, " ");
+}
 
 enum repetition_test_units_t {
     e_rtu_bytes,
@@ -195,8 +188,8 @@ class RepetitionTester {
                 m_results->min_test_page_faults = m_page_faults;
                 m_test_start_ticks = cur_ticks;
                 if (m_print_new_minimums) {
-                    RT_CLEAR(m_last_chars_printed_for_min);
-                    m_last_chars_printed_for_min = RT_PRINT(
+                    rt_clear(stderr, m_last_chars_printed_for_min);
+                    m_last_chars_printed_for_min = fprintf(stderr,
                         "Found new min time: %lfs",
                         large_divide(m_results->min_ticks, m_cpu_timer_freq));
                 }
@@ -211,7 +204,7 @@ class RepetitionTester {
 
         if (cur_ticks - m_test_start_ticks > m_try_renew_min_for_ticks) {
             if (m_print_new_minimums)
-                RT_CLEARLN(m_last_chars_printed_for_min);
+                rt_clearln(stderr, m_last_chars_printed_for_min);
             m_state = e_st_pending;
             return false;
         }
@@ -242,7 +235,6 @@ class RepetitionTester {
 
 #undef RT_ERR
 #undef RT_ERRET
-#undef RT_CLEAR
 };
 
 inline void print_reptest_results(
@@ -256,84 +248,82 @@ inline void print_reptest_results(
     u64 const avg_ticks = results.total_ticks / results.test_count;
     f64 const avg_sec = large_divide(results.total_ticks, results.test_count) / cpu_timer_freq;
 
-    RT_PRINTLN("");
-    RT_PRINTLN("--- %s ---", name);
+    fprintf(stderr, "\n");
+    fprintf(stderr, "--- %s ---\n", name);
 
-    RT_PRINT("Min: %lf (%llu)", min_sec, results.min_ticks);
+    fprintf(stderr, "Min: %lf (%llu)", min_sec, results.min_ticks);
     for (u32 i = 0; i < e_rtu_count; ++i) {
         u64 const  target = results.unit_results[i].target_units;
         if (!target)
             continue;
-        RT_PRINT(" %lf%s/s",
+        fprintf(stderr, " %lf%s/s",
             c_rtu_giga_per_measure_funcs[i](min_sec, target),
             c_rtu_giga_shorthand_names_plural[i]);
         if (print_units_per_tick) {
-            RT_PRINT(" (%.2lf%s/tick)",
+            fprintf(stderr, " (%.2lf%s/tick)",
                 large_divide(target, results.min_ticks),
                 c_rtu_shorthand_names_plural[i]);
         }
     }
     if (results.min_test_page_faults > 0) {
-        RT_PRINT(" PF: %llu faults", results.min_test_page_faults);
+        fprintf(stderr, " PF: %llu faults", results.min_test_page_faults);
         for (u32 i = 0; i < e_rtu_count; ++i) {
             u64 const  target = results.unit_results[i].target_units;
             if (!target)
                 continue;
-            RT_PRINT(
+            fprintf(stderr, 
                 " (%.3lf%s/fault)",
                 c_rtu_kilo_in_giga[i] * c_rtu_giga_per_measure_funcs[i](
                     f64(results.min_test_page_faults), target),
                 c_rtu_kilo_shorthand_names_plural[i]);
         }
     }
-    RT_PRINTLN("");
+    fprintf(stderr, "\n");
 
-    RT_PRINT("Max: %lf (%llu)", max_sec, results.max_ticks);
+    fprintf(stderr, "Max: %lf (%llu)", max_sec, results.max_ticks);
     for (u32 i = 0; i < e_rtu_count; ++i) {
         u64 const  target = results.unit_results[i].target_units;
         if (!target)
             continue;
-        RT_PRINT(" %lf%s/s",
+        fprintf(stderr, " %lf%s/s",
             c_rtu_giga_per_measure_funcs[i](max_sec, target),
             c_rtu_giga_shorthand_names_plural[i]);
         if (print_units_per_tick) {
-            RT_PRINT(" (%.2lf%s/tick)",
+            fprintf(stderr, " (%.2lf%s/tick)",
                 large_divide(target, results.max_ticks),
                 c_rtu_shorthand_names_plural[i]);
         }
     }
     if (results.max_test_page_faults > 0) {
-        RT_PRINT(" PF: %llu faults", results.max_test_page_faults);
+        fprintf(stderr, " PF: %llu faults", results.max_test_page_faults);
         for (u32 i = 0; i < e_rtu_count; ++i) {
             u64 const  target = results.unit_results[i].target_units;
             if (!target)
                 continue;
-            RT_PRINT(
+            fprintf(stderr, 
                 " (%.3lf%s/fault)",
                 c_rtu_kilo_in_giga[i] * c_rtu_giga_per_measure_funcs[i](
                     f64(results.max_test_page_faults), target),
                 c_rtu_kilo_shorthand_names_plural[i]);
         }
     }
-    RT_PRINTLN("");
+    fprintf(stderr, "\n");
 
-    RT_PRINT("Avg: %lf (%llu)", avg_sec, avg_ticks);
+    fprintf(stderr, "Avg: %lf (%llu)", avg_sec, avg_ticks);
     for (u32 i = 0; i < e_rtu_count; ++i) {
         u64 const  target = results.unit_results[i].target_units;
         if (!target)
             continue;
-        RT_PRINT(" %lf%s/s",
+        fprintf(stderr, " %lf%s/s",
             c_rtu_giga_per_measure_funcs[i](avg_sec, target),
             c_rtu_giga_shorthand_names_plural[i]);
         if (print_units_per_tick) {
-            RT_PRINT(" (%.2lf%s/tick)",
+            fprintf(stderr, " (%.2lf%s/tick)",
                 large_divide(target, avg_ticks),
                 c_rtu_shorthand_names_plural[i]);
         }
     }
-    RT_PRINTLN("");
-
-    RT_PRINTLN("");
+    fprintf(stderr, "\n");
 }
 
 inline f64 best_gps(
